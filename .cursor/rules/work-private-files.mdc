@@ -12,7 +12,7 @@ Full text: `CLAUDE.md` sections **Work-document** / **Private file and cache** /
 
 - Creator may edit/delete until an assignee has submitted (nộp); admin/mod may always. Use `convex/workDocumentPolicy.ts`
 - Document approval is disabled (`WORK_APPROVAL_DISABLED`); work is live on create (`status: "approved"`)
-- Completions: assignee **Nộp** (web requires evidence file); only the **creator** marks complete / returns
+- Completions: assignee **Nộp** (web requires evidence file); **creator** or **admin/mod** marks complete / returns
 - Soft-delete first; inactive docs must deny access even if Drive cleanup lags
 - File replace is staged: publish DB only after new upload validates; never delete old Drive object before DB success
 

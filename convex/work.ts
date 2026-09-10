@@ -1369,7 +1369,11 @@ export const listAdmin = query({
         (row: any) => String(row._id) === String(item.documentId),
       );
       if (!document || !isWorkReleased(document)) continue;
-      if (!canReviewWorkCompletion({ actorUserId: String(actor.user._id), createdBy: String(document.createdBy) })) {
+      if (!canReviewWorkCompletion({
+        actorUserId: String(actor.user._id),
+        createdBy: String(document.createdBy),
+        actorIsOps: actor.isOps,
+      })) {
         continue;
       }
       for (const row of completionsOf(item)) {
@@ -1688,7 +1692,11 @@ export const reviewWorkCompletion = mutation({
     if (!item?.active) throw new Error("WORK_ITEM_NOT_FOUND");
     const document = await ctx.db.get(item.documentId as Id<"officeDocuments">);
     if (!isWorkReleased(document)) throw new Error("WORK_NOT_APPROVED");
-    if (!canReviewWorkCompletion({ actorUserId: String(access.user._id), createdBy: String(document.createdBy) })) {
+    if (!canReviewWorkCompletion({
+      actorUserId: String(access.user._id),
+      createdBy: String(document.createdBy),
+      actorIsOps: access.isAdmin,
+    })) {
       throw new Error("WORK_COMPLETION_REVIEWER_REQUIRED");
     }
     const existing = completionForUser(item, args.userId);
@@ -1972,7 +1980,11 @@ export const listMine = query({
       for (const item of activeWorkItems) {
         const document = docsById.get(String(item.documentId));
         if (!document || !isWorkReleased(document)) continue;
-        if (!canReviewWorkCompletion({ actorUserId: String(access.user._id), createdBy: String(document.createdBy) })) {
+        if (!canReviewWorkCompletion({
+          actorUserId: String(access.user._id),
+          createdBy: String(document.createdBy),
+          actorIsOps: access.isAdmin,
+        })) {
           continue;
         }
           for (const row of completionsOf(item)) {
@@ -2235,6 +2247,7 @@ export const badge = query({
         if (!canReviewWorkCompletion({
           actorUserId: String(access.user._id),
           createdBy: String(document.createdBy),
+          actorIsOps: access.isAdmin,
         })) continue;
         pendingApprovalCount += completionsOf(item).filter(
           (row: any) => row.status === "pending_approval",

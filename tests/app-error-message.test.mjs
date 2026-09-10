@@ -37,8 +37,8 @@ test('messageFor đọc được lỗi Convex bị bọc trong data object', () 
     'Vui lòng chọn ít nhất một người tham gia.',
   );
   assert.equal(
-    messageFor({ message: 'PASSWORD_CHANGE_REQUIRED' }),
-    'Bạn cần đổi mật khẩu trước khi tiếp tục.',
+    messageFor({ message: 'WORK_COMPLETION_REVIEWER_REQUIRED' }),
+    'Người tạo hoặc quản trị viên mới được đánh dấu hoàn thành hoặc trả về.',
   );
   assert.equal(
     messageFor({

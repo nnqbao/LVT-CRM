@@ -62,7 +62,7 @@
 - Reject is allowed only while `approvedByUserIds` is empty (`canRejectWorkDocument`). A later reject would leave the document both rejected and immutable.
 - Do not implement the lock using only `status === "approved"`. Use the shared policy in `convex/workDocumentPolicy.ts`.
 - Approvers must be active **non-admin, non-moderator** users at position level 4 or above. Operational managers manage documents; they cannot be designated approvers (`ADMIN_USE_MANAGEMENT`).
-- Completing or reviewing work/personal tasks requires the parent document to still be `active` and `status === "approved"`.
+- Completing or reviewing work/personal tasks requires the parent document to still be `active` and `status === "approved"`. Work-item completion review is the **creator** or an operational manager (`admin`/`moderator`); ordinary users cannot review others’ work.
 - Editing a mutable document resets prior approval/rejection decisions and sends the revised document through approval again.
 - Replacing assignments deactivates superseded work items/personal tasks and creates the new active work graph atomically with the document update.
 - Deletion is soft-delete first. Once inactive, authorization must deny access even if Drive/cache cleanup is delayed.

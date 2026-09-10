@@ -225,8 +225,10 @@ export function workMenuBadgeCount(parts: {
 export function canReviewWorkCompletion(args: {
   actorUserId: string;
   createdBy: string;
+  actorIsOps?: boolean;
 }) {
-  return String(args.actorUserId) === String(args.createdBy);
+  if (String(args.actorUserId) === String(args.createdBy)) return true;
+  return Boolean(args.actorIsOps);
 }
 
 /**

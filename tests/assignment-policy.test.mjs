@@ -165,9 +165,10 @@ test('nội dung nộp hoàn thành là tùy chọn và tối đa 500 ký tự',
   assert.throws(() => cleanCompletionNote('x'.repeat(501)), /INVALID_COMPLETION_NOTE/);
 });
 
-test('người tạo mới được duyệt hoàn thành; khóa sửa khi đã có nộp', () => {
+test('người tạo hoặc admin/mod được duyệt hoàn thành; khóa sửa khi đã có nộp', () => {
   assert.equal(canReviewWorkCompletion({ actorUserId: 'lead', createdBy: 'lead' }), true);
   assert.equal(canReviewWorkCompletion({ actorUserId: 'admin', createdBy: 'lead' }), false);
+  assert.equal(canReviewWorkCompletion({ actorUserId: 'admin', createdBy: 'lead', actorIsOps: true }), true);
   assert.equal(shouldBypassWorkCompletionReview(true, 100), true);
   assert.equal(shouldBypassWorkCompletionReview(true, 0), true);
   assert.equal(shouldBypassWorkCompletionReview(true, undefined), false);

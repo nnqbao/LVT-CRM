@@ -25,6 +25,7 @@ import {
   workAssignmentPayload,
 } from './workDisplay';
 import { canPreviewWorkFile, spreadsheetPreviewFromArrayBuffer, workFilePreviewKind } from './workFilePreview';
+import { messageFor } from '../lib/appErrorMessage';
 import './work.css';
 
 const ACCEPTED_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'xls', 'png', 'jpg', 'jpeg'];
@@ -958,8 +959,8 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
         type: 'success',
         text: decision === 'approve' ? 'Đã duyệt hoàn thành task.' : 'Đã từ chối và trả task về cho user.',
       });
-    } catch {
-      setFeedback({ type: 'error', text: 'Không thể duyệt hoàn thành lúc này.' });
+    } catch (error) {
+      setFeedback({ type: 'error', text: messageFor(error) });
     } finally {
       setReviewSaving(false);
     }
@@ -1440,8 +1441,8 @@ export function WorkUserView({ focusTarget = null }) {
         type: 'success',
         text: decision === 'approve' ? 'Đã duyệt hoàn thành task.' : 'Đã từ chối và trả task về cho user.',
       });
-    } catch {
-      setFeedback({ type: 'error', text: 'Không thể duyệt hoàn thành lúc này.' });
+    } catch (error) {
+      setFeedback({ type: 'error', text: messageFor(error) });
     } finally {
       setReviewSaving(false);
     }
