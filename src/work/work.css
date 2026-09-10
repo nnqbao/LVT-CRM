@@ -742,13 +742,27 @@
   color: #718293;
   font-size: 12px;
   font-weight: 700;
-  text-align: right;
+  text-align: left;
+}
+
+.work-management.duty-workspace .duty-actions,
+.work-user-view.duty-workspace .duty-actions {
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .duty-actions .work-document-locked {
+  flex: 1 1 auto;
+  min-width: 0;
   padding-top: 0;
   border-top: 0;
   text-align: left;
+}
+
+.duty-actions .work-document-locked + .work-primary-button {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .work-document-card::before,

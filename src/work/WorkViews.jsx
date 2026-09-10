@@ -16,6 +16,8 @@ import {
   filterWorksBySearch,
   filterWorksByTab,
   formatWorkDate,
+  pendingReviewForMember,
+  pendingReviewsForDocument,
   workListTabCounts,
   WORK_LIST_TAB_TODO,
   WORK_COMPLETION_NOTE_MAX_LENGTH,
@@ -25,18 +27,6 @@ import { canPreviewWorkFile, spreadsheetPreviewFromArrayBuffer, workFilePreviewK
 import './work.css';
 
 const ACCEPTED_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'xls', 'png', 'jpg', 'jpeg'];
-
-function pendingReviewForMember(reviews, assignment, member) {
-  return (reviews || []).find((item) => (
-    String(item.userId) === String(member?._id)
-    && String(item.workItemId) === String(assignment?._id || '')
-  ));
-}
-
-function pendingReviewsForDocument(reviews, document) {
-  const itemIds = new Set((document?.assignments || []).map((row) => String(row._id || '')));
-  return (reviews || []).filter((item) => itemIds.has(String(item.workItemId || '')));
-}
 
 function workUploadErrorMessage(code) {
   if (code === 'UPLOAD_REGISTRATION_FAILED') {
@@ -1185,7 +1175,12 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
                           {assignment.members?.length ? (
                             <div className="work-member-progress">
                               {assignment.members.map((member) => {
-                                const reviewItem = pendingReviewForMember(pendingCompletionReviews, assignment, member);
+                                const reviewItem = pendingReviewForMember(
+                                  pendingCompletionReviews,
+                                  assignment,
+                                  member,
+                                  document,
+                                );
                                 return (
                                   <div key={member._id} className="work-member-review-row">
                                     <span className={`work-member-chip status-${member.status}`}>

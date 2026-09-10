@@ -13,6 +13,8 @@ import {
   formatWorkDate,
   isWorkCompleted,
   isWorkPast,
+  pendingReviewForMember,
+  pendingReviewsForDocument,
   workAssignmentPayload,
   workContentSummary,
   workDeadlineKey,
@@ -198,6 +200,36 @@ test('query work.badge cộng chờ duyệt với hai tab chưa hoàn thành', (
   const source = readFileSync(new URL('../convex/work.ts', import.meta.url), 'utf8');
   assert.match(source, /incompleteCreatedCount/);
   assert.match(source, /workMenuBadgeCount/);
+  assert.match(source, /documentId: document\._id/);
+});
+
+test('thẻ việc tôi tạo ghép được task chờ duyệt theo documentId hoặc thành viên', () => {
+  const document = {
+    _id: 'doc-1',
+    assignments: [
+      {
+        _id: 'item-1',
+        content: 'việc cho Ngân',
+        deadline: '2026-08-16',
+        type: 'individual',
+        departmentName: 'Cá nhân',
+        members: [{ _id: 'u1', name: 'Ngân Lâm', status: 'pending_completion' }],
+      },
+    ],
+  };
+  const byDocument = pendingReviewsForDocument(
+    [{ kind: 'work_item', workItemId: 'other-item', documentId: 'doc-1', userId: 'u1' }],
+    document,
+  );
+  assert.equal(byDocument.length, 1);
+  assert.equal(byDocument[0].userId, 'u1');
+
+  const synthesized = pendingReviewsForDocument([], document);
+  assert.equal(synthesized.length, 1);
+  assert.equal(synthesized[0].workItemId, 'item-1');
+
+  const memberReview = pendingReviewForMember([], document.assignments[0], document.assignments[0].members[0], document);
+  assert.equal(memberReview.userId, 'u1');
 });
 
 test('Việc tôi tạo hiện nút duyệt hoàn thành trên thẻ đã nộp', () => {

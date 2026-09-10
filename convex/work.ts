@@ -1380,6 +1380,7 @@ export const listAdmin = query({
         pendingCompletionReviews.push({
           kind: "work_item",
           workItemId: item._id,
+          documentId: document._id,
           taskId: null,
           userId: row.userId,
           userName: person?.name || person?.email || "—",
@@ -1982,6 +1983,7 @@ export const listMine = query({
             pendingCompletionReviews.push({
               kind: "work_item",
               workItemId: item._id,
+              documentId: document._id,
               taskId: null,
               userId: row.userId,
               userName: person?.name || person?.email || "—",
@@ -2101,9 +2103,11 @@ export const listMine = query({
         const item = activeWorkItems.find(
           (workItem: any) => String(workItem._id) === String(task.workItemId),
         );
+        const parentDocument = item ? docsById.get(String(item.documentId)) : null;
         pendingCompletionReviews.push({
           kind: "personal_task",
           workItemId: item?._id || null,
+          documentId: parentDocument?._id || null,
           taskId: task._id,
           userId: row.userId,
           userName: target?.name || target?.email || "—",

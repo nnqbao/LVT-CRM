@@ -8,6 +8,56 @@ export const WORK_COMPLETION_NOTE_MAX_LENGTH = 500;
 const COMPLETED_STATUSES = new Set(['completed', 'completed_late']);
 const PENDING_REVIEW_STATUSES = new Set(['pending_completion', 'pending_approval']);
 
+function reviewMatchesAssignment(item, assignment, document) {
+  const itemId = String(assignment?._id || '');
+  const docId = String(document?._id || '');
+  if (itemId && String(item?.workItemId || '') === itemId) return true;
+  return Boolean(docId) && String(item?.documentId || '') === docId;
+}
+
+function synthesizedMemberReview(assignment, member) {
+  if (!assignment?._id || !member?._id) return null;
+  if (!PENDING_REVIEW_STATUSES.has(member.status)) return null;
+  return {
+    kind: 'work_item',
+    workItemId: assignment._id,
+    taskId: null,
+    userId: member._id,
+    userName: member.name || member.email || '—',
+    content: assignment.content || '',
+    deadline: assignment.deadline,
+    note: '',
+    type: assignment.type,
+    departmentName: assignment.departmentName || '',
+  };
+}
+
+export function pendingReviewForMember(reviews, assignment, member, document) {
+  const userId = String(member?._id || '');
+  if (!userId) return synthesizedMemberReview(assignment, member);
+  const matched = (reviews || []).find((item) => (
+    String(item.userId) === userId && reviewMatchesAssignment(item, assignment, document)
+  ));
+  return matched || synthesizedMemberReview(assignment, member);
+}
+
+export function pendingReviewsForDocument(reviews, document) {
+  const itemIds = new Set(
+    (document?.assignments || []).map((row) => String(row._id || '')).filter(Boolean),
+  );
+  const docId = String(document?._id || '');
+  const matched = (reviews || []).filter((item) => {
+    if (itemIds.has(String(item.workItemId || ''))) return true;
+    return Boolean(docId) && String(item.documentId || '') === docId;
+  });
+  if (matched.length) return matched;
+  return (document?.assignments || []).flatMap((assignment) => (
+    (assignment.members || [])
+      .map((member) => synthesizedMemberReview(assignment, member))
+      .filter(Boolean)
+  ));
+}
+
 export function vietnamToday(now = Date.now()) {
   return new Date(now + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
