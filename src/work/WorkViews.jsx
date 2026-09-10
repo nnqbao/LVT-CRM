@@ -26,6 +26,18 @@ import './work.css';
 
 const ACCEPTED_EXTENSIONS = ['pdf', 'docx', 'xlsx', 'xls', 'png', 'jpg', 'jpeg'];
 
+function pendingReviewForMember(reviews, assignment, member) {
+  return (reviews || []).find((item) => (
+    String(item.userId) === String(member?._id)
+    && String(item.workItemId) === String(assignment?._id || '')
+  ));
+}
+
+function pendingReviewsForDocument(reviews, document) {
+  const itemIds = new Set((document?.assignments || []).map((row) => String(row._id || '')));
+  return (reviews || []).filter((item) => itemIds.has(String(item.workItemId || '')));
+}
+
 function workUploadErrorMessage(code) {
   if (code === 'UPLOAD_REGISTRATION_FAILED') {
     return 'Tệp đã đến Google Drive nhưng hệ thống chưa thể đăng ký công văn. Vui lòng liên hệ quản trị viên và cung cấp thời điểm xảy ra lỗi.';
@@ -1104,6 +1116,7 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
           <div className="duty-modern-list">
             {filteredDocuments.map((document) => {
               const cardOpen = String(expanded || '') === String(document._id);
+              const documentReviews = pendingReviewsForDocument(pendingCompletionReviews, document);
               return (
                 <article
                   className={`duty-modern-card ${cardOpen ? 'is-open' : ''}`}
@@ -1127,7 +1140,18 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
                       ) : null}
                     </div>
                   ) : (
-                    <p className="work-document-locked">Đã có người nộp · Không thể sửa hoặc xóa</p>
+                    <div className="row-actions duty-actions">
+                      <p className="work-document-locked">Đã có người nộp · Không thể sửa hoặc xóa</p>
+                      {documentReviews[0] ? (
+                        <button
+                          type="button"
+                          className="work-primary-button"
+                          onClick={() => setReviewing(documentReviews[0])}
+                        >
+                          Duyệt / Chưa duyệt
+                        </button>
+                      ) : null}
+                    </div>
                   )}
                   {cardOpen ? (
                     <div className="duty-detail">
@@ -1160,12 +1184,26 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
                           </small>
                           {assignment.members?.length ? (
                             <div className="work-member-progress">
-                              {assignment.members.map((member) => (
-                                <span key={member._id} className={`work-member-chip status-${member.status}`}>
-                                  {member.name} · {workStatusLabel(member.status)}
-                                  {member.qualityPercent != null ? ` · ${member.qualityPercent}%` : ''}
-                                </span>
-                              ))}
+                              {assignment.members.map((member) => {
+                                const reviewItem = pendingReviewForMember(pendingCompletionReviews, assignment, member);
+                                return (
+                                  <div key={member._id} className="work-member-review-row">
+                                    <span className={`work-member-chip status-${member.status}`}>
+                                      {member.name} · {workStatusLabel(member.status)}
+                                      {member.qualityPercent != null ? ` · ${member.qualityPercent}%` : ''}
+                                    </span>
+                                    {reviewItem ? (
+                                      <button
+                                        type="button"
+                                        className="work-primary-button"
+                                        onClick={() => setReviewing(reviewItem)}
+                                      >
+                                        Duyệt / Chưa duyệt
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
                             </div>
                           ) : null}
                         </section>
@@ -1415,7 +1453,7 @@ export function WorkUserView({ focusTarget = null }) {
     <section className="work-user-view duty-workspace">
       {feedback.text ? <div className={`work-feedback ${feedback.type}`}>{feedback.text}</div> : null}
 
-      {pendingCompletionReviews.length ? (
+      {pendingCompletionReviews.length && !(data?.canCreate && isAdminMod) ? (
         <section className="work-completion-queue">
           <header>
             <div>
@@ -1721,7 +1759,7 @@ export function WorkUserView({ focusTarget = null }) {
         />
       ) : null}
     </section>
-      {data.canCreate ? <WorkManagement allowCreate hideCompletionQueue focusTarget={focusTarget} /> : null}
+      {data.canCreate ? <WorkManagement allowCreate focusTarget={focusTarget} /> : null}
     </>
   );
 }

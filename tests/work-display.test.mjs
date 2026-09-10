@@ -199,3 +199,17 @@ test('query work.badge cộng chờ duyệt với hai tab chưa hoàn thành', (
   assert.match(source, /incompleteCreatedCount/);
   assert.match(source, /workMenuBadgeCount/);
 });
+
+test('Việc tôi tạo hiện nút duyệt hoàn thành trên thẻ đã nộp', () => {
+  const source = readFileSync(new URL('../src/work/WorkViews.jsx', import.meta.url), 'utf8');
+  const managementStart = source.indexOf('export function WorkManagement(');
+  const userStart = source.indexOf('export function WorkUserView(');
+  const management = source.slice(managementStart, userStart);
+  const userView = source.slice(userStart);
+  assert.match(management, /pendingReviewsForDocument/);
+  assert.match(management, /pendingReviewForMember/);
+  assert.match(management, /Duyệt \/ Chưa duyệt/);
+  assert.doesNotMatch(userView, /hideCompletionQueue/);
+  assert.match(userView, /WorkManagement allowCreate focusTarget=\{focusTarget\}/);
+  assert.match(userView, /!\(data\?\.canCreate && isAdminMod\)/);
+});

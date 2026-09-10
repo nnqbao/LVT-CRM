@@ -745,6 +745,12 @@
   text-align: right;
 }
 
+.duty-actions .work-document-locked {
+  padding-top: 0;
+  border-top: 0;
+  text-align: left;
+}
+
 .work-document-card::before,
 .work-user-card::before {
   position: absolute;
@@ -851,6 +857,19 @@
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
+}
+
+.work-member-review-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-member-review-row .work-primary-button {
+  min-width: auto;
+  min-height: 32px;
+  padding: 0 12px;
 }
 
 .work-member-chip {
