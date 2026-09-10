@@ -58,6 +58,31 @@ export function pendingReviewsForDocument(reviews, document) {
   ));
 }
 
+export function pendingReviewKey(item) {
+  return `${item?.kind || 'work_item'}-${item?.taskId || item?.workItemId || ''}-${item?.userId || ''}`;
+}
+
+/** Queue must include every pending completion shown on created-work cards. */
+export function pendingReviewQueue(reviews, documents) {
+  const seen = new Set();
+  const queue = [];
+  const add = (item) => {
+    if (!item?.userId) return;
+    const key = pendingReviewKey(item);
+    if (seen.has(key)) return;
+    seen.add(key);
+    queue.push(item);
+  };
+  for (const item of reviews || []) add(item);
+  for (const document of documents || []) {
+    for (const item of pendingReviewsForDocument(reviews, document)) add(item);
+  }
+  return queue.sort((a, b) => (
+    String(a.deadline || '').localeCompare(String(b.deadline || ''))
+    || String(a.userName || '').localeCompare(String(b.userName || ''), 'vi')
+  ));
+}
+
 export function vietnamToday(now = Date.now()) {
   return new Date(now + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }

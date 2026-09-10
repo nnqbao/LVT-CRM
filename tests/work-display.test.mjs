@@ -14,6 +14,7 @@ import {
   isWorkCompleted,
   isWorkPast,
   pendingReviewForMember,
+  pendingReviewQueue,
   pendingReviewsForDocument,
   workAssignmentPayload,
   workContentSummary,
@@ -230,6 +231,23 @@ test('thẻ việc tôi tạo ghép được task chờ duyệt theo documentId 
 
   const memberReview = pendingReviewForMember([], document.assignments[0], document.assignments[0].members[0], document);
   assert.equal(memberReview.userId, 'u1');
+
+  const otherDoc = {
+    _id: 'doc-2',
+    assignments: [{
+      _id: 'item-2',
+      content: 'nội dung công việc',
+      deadline: '2026-08-26',
+      members: [{ _id: 'u2', name: 'Giáo viên tổ toán', status: 'pending_completion' }],
+    }],
+  };
+  const queue = pendingReviewQueue(
+    [{ kind: 'work_item', workItemId: 'item-2', documentId: 'doc-2', userId: 'u2', userName: 'Giáo viên tổ toán', deadline: '2026-08-26' }],
+    [document, otherDoc],
+  );
+  assert.equal(queue.length, 2);
+  assert.equal(queue.some((item) => item.workItemId === 'item-1'), true);
+  assert.equal(queue.some((item) => item.workItemId === 'item-2'), true);
 });
 
 test('Việc tôi tạo hiện nút duyệt hoàn thành trên thẻ đã nộp', () => {
@@ -238,7 +256,8 @@ test('Việc tôi tạo hiện nút duyệt hoàn thành trên thẻ đã nộp'
   const userStart = source.indexOf('export function WorkUserView(');
   const management = source.slice(managementStart, userStart);
   const userView = source.slice(userStart);
-  assert.match(management, /pendingReviewsForDocument/);
+  assert.match(management, /pendingReviewQueue/);
+  assert.match(management, /pendingReviewQueue/);
   assert.match(management, /pendingReviewForMember/);
   assert.match(management, /Duyệt \/ Chưa duyệt/);
   assert.doesNotMatch(userView, /hideCompletionQueue/);

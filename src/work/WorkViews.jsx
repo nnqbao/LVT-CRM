@@ -17,6 +17,7 @@ import {
   filterWorksByTab,
   formatWorkDate,
   pendingReviewForMember,
+  pendingReviewQueue,
   pendingReviewsForDocument,
   workListTabCounts,
   WORK_LIST_TAB_TODO,
@@ -711,7 +712,10 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
   });
 
   const documents = listData?.documents || [];
-  const pendingCompletionReviews = listData?.pendingCompletionReviews || [];
+  const pendingCompletionReviews = useMemo(
+    () => pendingReviewQueue(listData?.pendingCompletionReviews || [], documents),
+    [documents, listData?.pendingCompletionReviews],
+  );
   const visibleDocuments = useMemo(() => filterWorksByTab(documents, listTab), [documents, listTab]);
   const createdTabCounts = useMemo(() => workListTabCounts(documents), [documents]);
   const filteredDocuments = useMemo(
