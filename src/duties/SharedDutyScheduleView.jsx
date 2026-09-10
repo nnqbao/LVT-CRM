@@ -28,7 +28,7 @@ export default function SharedDutyScheduleView({ onChooseView }) {
   };
 
   return (
-    <section className="duty-workspace lct-shared-view">
+    <section className="work-management duty-workspace lct-shared-view">
       <DutyWorkspaceTabs view="shared" onChoose={onChooseView} />
       <div className="lct-shared-toolbar">
         <div className="lct-shared-toolbar-center">

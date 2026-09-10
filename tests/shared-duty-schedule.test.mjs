@@ -150,6 +150,7 @@ test('UI Lịch công tác có 2 tab, lịch cá nhân dạng lịch, trang tạ
   assert.doesNotMatch(main, /Công tác tôi tạo/);
   assert.match(tabs, /Lịch công tác cá nhân/);
   assert.match(tabs, /Lịch công tác chung/);
+  assert.match(shared, /work-management duty-workspace lct-shared-view/);
   assert.match(shared, /Tải PDF/);
   assert.match(shared, /Tuần/);
   assert.match(shared, /Tháng/);
