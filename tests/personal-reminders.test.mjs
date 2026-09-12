@@ -128,9 +128,12 @@ test('list công tác/công việc gắn panel nhắc cá nhân và xếp 1 cộ
   assert.match(dutyView, /PersonalReminderPanel/);
   assert.match(dutyView, /PersonalReminderQueryBoundary/);
   assert.match(dutyView, /isSelectedSelf/);
+  assert.match(dutyView, /const showDutyReminders = Boolean\(data\?\.isSelectedSelf\)/);
+  assert.doesNotMatch(dutyView, /showDutyReminders = !reminderFailed/);
   assert.match(workView, /PersonalReminderPanel/);
   assert.match(workView, /PersonalReminderQueryBoundary/);
   assert.match(workView, /workTabAllowsPersonalReminder/);
+  assert.doesNotMatch(workView, /showWorkReminders = !reminderFailed/);
   assert.match(css, /grid-template-columns: minmax\(0, 1fr\);/);
   assert.match(css, /\.duty-card-layout/);
 });

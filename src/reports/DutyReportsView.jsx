@@ -505,8 +505,7 @@ function DutyReportsViewBody({
   const attendedCount = events.filter((event) => event.attendanceStatus === 'attended').length;
   const pendingCount = events.filter((event) => event.attendanceStatus === 'pending').length;
   const dutyReminderMap = useMemo(() => reminderMapFromList(myDutyReminders), [myDutyReminders]);
-  const showDutyReminders = !reminderFailed
-    && Boolean(data?.isSelectedSelf)
+  const showDutyReminders = Boolean(data?.isSelectedSelf)
     && mode === 'list'
     && listTab === DUTY_LIST_TAB_UPCOMING;
   const peopleGroups = useMemo(() => {

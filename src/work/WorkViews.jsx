@@ -1289,7 +1289,7 @@ function WorkUserViewBody({ focusTarget = null, reminderFailed = false }) {
     reminderFailed ? 'skip' : { kind: 'work' },
   );
   const workReminderMap = useMemo(() => reminderMapFromList(myWorkReminders), [myWorkReminders]);
-  const showWorkReminders = !reminderFailed && workTabAllowsPersonalReminder(listTab);
+  const showWorkReminders = workTabAllowsPersonalReminder(listTab);
 
   useNotificationFocus(focusTarget, {
     acceptSourceTypes: WORK_NOTIFICATION_FOCUS_TYPES,
