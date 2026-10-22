@@ -66,6 +66,14 @@ struct WorkApprovalItem: Identifiable, Equatable, Sendable {
     var awaitingMyDecision: Bool = false
     /// Approver queue only: return is still allowed (nobody approved yet).
     var canReject: Bool = false
+    /// Newer servers: editing this (already approved) document sends it back to Ban giám hiệu. nil = not sent.
+    var editRequiresReapproval: Bool? = nil
+    /// Newer servers: an assignee submitted results, so the document is read-only. nil = not sent.
+    var hasSubmissions: Bool? = nil
+    var lastEditedByName: String = ""
+    var lastEditedAt: Int64? = nil
+    /// The server sent `canEdit` / `canDelete` (absent on malformed or older rows).
+    var hasServerActionFlags: Bool = false
 
     func editAssignments() -> [WorkCreateAssignment] {
         assignments.flatMap { row in
@@ -191,7 +199,12 @@ enum WorkApprovalDecoding {
             creatorRole: string(document["creatorRole"]),
             submittedAt: millis(document["submittedAt"]),
             awaitingMyDecision: bool(document["awaitingMyDecision"]),
-            canReject: bool(document["canReject"])
+            canReject: bool(document["canReject"]),
+            editRequiresReapproval: document["editRequiresReapproval"] as? Bool,
+            hasSubmissions: document["hasSubmissions"] as? Bool,
+            lastEditedByName: string(document["lastEditedByName"]).trimmingCharacters(in: .whitespacesAndNewlines),
+            lastEditedAt: millis(document["lastEditedAt"]),
+            hasServerActionFlags: document["canEdit"] is Bool && document["canDelete"] is Bool
         )
     }
 
@@ -323,19 +336,54 @@ enum WorkApprovalRules {
         )
     }
 
-    /// Edit/delete buttons: never after the first approval (server lock, admin/mod included). Otherwise the
-    /// server flag, and admin/mod keep their right to edit after an assignee has submitted.
+    static let reapprovalWarning = "Công việc đã được duyệt. Sau khi lưu, công việc sẽ phải gửi Ban giám hiệu duyệt lại và tạm ẩn với người được giao."
+    static let submissionsReadOnlyMessage = "Đã có người nộp kết quả — công việc chỉ xem."
+
+    /// Newer servers send the per-document edit policy (`editRequiresReapproval` / `hasSubmissions`):
+    /// then `canEdit` / `canDelete` alone decide (admin may edit an approved document; everyone is read-only
+    /// after a submission).
+    static func serverDrivesActions(_ document: WorkApprovalItem) -> Bool {
+        document.hasServerActionFlags && (document.editRequiresReapproval != nil || document.hasSubmissions != nil)
+    }
+
+    /// Edit/delete buttons. Server-driven when the server sends its policy; otherwise (older server) never
+    /// after the first approval, else the server flag, and admin/mod keep editing after a submission.
     static func showsEdit(_ document: WorkApprovalItem, isOps: Bool) -> Bool {
-        !document.approvalLocked && (document.canEdit || isOps)
+        if serverDrivesActions(document) { return document.canEdit }
+        return !document.approvalLocked && (document.canEdit || isOps)
     }
 
     static func showsDelete(_ document: WorkApprovalItem, isOps: Bool) -> Bool {
-        !document.approvalLocked && (document.canDelete || isOps)
+        if serverDrivesActions(document) { return document.canDelete }
+        return !document.approvalLocked && (document.canDelete || isOps)
     }
 
     static func lockedMessage(_ document: WorkApprovalItem, isOps: Bool) -> String? {
         if showsEdit(document, isOps: isOps) || showsDelete(document, isOps: isOps) { return nil }
+        if serverDrivesActions(document) {
+            if document.hasSubmissions == true { return submissionsReadOnlyMessage }
+            return document.approvalLocked ? approvalLockedMessage : nil
+        }
         return document.approvalLocked ? approvalLockedMessage : submissionLockedMessage
+    }
+
+    /// Edit form: saving an approved document sends it back to Ban giám hiệu (server flag).
+    static func editNeedsReapproval(_ document: WorkApprovalItem?) -> Bool {
+        document?.editRequiresReapproval == true
+    }
+
+    /// "Đã chỉnh sửa bởi Tên lúc HH:mm dd/MM/yyyy" (Vietnam time) when the server sent it.
+    static func lastEditedText(_ document: WorkApprovalItem) -> String? {
+        guard !document.lastEditedByName.isEmpty, let at = document.lastEditedAt else { return nil }
+        return "Đã chỉnh sửa bởi \(document.lastEditedByName) lúc \(formatTimeDate(at))"
+    }
+
+    /// HH:mm dd/MM/yyyy in Vietnam time.
+    static func formatTimeDate(_ millis: Int64) -> String {
+        let value = formatDateTime(millis)
+        let parts = value.split(separator: " ")
+        guard parts.count == 2 else { return value }
+        return "\(parts[1]) \(parts[0])"
     }
 
     /// The approval decision a return needs: trimmed, required, at most 500 characters.

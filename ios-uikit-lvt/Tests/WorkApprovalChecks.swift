@@ -109,6 +109,43 @@ struct WorkApprovalChecks {
         // List status: the aggregate workStatus wins over the document status (list tabs use it).
         check(WorkApprovalRules.effectiveStatus(pending) == "awaiting_approval" && WorkApprovalRules.effectiveStatus(legacy) == "approved", "Effective status")
 
+        // Newer server policy: canEdit/canDelete alone decide; admin may edit an approved document (re-approval).
+        let adminEdit = WorkApprovalDecoding.document(
+            documentRow(status: "approved", approved: ["bgh1", "bgh2"], extra: [
+                "canEdit": true, "canDelete": false, "editRequiresReapproval": true, "hasSubmissions": false,
+                "lastEditedByName": "Quản trị E", "lastEditedAt": NSNumber(value: decidedAt),
+            ]),
+            currentUserId: "admin",
+            fileURL: ""
+        )
+        check(WorkApprovalRules.serverDrivesActions(adminEdit) && adminEdit.editRequiresReapproval == true, "Server-driven flags decoded")
+        check(WorkApprovalRules.showsEdit(adminEdit, isOps: true) && !WorkApprovalRules.showsDelete(adminEdit, isOps: true), "Admin edits approved, delete stays locked")
+        check(WorkApprovalRules.editNeedsReapproval(adminEdit) && WorkApprovalRules.lockedMessage(adminEdit, isOps: true) == nil, "Re-approval edit")
+        check(WorkApprovalRules.lastEditedText(adminEdit) == "Đã chỉnh sửa bởi Quản trị E lúc 14:05 22/10/2026", "Last edited line (Vietnam time)")
+        check(WorkApprovalRules.lastEditedText(pending) == nil, "No last edited line")
+        check(WorkApprovalRules.reapprovalWarning == "Công việc đã được duyệt. Sau khi lưu, công việc sẽ phải gửi Ban giám hiệu duyệt lại và tạm ẩn với người được giao.", "Re-approval warning")
+        let modLocked = WorkApprovalDecoding.document(
+            documentRow(status: "approved", approved: ["bgh1"], extra: ["canEdit": false, "canDelete": false, "editRequiresReapproval": false]),
+            currentUserId: "mod",
+            fileURL: ""
+        )
+        check(!WorkApprovalRules.showsEdit(modLocked, isOps: true) && WorkApprovalRules.lockedMessage(modLocked, isOps: true) == "Đã có người duyệt · Không thể sửa hoặc xóa", "Moderator locked after approval")
+        let submittedDoc = WorkApprovalDecoding.document(
+            documentRow(status: "approved", extra: ["canEdit": false, "canDelete": false, "hasSubmissions": true, "approvalLocked": false]),
+            currentUserId: "admin",
+            fileURL: ""
+        )
+        check(!WorkApprovalRules.showsEdit(submittedDoc, isOps: true) && !WorkApprovalRules.showsDelete(submittedDoc, isOps: true), "Submissions: read-only for admin too")
+        check(WorkApprovalRules.lockedMessage(submittedDoc, isOps: true) == "Đã có người nộp kết quả — công việc chỉ xem.", "Submissions note")
+        let noNote = WorkApprovalDecoding.document(
+            documentRow(status: "approved", extra: ["canEdit": false, "canDelete": false, "editRequiresReapproval": false, "approvalLocked": false]),
+            currentUserId: "u",
+            fileURL: ""
+        )
+        check(WorkApprovalRules.lockedMessage(noNote, isOps: false) == nil, "No flag: actions just hidden")
+        check(!WorkApprovalRules.serverDrivesActions(pending), "Older server falls back")
+        check(ConvexHttpClient.humanize("Uncaught Error: WORK_HAS_SUBMISSIONS") == "Đã có người nộp kết quả nên không thể sửa công việc này.", "WORK_HAS_SUBMISSIONS wording")
+
         // Queue order: awaiting first, newest submission next.
         var older = released
         older.submittedAt = 1

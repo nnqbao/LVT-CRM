@@ -244,7 +244,7 @@ actor ConvexHttpClient {
     static let workCodes = [
         "WORK_ASSIGNEE_BGH_FORBIDDEN", "WORK_ASSIGNEE_OPS_FORBIDDEN", "WORK_ASSIGNEE_NOT_SUBORDINATE",
         "WORK_APPROVER_REQUIRED", "WORK_APPROVERS_REQUIRED", "INVALID_WORK_APPROVER", "WORK_APPROVER_FORBIDDEN",
-        "WORK_DOCUMENT_ALREADY_DECIDED", "WORK_RETURN_REASON_INVALID", "WORK_DOCUMENT_IMMUTABLE",
+        "WORK_DOCUMENT_ALREADY_DECIDED", "WORK_RETURN_REASON_INVALID", "WORK_DOCUMENT_IMMUTABLE", "WORK_HAS_SUBMISSIONS",
         "WORK_DOCUMENT_NOT_FOUND", "WORK_UPDATE_FORBIDDEN", "WORK_DEPARTMENT_FORBIDDEN", "WORK_DEPARTMENT_DUPLICATE",
         "WORK_NOT_APPROVED", "ADMIN_USE_MANAGEMENT", "MODERATOR_DEPARTMENT_SCOPE", "WORK_ASSIGNEES_REQUIRED",
         "WORK_ASSIGNMENTS_REQUIRED", "INVALID_WORK_ASSIGNEE", "INVALID_WORK_TITLE", "INVALID_WORK_CONTENT",
@@ -270,6 +270,7 @@ actor ConvexHttpClient {
         case "WORK_RETURN_REASON_INVALID": return "Vui lòng nhập lý do trả lại (tối đa 500 ký tự)."
         case "WORK_DOCUMENT_IMMUTABLE":
             return "Công việc đã có người duyệt hoặc người nộp nên không thể sửa hoặc xóa."
+        case "WORK_HAS_SUBMISSIONS": return "Đã có người nộp kết quả nên không thể sửa công việc này."
         case "WORK_DOCUMENT_NOT_FOUND": return "Không tìm thấy công việc hoặc công việc đã bị xóa."
         case "WORK_UPDATE_FORBIDDEN": return "Chỉ người tạo mới được sửa hoặc xóa công việc này."
         case "WORK_DEPARTMENT_FORBIDDEN": return "Chỉ Văn thư và Ban giám hiệu được giao việc cho cả phòng ban."

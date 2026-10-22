@@ -370,15 +370,17 @@ final class WorkViewModel {
         mimeType: String?,
         documentTypeId: String = "",
         requiresApproval: Bool = false,
+        reapproval: Bool = false,
         approverUserIds: [String] = []
     ) async throws {
         let hasFile = fileData != nil && fileName != nil && mimeType != nil
+        let needsApprovers = reapproval || approversRequired(requiresApproval: requiresApproval, assignments: assignments)
         if let message = WorkCreatePolicy.validate(
             title: title,
             assignments: assignments,
             hasFile: hasFile,
             documentTypeId: documentTypeId,
-            approversRequired: approversRequired(requiresApproval: requiresApproval, assignments: assignments),
+            approversRequired: needsApprovers,
             approverCount: approverUserIds.count
         ) {
             throw ConvexException(code: "VALIDATION", message: message)
@@ -397,7 +399,7 @@ final class WorkViewModel {
             approverUserIds: approverUserIds
         )
         try await loadSnapshot()
-        notice = approversRequired(requiresApproval: requiresApproval, assignments: assignments)
+        notice = needsApprovers
             ? "Đã lưu và gửi duyệt lại."
             : "Đã cập nhật công việc."
         notifyChange()

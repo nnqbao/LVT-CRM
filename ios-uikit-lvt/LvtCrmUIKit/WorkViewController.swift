@@ -1033,8 +1033,10 @@ private final class WorkItemCell: UITableViewCell {
         titleLabel.text = WorkHelpers.listTitle(item)
         detailLabel.text = WorkHelpers.listSubtitle(item)
         detailLabel.isHidden = detailLabel.text?.isEmpty != false
-        metaLabel.text = ["Hạn: \(item.deadline)", WorkApprovalRules.progressText(item)]
-            .compactMap { $0 }.joined(separator: " · ")
+        metaLabel.text = [
+            ["Hạn: \(item.deadline)", WorkApprovalRules.progressText(item)].compactMap { $0 }.joined(separator: " · "),
+            WorkApprovalRules.lastEditedText(item),
+        ].compactMap { $0 }.joined(separator: "\n")
         if let reason = WorkApprovalRules.returnReasonText(item) {
             reasonLabel.text = reason
             reasonLabel.textColor = .systemRed
@@ -1055,7 +1057,9 @@ private final class WorkItemCell: UITableViewCell {
         editButton.isEnabled = !busy
         deleteButton.isEnabled = !busy
         // Returned documents are fixed and resubmitted from the edit form.
-        editButton.configuration?.title = item.status == "rejected" && item.requiresApproval ? "Sửa và gửi duyệt lại" : "Sửa"
+        editButton.configuration?.title = (item.status == "rejected" && item.requiresApproval) || WorkApprovalRules.editNeedsReapproval(item)
+            ? "Sửa và gửi duyệt lại"
+            : "Sửa"
         manageRow.isHidden = !canEdit && !canDelete
         let locked = WorkApprovalRules.lockedMessage(item, isOps: isOps)
         lockedLabel.text = locked
@@ -1439,7 +1443,9 @@ private final class WorkDocumentViewController: UITableViewController, QLPreview
                 items.append(UIBarButtonItem(title: "Xóa", style: .plain, target: self, action: #selector(deleteDocument)))
             }
             if WorkApprovalRules.showsEdit(document, isOps: isOps) {
-                let editTitle = document.status == "rejected" && document.requiresApproval ? "Sửa, gửi lại" : "Sửa"
+                let editTitle = (document.status == "rejected" && document.requiresApproval) || WorkApprovalRules.editNeedsReapproval(document)
+                    ? "Sửa, gửi lại"
+                    : "Sửa"
                 items.append(UIBarButtonItem(title: editTitle, style: .done, target: self, action: #selector(editDocument)))
             }
         }
@@ -1504,6 +1510,7 @@ private final class WorkDocumentViewController: UITableViewController, QLPreview
                 "Hạn: \(document.deadline)",
                 creator,
                 approverView ? submitted : "",
+                WorkApprovalRules.lastEditedText(document) ?? "",
                 document.fileName.isEmpty ? "" : "Tệp: \(document.fileName)",
             ].filter { !$0.isEmpty }.joined(separator: "\n")
             content.image = UIImage(systemName: document.fileName.isEmpty ? "doc.text" : "doc")

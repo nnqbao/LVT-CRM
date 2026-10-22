@@ -19,6 +19,7 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
     private let approverTitle = UILabel()
     private let approverNote = UILabel()
     private let approverButton = UIButton(type: .system)
+    private let reapprovalLabel = UILabel()
     private let errorLabel = UILabel()
     private let submitButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .medium)
@@ -136,6 +137,13 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
         approverButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
         approverButton.titleLabel?.adjustsFontForContentSizeCategory = true
         approverButton.addTarget(self, action: #selector(pickApprovers), for: .touchUpInside)
+        reapprovalLabel.font = .preferredFont(forTextStyle: .footnote)
+        reapprovalLabel.adjustsFontForContentSizeCategory = true
+        reapprovalLabel.textColor = .systemOrange
+        reapprovalLabel.numberOfLines = 0
+        reapprovalLabel.text = WorkApprovalRules.reapprovalWarning
+        reapprovalLabel.isHidden = !WorkApprovalRules.editNeedsReapproval(editingWork)
+        approverBlock.addArrangedSubview(reapprovalLabel)
         approverBlock.addArrangedSubview(approverTitle)
         approverBlock.addArrangedSubview(approverNote)
         approverBlock.addArrangedSubview(approverButton)
@@ -213,12 +221,15 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
 
     /// Creator-based rule from the server: a new admin/mod document, or an edited approval document.
     private var requiresApproval: Bool {
-        if let editingWork { return editingWork.requiresApproval }
+        if let editingWork { return editingWork.requiresApproval || reapproval }
         return options?.requiresApproval ?? false
     }
 
+    /// Admin editing an approved document: the server sends it back to Ban giám hiệu.
+    private var reapproval: Bool { WorkApprovalRules.editNeedsReapproval(editingWork) }
+
     private var approvalNeeded: Bool {
-        viewModel.approversRequired(requiresApproval: requiresApproval, assignments: assignments)
+        reapproval || viewModel.approversRequired(requiresApproval: requiresApproval, assignments: assignments)
     }
 
     private func refreshApprovers() {
@@ -551,7 +562,11 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
     @objc private func submit() {
         guard !isBusy else { return }
         if editingWork != nil {
-            let alert = UIAlertController(title: "Bạn có chắc chắn Lưu không?", message: nil, preferredStyle: .alert)
+            let alert = UIAlertController(
+                title: "Bạn có chắc chắn Lưu không?",
+                message: reapproval ? WorkApprovalRules.reapprovalWarning : nil,
+                preferredStyle: .alert
+            )
             alert.addAction(UIAlertAction(title: "Hủy", style: .cancel))
             alert.addAction(UIAlertAction(title: "Lưu", style: .default) { [weak self] _ in
                 self?.persist()
@@ -582,6 +597,7 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
         spinner.startAnimating()
         let editingDocument = editingWork
         let needsApproval = requiresApproval
+        let needsReapproval = reapproval
         let approvers = requiresApproval ? approverIds : []
         Task {
             do {
@@ -595,6 +611,7 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
                         mimeType: fileMime.isEmpty ? nil : fileMime,
                         documentTypeId: documentTypeId,
                         requiresApproval: needsApproval,
+                        reapproval: needsReapproval,
                         approverUserIds: approvers
                     )
                 } else {
