@@ -8,6 +8,17 @@ data class AppChangelogEntry(
 object AppChangelog {
     val entries: List<AppChangelogEntry> = listOf(
         AppChangelogEntry(
+            "1.1.0",
+            listOf(
+                "Công việc do Văn thư/Quản trị tạo phải chọn Người duyệt (Ban giám hiệu) và bấm Gửi duyệt. Người nhận chỉ thấy việc sau khi đủ người duyệt.",
+                "Ban giám hiệu có mục Chờ tôi duyệt: bấm Duyệt hoặc Trả lại (bắt buộc ghi lý do). Sau lần duyệt đầu tiên công việc không sửa hoặc xóa được nữa.",
+                "Người tạo thấy trạng thái Chờ duyệt / Đã duyệt / Bị trả lại, tiến độ duyệt và lý do trả lại; sửa xong bấm Lưu và gửi duyệt lại.",
+                "Ban giám hiệu được tạo công việc cho cấp dưới ở mọi phòng ban và giao cho cả phòng ban. Thông báo Công việc chờ duyệt, đã duyệt, bị trả lại mở đúng công việc.",
+                "Mục Bán trú (mở từ Tổng quan): xem danh sách giáo viên tham gia theo kỳ; Văn thư/Quản trị thêm, sửa, xóa kỳ bán trú.",
+                "Nút ? trên các màn hình chính mở đúng phần Hướng dẫn sử dụng.",
+            ),
+        ),
+        AppChangelogEntry(
             "1.0.0",
             listOf(
                 "Mục mới Điểm danh cho Giám thị: chọn khối Lớp 6–9, mở lớp, tick \"Vắng\" rồi bấm Lưu lớp. Mặc định cả lớp có mặt; nhập bằng Excel dùng bản web.",
