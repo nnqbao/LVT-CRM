@@ -200,7 +200,7 @@ struct WorkApprovalChecks {
             ("WORK_APPROVER_REQUIRED", "Công việc do Văn thư/Quản trị tạo cần chọn ít nhất một người duyệt thuộc Ban giám hiệu."),
             ("WORK_RETURN_REASON_INVALID", "Vui lòng nhập lý do trả lại (tối đa 500 ký tự)."),
             ("WORK_ASSIGNEE_BGH_FORBIDDEN", "Văn thư không thể giao công việc cho Ban giám hiệu."),
-            ("WORK_ASSIGNEE_OPS_FORBIDDEN", "Chỉ được giao công việc cho Quản trị viên/Văn thư khác cùng phòng ban."),
+            ("WORK_ASSIGNEE_OPS_FORBIDDEN", "Chỉ giao việc cho tài khoản quản trị cùng phòng ban."),
             ("MODERATOR_DEPARTMENT_SCOPE", "Moderator chỉ được thao tác trong phòng ban được gán."),
             ("WORK_DOCUMENT_ALREADY_DECIDED", "Công việc này đã được duyệt hoặc trả lại, không thể đổi quyết định."),
             ("WORK_APPROVER_FORBIDDEN", "Bạn không nằm trong danh sách duyệt công việc này."),

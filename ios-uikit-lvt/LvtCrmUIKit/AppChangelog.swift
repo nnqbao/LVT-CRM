@@ -8,7 +8,7 @@ struct AppChangelogEntry: Equatable {
 enum AppChangelog {
     static let entries: [AppChangelogEntry] = [
         AppChangelogEntry(
-            version: "2.1.0",
+            version: "3.0.0",
             highlights: [
                 "Công việc do Văn thư/Quản trị giao cho người khác cần Ban giám hiệu duyệt: chọn người duyệt rồi bấm “Gửi duyệt”. Người tạo thấy Chờ duyệt x/y, Đã duyệt hoặc Bị trả lại kèm lý do, sửa rồi “Lưu và gửi duyệt lại”.",
                 "Ban giám hiệu có mục “Chờ tôi duyệt”: Duyệt (có xác nhận) hoặc Trả lại kèm lý do. Sau lượt duyệt đầu tiên, công việc không còn sửa/xóa được (trừ khi máy chủ cho phép quản trị sửa và gửi duyệt lại).",

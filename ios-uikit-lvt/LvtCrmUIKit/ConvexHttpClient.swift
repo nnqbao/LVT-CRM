@@ -256,7 +256,7 @@ actor ConvexHttpClient {
         switch code {
         case "WORK_ASSIGNEE_BGH_FORBIDDEN": return "Văn thư không thể giao công việc cho Ban giám hiệu."
         case "WORK_ASSIGNEE_OPS_FORBIDDEN":
-            return "Chỉ được giao công việc cho Quản trị viên/Văn thư khác cùng phòng ban."
+            return "Chỉ giao việc cho tài khoản quản trị cùng phòng ban."
         case "WORK_ASSIGNEE_NOT_SUBORDINATE":
             return "Chỉ được giao cho người có cấp thấp hơn bạn. Tổ trưởng/tổ phó chỉ giao trong phòng ban của mình."
         case "WORK_APPROVER_REQUIRED":
