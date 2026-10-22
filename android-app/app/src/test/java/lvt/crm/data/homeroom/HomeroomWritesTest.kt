@@ -13,16 +13,21 @@ import org.junit.Test
 class HomeroomWritesTest {
     private val context = DetailContext("year", "class", "2026-10-07", "2026-08-01", "2027-06-01")
     private val target = AbsenceTarget("day", "student", context)
-    private fun absence(batch: Boolean = false) = HomeroomWritePayload.disposition(listOf(target), "excused", "", "Owner-approved offline fixture", batch)
+    private fun absence(next: String = "unexcused") = HomeroomWritePayload.disposition(target, next)
 
-    @Test fun `offline payload validation and deduplication limits`() {
-        val hundred = (1..100).map { target.copy(id = "day$it") }
-        assertEquals(100, HomeroomWritePayload.disposition(hundred + hundred, "pending", "", "", true).targets.size)
-        assertTrue(runCatching { HomeroomWritePayload.disposition(hundred + target, "pending", "", "", true) }.isFailure)
-        for (next in listOf("none", "exempt", "present")) assertTrue(runCatching { HomeroomWritePayload.disposition(listOf(target), next, "reason", "", false) }.isFailure)
-        assertTrue(runCatching { HomeroomWritePayload.disposition(listOf(target), "excused", "", "", false) }.isFailure)
-        assertTrue(runCatching { HomeroomWritePayload.disposition(listOf(target), "pending", "", "x".repeat(501), false) }.isFailure)
-        assertTrue(runCatching { HomeroomWritePayload.disposition(listOf(target, target.copy(studentId = "other")), "pending", "", "", true) }.isFailure)
+    @Test fun `offline payload validation reason optional and only excused or unexcused`() {
+        for (next in listOf("none", "exempt", "present", "pending")) assertTrue(next, runCatching { HomeroomWritePayload.disposition(target, next, "reason", "") }.isFailure)
+        // Reason/note are optional since the Điểm danh redesign: a bare toggle is a valid write.
+        for (next in listOf("excused", "unexcused")) {
+            val write = HomeroomWritePayload.disposition(target, next)
+            assertEquals("studentAttendance:setDisposition", write.path)
+            assertEquals(setOf("attendanceDayId", "nextDisposition"), write.args.keys().asSequence().toSet())
+            assertEquals(next, write.args.getString("nextDisposition"))
+        }
+        val kept = HomeroomWritePayload.disposition(target, "unexcused", " leave ", " Có giấy ")
+        assertEquals("leave", kept.args.getString("reasonCode")); assertEquals("Có giấy", kept.args.getString("note"))
+        assertTrue(runCatching { HomeroomWritePayload.disposition(target, "excused", "", "x".repeat(501)) }.isFailure)
+        assertTrue(runCatching { HomeroomWritePayload.disposition(target.copy(id = ""), "excused") }.isFailure)
         for (phone in listOf("12345", "123456789012345678901", "abcd12")) assertTrue(runCatching { HomeroomWritePayload.studentPhone(context, "student", phone) }.isFailure)
         assertEquals("", HomeroomWritePayload.studentPhone(context, "student", " ").args.getString("studentPhone"))
         val guardian = HomeroomWritePayload.guardian(context, "student", "guardian", "mother", "  Nguyễn  Thị  A ", "+84 (123)", true, " ghi chú ")
@@ -89,16 +94,21 @@ class HomeroomWritesTest {
         assertEquals(1, fake.writes.size)
     }
 
-    @Test fun `offline exact single batch phone guardian remove acknowledgments and refresh`() = runTest {
-        for (write in listOf(absence(), absence(true), HomeroomWritePayload.studentPhone(context, "student", "0123456"), HomeroomWritePayload.guardian(context, "student", null, "mother", "Name", "", false, ""), HomeroomWritePayload.remove(context, "student", "g0"))) {
+    @Test fun `offline exact disposition phone guardian remove acknowledgments and refresh`() = runTest {
+        for (write in listOf(absence(), absence("excused"), HomeroomWritePayload.studentPhone(context, "student", "0123456"), HomeroomWritePayload.guardian(context, "student", null, "mother", "Name", "", false, ""), HomeroomWritePayload.remove(context, "student", "g0"))) {
             val fake = OfflineWriteFixture(context).apply { guardianCount = 1 }
             var cleared = false
             val receipt = fake.repository().submit(write, { true }) { cleared = true }
             assertFalse(receipt.refreshFailed); assertTrue(cleared); assertEquals(1, fake.writes.size)
             assertEquals(write.path, fake.writes.single().first)
             assertEquals(write.args.toString(), fake.writes.single().second.toString())
-            assertTrue(fake.reads.contains("homeroomReports:overview")); assertTrue(fake.reads.contains("homeroomReports:pendingAbsences")); assertTrue(fake.reads.contains("studentAttendance:getStudentHistory"))
-            if (write.path.endsWith("Many")) assertTrue(receipt.status.contains("1/1"))
+            assertFalse(fake.reads.contains("homeroomReports:pendingAbsences"))
+            if (write.targets.isEmpty()) {
+                assertTrue(fake.reads.contains("homeroomReports:overview")); assertTrue(fake.reads.contains("studentAttendance:getStudentHistory"))
+            } else {
+                // Inline toggle: only the class day is read back, and it must show the new status.
+                assertEquals("studentAttendance:listDailyClass", fake.reads.last())
+            }
         }
     }
 
@@ -109,7 +119,7 @@ class HomeroomWritesTest {
     }
 
     @Test fun `offline malformed acknowledgments never fake success preserve request`() = runTest {
-        for (write in listOf(absence(), absence(true), HomeroomWritePayload.studentPhone(context, "student", "0123456"), HomeroomWritePayload.guardian(context, "student", null, "mother", "Name", "", false, ""))) {
+        for (write in listOf(absence(), absence("excused"), HomeroomWritePayload.studentPhone(context, "student", "0123456"), HomeroomWritePayload.guardian(context, "student", null, "mother", "Name", "", false, ""))) {
             val fake = OfflineWriteFixture(context).apply { malformedAck = true }
             val before = write.args.toString()
             assertTrue(runCatching { fake.repository().submit(write, { true }) }.exceptionOrNull() is WriteUncertain)
@@ -153,31 +163,25 @@ class HomeroomWritesTest {
         assertFalse(isHomeroomWriteDenied(IllegalStateException("OFFLINE_NETWORK_ERROR")))
     }
 
-    @Test fun `offline hundred unique targets use one atomic batch rpc no per-row writes`() = runTest {
-        val fake = OfflineWriteFixture(context).apply { expandedDays = 100 }
-        val targets = (1..100).map { target.copy(id = "day$it") }
-        val write = HomeroomWritePayload.disposition(targets + targets, "excused", "reason", "", true)
-        val receipt = fake.repository().submit(write, { true })
-        assertFalse(receipt.refreshFailed)
+    @Test fun `offline toggle read-back mismatch is reported as unverified never resent`() = runTest {
+        val fake = OfflineWriteFixture(context).apply { staleReadBack = true }
+        val receipt = fake.repository().submit(absence(), { true })
+        assertTrue(receipt.refreshFailed)
         assertEquals(1, fake.writes.size)
-        assertEquals("studentAttendance:setDispositionMany", fake.writes.single().first)
-        assertEquals(100, fake.writes.single().second.getJSONArray("attendanceDayIds").length())
-        assertTrue(receipt.status.contains("100/100"))
-        write.args.put("attendanceDayIds", JSONArray().put("outside-context"))
-        assertTrue(runCatching { fake.repository().submit(write, { true }) }.isFailure)
-        assertEquals(1, fake.writes.size)
+        assertEquals("studentAttendance:setDisposition", fake.writes.single().first)
     }
 
-    @Test fun `offline strict typed acknowledgments reject coercion and wrong counts`() {
+    @Test fun `offline strict typed acknowledgments reject coercion and wrong status`() {
         val repo = OfflineWriteFixture(context).repository()
-        for (bad in listOf(JSONObject(), JSONObject().put("updated", true), JSONObject().put("updated", "1"), JSONObject().put("updated", 1.5), JSONObject().put("updated", -1), JSONObject().put("updated", 2))) assertTrue(runCatching { repo.validateAck(absence(true), bad) }.isFailure)
-        for (bad in listOf(JSONObject().put("attendanceDayId", "other").put("effectiveStatus", "absent_excused").put("unchanged", false), JSONObject().put("attendanceDayId", "day").put("effectiveStatus", "absent_excused").put("unchanged", "false"))) assertTrue(runCatching { repo.validateAck(absence(), bad) }.isFailure)
+        repo.validateAck(absence(), JSONObject().put("attendanceDayId", "day").put("effectiveStatus", "absent_unexcused").put("unchanged", false))
+        for (bad in listOf(JSONObject(), JSONObject().put("attendanceDayId", "other").put("effectiveStatus", "absent_unexcused").put("unchanged", false), JSONObject().put("attendanceDayId", "day").put("effectiveStatus", "absent_unexcused").put("unchanged", "false"), JSONObject().put("attendanceDayId", "day").put("effectiveStatus", "absent_excused").put("unchanged", false), JSONObject().put("attendanceDayId", "day").put("effectiveStatus", "absent_pending").put("unchanged", false))) assertTrue(runCatching { repo.validateAck(absence(), bad) }.isFailure)
     }
 }
 
 private class OfflineWriteFixture(private val context: DetailContext) {
     var denied = false; var fault = ""; var guardianCount = 0; var malformedAck = false; var postReadFailure = false
-    var expandedDays = 0
+    var staleReadBack = false
+    private var disposition = "pending"
     val writes = mutableListOf<Pair<String, JSONObject>>()
     val reads = mutableListOf<String>()
     fun repository() = HomeroomWriteRepository(::query, ::mutation)
@@ -188,10 +192,9 @@ private class OfflineWriteFixture(private val context: DetailContext) {
         return when (path) {
             "homeroomClasses:getScoped" -> JSONObject("""{"class":{"_id":"${if (fault == "class") "wrong" else "class"}","schoolYearId":"${if (fault == "year") "wrong" else "year"}","code":"6A","name":"Offline fixture class","status":"${if (fault == "archived") "archived" else "active"}"},"schoolYear":null,"assignments":[],"currentTeacherName":"","rosterCount":1,"permissions":{"canManage":false,"canImportAttendance":false,"canCorrect":${!denied},"canEditContacts":${!denied}}}""")
             "students:listByClass" -> JSONObject("""{"rows":[],"showContacts":false}""")
-            "studentAttendance:listDailyClass" -> JSONObject("""{"date":"${if (fault == "date") "2026-10-06" else context.date}","rows":[{"enrollment":{"_id":"e"},"student":{"_id":"${if (fault == "student") "other" else "student"}","studentCode":"S01","fullName":"Offline fixture"},"day":{"_id":"${if (fault == "missing") "wrong" else "day"}","rawObservation":"${if (fault in listOf("present","late","unknown")) fault else "absent"}","disposition":"pending","effectiveStatus":"absent_pending"}}],"published":true,"archived":false,"canCorrect":${!denied},"schoolDay":{"isSchoolDay":true,"kind":"school_day","outsideYear":false}}""").also { result -> if (expandedDays > 0) { val row = result.getJSONArray("rows").getJSONObject(0); result.put("rows", JSONArray((1..expandedDays).map { number -> JSONObject(row.toString()).also { it.getJSONObject("day").put("_id", "day$number") } })) } }
+            "studentAttendance:listDailyClass" -> JSONObject("""{"date":"${if (fault == "date") "2026-10-06" else context.date}","rows":[{"enrollment":{"_id":"e"},"student":{"_id":"${if (fault == "student") "other" else "student"}","studentCode":"S01","fullName":"Offline fixture"},"day":{"_id":"${if (fault == "missing") "wrong" else "day"}","rawObservation":"${if (fault in listOf("present","late","unknown")) fault else "absent"}","disposition":"$disposition","effectiveStatus":"${mapOf("pending" to "absent_pending", "excused" to "absent_excused", "unexcused" to "absent_unexcused")[disposition]}"}}],"published":true,"archived":false,"canCorrect":${!denied},"schoolDay":{"isSchoolDay":true,"kind":"school_day","outsideYear":false}}""")
             "students:getScoped" -> profile()
             "studentAttendance:getStudentHistory" -> JSONObject("""{"days":[],"corrections":[]}""")
-            "homeroomReports:pendingAbsences" -> JSONObject("""{"total":0,"truncated":false,"rows":[]}""")
             "homeroomReports:overview" -> JSONObject("""{"date":"${context.date}","today":"${context.date}","mode":"teacher","schoolYear":{"_id":"year","name":"Offline fixture year","startDate":"2026-08-01","endDate":"2027-06-01","active":true},"schoolDay":{"isSchoolDay":true,"kind":"school_day","outsideYear":false},"classes":[],"studentCount":0,"summary":{"counts":{"present":0,"late":0,"absent_excused":0,"absent_unexcused":0,"absent_pending":0,"no_data":0,"exempt":0},"attendanceRate":0,"ratedRows":0,"totalRows":0},"missingUpload":{"shouldAlert":false,"cutoffTime":"08:00","missingClassCodes":[]},"pendingTotal":0}""")
             else -> error("Unexpected offline query $path $args")
         }
@@ -200,8 +203,11 @@ private class OfflineWriteFixture(private val context: DetailContext) {
         writes += path to JSONObject(args.toString())
         if (malformedAck) return JSONObject().put("unexpected", true)
         return when (path) {
-            "studentAttendance:setDisposition" -> JSONObject().put("attendanceDayId", args.getString("attendanceDayId")).put("effectiveStatus", "absent_excused").put("unchanged", false)
-            "studentAttendance:setDispositionMany" -> JSONObject().put("updated", args.getJSONArray("attendanceDayIds").length())
+            "studentAttendance:setDisposition" -> {
+                val next = args.getString("nextDisposition")
+                if (!staleReadBack) disposition = next
+                JSONObject().put("attendanceDayId", args.getString("attendanceDayId")).put("effectiveStatus", "absent_$next").put("unchanged", false)
+            }
             "students:upsertGuardian" -> JSONObject().put("value", args.optString("guardianId", "guardian-fixture-id"))
             else -> JSONObject()
         }

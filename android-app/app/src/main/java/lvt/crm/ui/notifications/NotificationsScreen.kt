@@ -426,6 +426,7 @@ private fun kindLabel(item: NotificationItem): String = when {
     item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" -> "Trao đổi"
     SharedWeekPresentation.isWeekNotification(item.sourceType) -> "Lịch công tác chung"
     item.kind == "duty" -> "Công tác"
+    lvt.crm.push.NotificationDestination.isTodo(item.kind, item.sourceType) -> "Việc của tôi"
     item.sourceType == "completion_rejected" -> "Từ chối hoàn thành"
     item.sourceType == "approval" -> "Công văn cần duyệt"
     else -> "Công việc"

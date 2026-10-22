@@ -8,6 +8,15 @@ data class AppChangelogEntry(
 object AppChangelog {
     val entries: List<AppChangelogEntry> = listOf(
         AppChangelogEntry(
+            "1.0.0",
+            listOf(
+                "Mục mới Điểm danh cho Giám thị: chọn khối Lớp 6–9, mở lớp, tick \"Vắng\" rồi bấm Lưu lớp. Mặc định cả lớp có mặt; nhập bằng Excel dùng bản web.",
+                "Lớp chủ nhiệm: GVCN xem cả lớp, học sinh vắng ở đầu danh sách. Vắng mặc định là có phép; tick \"Vắng không phép\" khi cần, không bắt buộc ghi lý do.",
+                "Việc của tôi (trong Công việc): ghi việc riêng có hạn chót và giờ nhắc, đánh dấu xong hoặc xóa. Thông báo nhắc việc mở đúng danh sách.",
+                "Bỏ chức năng nhập file điểm danh camera và danh sách vắng chờ xử lý.",
+            ),
+        ),
+        AppChangelogEntry(
             "0.24.0",
             listOf(
                 "Lịch công tác chung xem theo tuần ngay trên app, mỗi ngày một danh sách. Giáo viên chỉ thấy lịch đã được Ban Giám hiệu duyệt.",

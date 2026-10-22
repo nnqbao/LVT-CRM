@@ -38,15 +38,33 @@ data class UserSession(
     val isOperationalManager: Boolean
         get() = role == "admin" || role == "moderator"
 
+    private val canUseApp: Boolean
+        get() = status == "active" && !mustChangePassword
+
+    /** Giám thị (`supervisor`) is no longer valid on homeroom: the server resolves it to hidden, and so do we. */
     val homeroomAccess: MenuAccess
-        get() = menuAccess["homeroom"] ?: MenuAccess.Hidden
+        get() = (menuAccess["homeroom"] ?: MenuAccess.Hidden).takeIf { it != MenuAccess.Supervisor } ?: MenuAccess.Hidden
+
+    /** Menu `attendance` (Điểm danh) only knows hidden / supervisor for ordinary users. */
+    val attendanceAccess: MenuAccess
+        get() = if (menuAccess["attendance"] == MenuAccess.Supervisor) MenuAccess.Supervisor else MenuAccess.Hidden
+
+    val workAccess: MenuAccess
+        get() = (menuAccess["work"] ?: MenuAccess.Hidden).takeIf { it != MenuAccess.Supervisor } ?: MenuAccess.Hidden
 
     val canSeeHomeroom: Boolean
-        get() = status == "active" && !mustChangePassword &&
-            (isOperationalManager || homeroomAccess != MenuAccess.Hidden)
+        get() = canUseApp && (isOperationalManager || homeroomAccess != MenuAccess.Hidden)
 
-    val isHomeroomSupervisor: Boolean
-        get() = !isOperationalManager && homeroomAccess == MenuAccess.Supervisor
+    /** Giám thị of the Điểm danh menu (never an operational manager; those see it by role). */
+    val isAttendanceSupervisor: Boolean
+        get() = !isOperationalManager && attendanceAccess == MenuAccess.Supervisor
+
+    val canSeeAttendance: Boolean
+        get() = canUseApp && (isOperationalManager || isAttendanceSupervisor)
+
+    /** Work documents/tasks. "Việc của tôi" stays available to every active account regardless. */
+    val canSeeWork: Boolean
+        get() = canUseApp && (isOperationalManager || workAccess != MenuAccess.Hidden)
 }
 
 internal fun decodeUserSession(result: JSONObject): UserSession? {

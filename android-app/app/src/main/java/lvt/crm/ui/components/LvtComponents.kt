@@ -29,6 +29,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +66,12 @@ fun SchoolLogo(
     }
 }
 
+/**
+ * Section tabs of a hub (e.g. Công việc | Việc của tôi). Top-level [LvtScreen]s (no back arrow) render
+ * them right under their app bar; detail screens with a navigation icon do not.
+ */
+val LocalScreenTabs = compositionLocalOf<(@Composable () -> Unit)?> { null }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LvtScreen(
@@ -76,6 +84,7 @@ fun LvtScreen(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val accountHeader = if (showAccountHeader) LocalAccountHeader.current else null
+    val screenTabs = LocalScreenTabs.current
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text(title) },
@@ -103,15 +112,18 @@ fun LvtScreen(
                 titleContentColor = MaterialTheme.colorScheme.onSurface,
             ),
         )
-        if (onRefresh != null) {
-            PullToRefreshBox(
-                isRefreshing = refreshing,
-                onRefresh = onRefresh,
-                modifier = Modifier.fillMaxSize(),
-                content = content,
-            )
-        } else {
-            Box(modifier = Modifier.fillMaxSize(), content = content)
+        if (navigationIcon == null) screenTabs?.invoke()
+        CompositionLocalProvider(LocalScreenTabs provides null) {
+            if (onRefresh != null) {
+                PullToRefreshBox(
+                    isRefreshing = refreshing,
+                    onRefresh = onRefresh,
+                    modifier = Modifier.fillMaxSize(),
+                    content = content,
+                )
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), content = content)
+            }
         }
     }
 }

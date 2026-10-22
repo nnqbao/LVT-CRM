@@ -19,8 +19,8 @@ fun localProperty(name: String): String? {
     return (project.findProperty(name) as String?)?.trim()?.takeIf { it.isNotEmpty() }
 }
 
-val lvtVersionCode = 48
-val lvtVersionName = "0.24.0"
+val lvtVersionCode = 49
+val lvtVersionName = "1.0.0"
 
 android {
     namespace = "lvt.crm"

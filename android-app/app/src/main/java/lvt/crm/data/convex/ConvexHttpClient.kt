@@ -104,7 +104,7 @@ class ConvexHttpClient(
 
             if (json.optString("status") == "success") {
                 if (noRetry) validateImportEnvelope(path, json, response.isSuccessful)
-                if (kind == "mutation" && path in setOf("students:updateContacts", "students:removeGuardian", "students:upsertGuardian", "studentAttendance:setDisposition", "studentAttendance:setDispositionMany")) {
+                if (kind == "mutation" && path in setOf("students:updateContacts", "students:removeGuardian", "students:upsertGuardian", "studentAttendance:setDisposition")) {
                     validateHomeroomAcknowledgment(path, json, response.isSuccessful)
                 }
                 val value = json.opt("value")
@@ -181,7 +181,7 @@ class ConvexHttpClient(
 
     companion object {
         fun validateImportEnvelope(path: String, envelope: JSONObject, successful: Boolean) {
-            val strings = setOf("attendanceImport:generateUploadUrl", "studentRosterImport:generateUploadUrl", "homeroomClasses:create", "homeroomClasses:assignUser", "homeroomClasses:transferStudent", "students:create")
+            val strings = setOf("studentRosterImport:generateUploadUrl", "homeroomClasses:create", "homeroomClasses:assignUser", "homeroomClasses:transferStudent", "students:create")
             val nulls = setOf("homeroomClasses:update", "homeroomClasses:archive", "homeroomClasses:restore", "homeroomClasses:withdrawStudent")
             val correct = when (path) {
                 in strings -> envelope.opt("value") is String
@@ -201,24 +201,23 @@ class ConvexHttpClient(
         fun extractImportCode(message: String): String {
             val management = listOf("CLASS_CODE_TAKEN", "INVALID_CLASS_CODE", "INVALID_GRADE_LEVEL", "SCHOOL_YEAR_LOCKED", "STUDENT_CODE_EXISTS", "INVALID_STUDENT_CODE", "ENROLLMENT_NOT_FOUND", "ENROLLMENT_NOT_ACTIVE", "ENROLLMENT_YEAR_MISMATCH", "DUPLICATE_ACTIVE_ENROLLMENT", "TRANSFER_BEFORE_START", "WITHDRAW_BEFORE_START", "INVALID_TRANSFER", "INVALID_REASON", "HOMEROOM_TEACHER_OVERLAP", "HOMEROOM_TEACHER_ALREADY_ASSIGNED", "ASSIGNMENT_BEFORE_START", "INVALID_ASSIGNMENT_TYPE", "INVALID_ASSIGNMENT_SCOPE", "USER_NOT_FOUND", "IMPORT_VALIDATION_FAILED", "IMPORT_UPLOAD_ALREADY_COMMITTED", "IMPORT_UPLOAD_IN_PROGRESS", "STUDENT_ENROLLED_OTHER_CLASS")
             management.firstOrNull { message.contains(it) }?.let { return it }
-            val known = listOf("ATTENDANCE_REPLACE_MODE_REQUIRED", "ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_DATE_IN_FUTURE", "ATTENDANCE_TEMPLATE_HEADER_NOT_FOUND", "ATTENDANCE_TEMPLATE_COLUMNS_MISSING", "INVALID_IMPORT_FILE", "IMPORT_FILE_TOO_LARGE", "IMPORT_FILE_EMPTY", "IMPORT_TOO_MANY_ROWS", "IMPORT_UPLOAD_EXPIRED", "IMPORT_UPLOAD_NOT_FOUND", "IMPORT_ROWS_UNRESOLVED", "INVALID_REPLACE_MODE", "SCHOOL_YEAR_NOT_FOUND", "INVALID_DATE", "SUPERVISOR_REQUIRED", "HOMEROOM_MENU_HIDDEN", "HOMEROOM_SCOPE_FORBIDDEN")
+            val known = listOf("ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_DATE_IN_FUTURE", "INVALID_IMPORT_FILE", "IMPORT_FILE_TOO_LARGE", "IMPORT_FILE_EMPTY", "IMPORT_TOO_MANY_ROWS", "IMPORT_UPLOAD_EXPIRED", "IMPORT_UPLOAD_NOT_FOUND", "SCHOOL_YEAR_NOT_FOUND", "INVALID_DATE", "SUPERVISOR_REQUIRED", "HOMEROOM_MENU_HIDDEN", "HOMEROOM_SCOPE_FORBIDDEN")
             return known.firstOrNull { message.contains(it) } ?: extractCode(message)
         }
+        /** Staged roster import (studentRosterImport). The camera attendance import is retired. */
         fun humanizeImport(message: String): String = when (extractImportCode(message)) {
-            "INVALID_IMPORT_FILE", "IMPORT_FILE_EMPTY", "IMPORT_FILE_TOO_LARGE" -> "File Excel không hợp lệ, rỗng hoặc quá 4 MiB. Kiểm tra file .xlsx camera toàn trường."
-            "ATTENDANCE_TEMPLATE_HEADER_NOT_FOUND", "ATTENDANCE_TEMPLATE_COLUMNS_MISSING" -> "Không tìm thấy mẫu/cột camera: Lớp học, Tên học sinh, Ngày sinh, Trạng thái điểm danh."
-            "IMPORT_TOO_MANY_ROWS" -> "File vượt quá 3.000 dòng; chuẩn bị file nhỏ hơn."
-            "IMPORT_UPLOAD_EXPIRED" -> "Bản đăng ký quá hạn 2 giờ; không thể công bố. File không được ứng dụng tự xóa."
-            "IMPORT_UPLOAD_NOT_FOUND" -> "Không tìm thấy bản đăng ký; không tự đăng ký/gửi lại file."
-            "IMPORT_ROWS_UNRESOLVED" -> "Không còn lớp có thể công bố; kiểm tra lại bản xem trước."
-            "ATTENDANCE_REPLACE_MODE_REQUIRED" -> "Dữ liệu ngày này đã thay đổi; kiểm tra lại bản xem trước và chọn lại chế độ trước khi xác nhận."
+            "INVALID_IMPORT_FILE", "IMPORT_FILE_EMPTY", "IMPORT_FILE_TOO_LARGE" -> "File Excel không hợp lệ, rỗng hoặc quá 2 MB. Chỉ nhận file .xlsx theo mẫu."
+            "IMPORT_TOO_MANY_ROWS" -> "File có quá nhiều dòng; chuẩn bị file nhỏ hơn."
+            "IMPORT_UPLOAD_EXPIRED" -> "File import đã hết hạn (giữ tối đa 1 giờ). Vui lòng tải lại."
+            "IMPORT_UPLOAD_NOT_FOUND" -> "Không tìm thấy file import đã tải lên; không tự gửi lại file."
             "ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_DATE_IN_FUTURE", "SCHOOL_YEAR_NOT_FOUND", "INVALID_DATE" -> "Năm/ngày học không hợp lệ hoặc ngày ở tương lai; chọn lại ngữ cảnh."
-            "SUPERVISOR_REQUIRED", "HOMEROOM_MENU_HIDDEN" -> "Chỉ Giám thị hoặc quản trị viên được nhập camera."
-            "INVALID_REPLACE_MODE" -> "Chế độ xử lý dữ liệu trùng không hợp lệ; chọn lại trong ba chế độ."
+            "SUPERVISOR_REQUIRED", "HOMEROOM_MENU_HIDDEN" -> "Bạn không có quyền thực hiện thao tác này."
             else -> humanize(message)
         }
         fun extractCode(message: String): String {
             val known = listOf(
+                "ATTENDANCE_CAMERA_IMPORT_RETIRED", "ATTENDANCE_DATE_TODAY_ONLY", "ATTENDANCE_DATE_IN_FUTURE", "ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_STUDENT_NOT_IN_CLASS", "ATTENDANCE_TOO_MANY_ABSENT", "SUPERVISOR_REQUIRED", "DISPOSITION_FORBIDDEN", "SCHOOL_YEAR_NOT_FOUND",
+                "INVALID_TODO_TITLE", "INVALID_TODO_NOTE", "INVALID_TODO_TIME", "TODO_REMIND_IN_PAST", "TODO_NOT_FOUND",
                 "INVALID_PHONE", "INVALID_NAME", "INVALID_TEXT", "INVALID_DISPOSITION_NOTE", "INVALID_DISPOSITION", "CORRECTION_REASON_REQUIRED", "GUARDIAN_LIMIT", "ATTENDANCE_DAY_NOT_FOUND", "CLASS_NOT_FOUND", "STUDENT_NOT_FOUND", "GUARDIAN_NOT_FOUND", "CLASS_ARCHIVED", "DISPOSITION_NOT_ABSENT",
                 "InvalidAccountId",
                 "InvalidSecret",
@@ -282,6 +281,24 @@ class ConvexHttpClient(
         fun humanize(message: String): String {
             val code = extractCode(message)
             return when {
+                code == "ATTENDANCE_CAMERA_IMPORT_RETIRED" -> "Nhập file điểm danh camera đã ngừng sử dụng. Giám thị điểm danh tại menu Điểm danh."
+                code == "ATTENDANCE_DATE_TODAY_ONLY" -> "Giám thị chỉ được điểm danh cho ngày hôm nay."
+                code == "ATTENDANCE_DATE_IN_FUTURE" -> "Không thể điểm danh cho ngày trong tương lai."
+                code == "ATTENDANCE_DATE_OUTSIDE_YEAR" -> "Ngày điểm danh nằm ngoài thời gian của năm học."
+                code == "ATTENDANCE_STUDENT_NOT_IN_CLASS" -> "Có học sinh không thuộc lớp này vào ngày điểm danh. Vui lòng tải lại rồi lưu lại."
+                code == "ATTENDANCE_TOO_MANY_ABSENT" -> "Số học sinh vắng vượt quá giới hạn của một lớp."
+                code == "SUPERVISOR_REQUIRED" -> "Chỉ Giám thị hoặc Admin/Mod mới được điểm danh."
+                code == "DISPOSITION_FORBIDDEN" -> "Chỉ GVCN của lớp trong ngày đó hoặc Admin/Mod mới được đánh dấu vắng không phép."
+                code == "DISPOSITION_NOT_ABSENT" -> "Chỉ đánh dấu được học sinh đang Vắng."
+                code == "INVALID_DISPOSITION" -> "Phân loại vắng không hợp lệ."
+                code == "SCHOOL_YEAR_NOT_FOUND" -> "Không tìm thấy năm học."
+                code == "CLASS_NOT_FOUND" -> "Không tìm thấy lớp."
+                code == "CLASS_ARCHIVED" -> "Lớp đã lưu trữ. Không thể điểm danh hay đánh dấu vắng."
+                code == "INVALID_TODO_TITLE" -> "Vui lòng nhập tên việc (tối đa 200 ký tự)."
+                code == "INVALID_TODO_NOTE" -> "Ghi chú tối đa 2000 ký tự."
+                code == "INVALID_TODO_TIME" -> "Thời gian không hợp lệ."
+                code == "TODO_REMIND_IN_PAST" -> "Giờ nhắc phải ở tương lai."
+                code == "TODO_NOT_FOUND" -> "Việc này không còn tồn tại."
                 code == "DUTY_WEEK_MANAGER_REQUIRED" -> "Chỉ văn thư (admin/mod) được nộp lịch tuần."
                 code == "DUTY_WEEK_REVIEWER_REQUIRED" -> "Chỉ Ban Giám hiệu được duyệt hoặc trả lại lịch tuần."
                 code == "DUTY_WEEK_ALREADY_SUBMITTED" -> "Lịch tuần này đang chờ Ban Giám hiệu duyệt."

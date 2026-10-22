@@ -18,12 +18,12 @@ import org.junit.Test
 
 class ConvexHttpClientAuthTest {
     @Test
-    fun cameraImport401NeverRefreshesOrReplays() = runBlocking {
+    fun stagedImport401NeverRefreshesOrReplays() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(401).setBody("""{"status":"error","errorMessage":"Unauthenticated"}"""))
             server.enqueue(refreshSuccess("new-access", "new-refresh"))
             val store = InMemoryCredentialStore("old-access", "old-refresh")
-            val result = runCatching { client(server, store).importCall("mutation", "attendanceImport:publish", JSONObject().put("uploadId", "offline-upload")) }
+            val result = runCatching { client(server, store).importCall("mutation", "studentRosterImport:commit", JSONObject().put("uploadId", "offline-upload")) }
             assertTrue(result.exceptionOrNull() is ConvexException)
             assertEquals(1, server.requestCount)
             assertEquals("Bearer old-access", server.takeRequest().getHeader("Authorization"))
@@ -32,22 +32,22 @@ class ConvexHttpClientAuthTest {
     }
 
     @Test
-    fun cameraImportMalformedEnvelopeNeverReplays() = runBlocking {
+    fun stagedImportMalformedEnvelopeNeverReplays() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("""{"status":"success","value":null}"""))
             val store = InMemoryCredentialStore("old-access", "old-refresh")
-            val result = runCatching { client(server, store).importCall("action", "attendanceImport:validate", JSONObject().put("uploadId", "offline-upload")) }
+            val result = runCatching { client(server, store).importCall("action", "studentRosterImport:validateUpload", JSONObject().put("uploadId", "offline-upload")) }
             assertEquals("IMPORT_UNCERTAIN", (result.exceptionOrNull() as? ConvexException)?.code)
             assertEquals(1, server.requestCount)
         }
     }
 
     @Test
-    fun cameraImportNeverFollowsRedirects() = runBlocking {
+    fun stagedImportNeverFollowsRedirects() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(307).setHeader("Location", server.url("/redirect-target")).setBody("redirect"))
             val store = InMemoryCredentialStore("old-access", "old-refresh")
-            val result = runCatching { client(server, store).importCall("mutation", "attendanceImport:registerUpload", JSONObject().put("storageId", "offline-storage")) }
+            val result = runCatching { client(server, store).importCall("mutation", "studentRosterImport:registerUpload", JSONObject().put("storageId", "offline-storage")) }
             assertTrue(result.isFailure)
             assertEquals(1, server.requestCount)
             assertEquals("/api/mutation", server.takeRequest().path)

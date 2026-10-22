@@ -23,46 +23,44 @@ class HomeroomViewModelTest {
     @Before fun setup() { Dispatchers.setMain(dispatcher) }
     @After fun teardown() { Dispatchers.resetMain() }
 
-    @Test fun `supervisor queries only published status never overview or pending`() = runTest(dispatcher) {
+    @Test fun `overview loads for the selected year and date without the pending inbox`() = runTest(dispatcher) {
         val repository = RecordingHomeroomOperations()
-        val viewModel = HomeroomViewModel(repository, supervisor = true)
+        val viewModel = HomeroomViewModel(repository)
         advanceUntilIdle()
-        assertEquals(1, repository.statusCalls)
-        assertEquals(0, repository.rosterReadCalls)
-        assertNotNull(viewModel.uiState.value.importStatus)
-        viewModel.selectPane(HomeroomPane.Pending)
+        assertEquals(1, repository.overviewCalls)
+        assertEquals("test-year", viewModel.uiState.value.overview?.schoolYear?.id)
         viewModel.selectDate("2026-02-30")
         viewModel.selectYear("not-returned-by-server")
-        assertEquals(HomeroomPane.Overview, viewModel.uiState.value.pane)
-        assertEquals(1, repository.statusCalls)
+        advanceUntilIdle()
+        assertEquals(1, repository.overviewCalls)
+        assertNull(viewModel.uiState.value.error)
     }
 
     @Test fun `empty years do not request attendance and errors remain errors`() = runTest(dispatcher) {
         val empty = RecordingHomeroomOperations(emptyYears = true)
-        val emptyModel = HomeroomViewModel(empty, supervisor = false)
+        val emptyModel = HomeroomViewModel(empty)
         advanceUntilIdle()
         assertFalse(emptyModel.uiState.value.loading)
         assertTrue(emptyModel.uiState.value.years.isEmpty())
-        assertEquals(0, empty.rosterReadCalls)
+        assertEquals(0, empty.overviewCalls)
         val forbidden = RecordingHomeroomOperations(deny = true)
-        val forbiddenModel = HomeroomViewModel(forbidden, supervisor = false)
+        val forbiddenModel = HomeroomViewModel(forbidden)
         advanceUntilIdle()
         assertNotNull(forbiddenModel.uiState.value.error)
         assertNull(forbiddenModel.uiState.value.overview)
-        assertNull(forbiddenModel.uiState.value.pending)
     }
 
     @Test fun `cancelled older request cannot overwrite newer date`() = runTest(dispatcher) {
         val repository = RecordingHomeroomOperations(blockFirst = true)
-        val viewModel = HomeroomViewModel(repository, supervisor = true)
+        val viewModel = HomeroomViewModel(repository)
         runCurrent()
         viewModel.selectDate("2026-10-06")
         runCurrent()
         assertEquals("2026-10-06", viewModel.uiState.value.date)
-        assertEquals(2, viewModel.uiState.value.importStatus?.publishedClassCount)
+        assertEquals("2026-10-06", viewModel.uiState.value.overview?.date)
         repository.release.complete(Unit)
         advanceUntilIdle()
-        assertEquals(2, viewModel.uiState.value.importStatus?.publishedClassCount)
+        assertEquals("2026-10-06", viewModel.uiState.value.overview?.date)
         assertNull(viewModel.uiState.value.error)
     }
 }
@@ -72,23 +70,16 @@ private class RecordingHomeroomOperations(
     private val deny: Boolean = false,
     private val blockFirst: Boolean = false,
 ) : HomeroomOperations {
-    var statusCalls = 0
-    var rosterReadCalls = 0
+    var overviewCalls = 0
     val release = CompletableDeferred<Unit>()
     override suspend fun listSchoolYears(): List<SchoolYear> = if (emptyYears) emptyList() else
         listOf(SchoolYear("test-year", "Test year", "2026-08-01", "2027-06-01", true))
     override suspend fun overview(schoolYearId: String, date: String): HomeroomOverview {
-        rosterReadCalls++
+        val call = ++overviewCalls
         if (deny) error("HOMEROOM_SCOPE_FORBIDDEN")
-        error("Unexpected overview query")
-    }
-    override suspend fun pendingAbsences(schoolYearId: String): PendingAbsences {
-        rosterReadCalls++
-        error("Unexpected pending query")
-    }
-    override suspend fun importStatus(schoolYearId: String, date: String): ImportStatus {
-        val call = ++statusCalls
         if (blockFirst && call == 1) withContext(NonCancellable) { release.await() }
-        return ImportStatus(if (blockFirst) call else 0, emptyList())
+        return decodeOverview(org.json.JSONObject("""{"date":"$date","today":"$date","mode":"teacher",
+            "schoolYear":{"_id":"$schoolYearId","name":"Test year"},"classes":[],"schoolDay":{},"missingUpload":{},
+            "summary":{"counts":{"present":0,"late":0,"absent_excused":0,"absent_unexcused":0,"no_data":0,"absent_pending":0,"exempt":0}}}"""))
     }
 }
