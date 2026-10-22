@@ -14,6 +14,7 @@ import {
   isEditedDuty,
   scheduleRange,
   sharedScheduleFilename,
+  weekPeriodHeading,
 } from '../src/duties/sharedDutySchedule.js';
 import { dutiesPathname, parseDutyPath } from '../src/duties/dutyRoutes.js';
 import { buildSharedDutySchedulePdf, SHARED_SCHEDULE_PDF_FONT } from '../src/duties/sharedDutySchedulePdf.js';
@@ -78,23 +79,26 @@ test('đường dẫn Lịch công tác có tab chung và trang tạo/sửa', ()
   assert.equal(parseDutyPath('/cong-tac').view, 'personal');
 });
 
-test('format lịch chung khớp file Word mẫu tuần 07/9–12/9', () => {
+test('format lịch chung theo mẫu Word, ngày luôn dd/MM/yyyy (tuần 07/09–12/09)', async () => {
   assert.equal(formatDutyClock('07:00'), '7g00');
   assert.equal(formatDutyClock('16:45'), '16g45');
   assert.equal(formatDutyClock('21:00'), '21g00');
-  assert.equal(formatDayCell('2026-09-07'), 'Thứ Hai 07/9');
-  assert.equal(formatVnDate('2026-09-07'), '07/9/2026');
+  assert.equal(formatDayCell('2026-09-07'), 'Thứ Hai 07/09');
+  assert.equal(formatVnDate('2026-09-07'), '07/09/2026');
   assert.equal(formatTimeCell({ startDate: '2026-09-07', endDate: '2026-09-07', allDay: true }), 'Cả ngày');
   assert.equal(
     formatTimeCell({ startDate: '2026-09-11', endDate: '2026-09-13', allDay: false, startTime: '08:00' }),
-    'Từ 11/9 – 13/9',
+    'Từ 11/09 – 13/09',
   );
 
   const range = scheduleRange('week', '2026-09-09');
   assert.equal(range.startIso, '2026-09-07');
   assert.equal(range.endIso, '2026-09-12');
-  assert.equal(range.title, 'LỊCH CÔNG TÁC TỪ NGÀY 07/9/2026 ĐẾN 12/9/2026');
+  assert.equal(range.title, 'LỊCH CÔNG TÁC TỪ NGÀY 07/09/2026 ĐẾN 12/09/2026');
   assert.equal(sharedScheduleFilename(range), 'LCT tu 07.9-12.9.pdf');
+  const { formatVnDateSpan } = await import('../src/duties/sharedDutySchedule.js');
+  assert.equal(formatVnDateSpan('2026-09-07', '2026-09-07'), '07/09/2026');
+  assert.equal(formatVnDateSpan('2026-09-07', '2026-09-09'), '07/09/2026 → 09/09/2026');
 
   const { rows } = buildSharedScheduleRows('week', '2026-09-09', sampleEvents);
   const monday = rows.filter((row) => row.dayIso === '2026-09-07');
@@ -110,7 +114,7 @@ test('format lịch chung khớp file Word mẫu tuần 07/9–12/9', () => {
   assert.equal(tuesday[0].time, 'Cả ngày');
 
   const friday = rows.filter((row) => row.dayIso === '2026-09-11');
-  assert.equal(friday[0].time, 'Từ 11/9 – 13/9');
+  assert.equal(friday[0].time, 'Từ 11/09 – 13/09');
 
   const saturday = rows.filter((row) => row.dayIso === '2026-09-12');
   assert.equal(saturday.length, 1);
@@ -155,7 +159,7 @@ test('PDF lịch chung nhúng font tiếng Việt và giữ tiêu đề/cột c�
   assert.match(visible, /LÊ VĂN TÁM/);
   assert.match(visible, /CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM/);
   assert.match(visible, /Độc lập – Tự do – Hạnh phúc/);
-  assert.match(visible, /LỊCH CÔNG TÁC TỪ NGÀY 07\/9\/2026 ĐẾN 12\/9\/2026/);
+  assert.match(visible, /LỊCH CÔNG TÁC TỪ NGÀY 07\/09\/2026 ĐẾN 12\/09\/2026/);
   assert.match(visible, /Ngày/);
   assert.match(visible, /Thời gian/);
   assert.match(visible, /Nội dung/);
@@ -164,7 +168,7 @@ test('PDF lịch chung nhúng font tiếng Việt và giữ tiêu đề/cột c�
   assert.match(visible, /Chào cờ đầu tuần/);
   assert.match(visible, /7g00/);
   assert.match(visible, /Thứ Bảy/);
-  assert.match(visible, /12\/9/);
+  assert.match(visible, /12\/09/);
   assert.match(visible, /Thứ Năm/);
 });
 
@@ -280,7 +284,7 @@ test('UI Lịch công tác có 2 tab, lịch cá nhân dạng lịch, trang tạ
   const tabs = readFileSync(new URL('../src/duties/DutyWorkspaceTabs.jsx', import.meta.url), 'utf8');
   const shared = readFileSync(new URL('../src/duties/SharedDutyScheduleView.jsx', import.meta.url), 'utf8');
   const personal = readFileSync(new URL('../src/reports/DutyReportsView.jsx', import.meta.url), 'utf8');
-  assert.match(main, /\['duties', 'Lịch công tác'\]/);
+  assert.match(readFileSync(new URL('../src/navigationRoutes.js', import.meta.url), 'utf8'), /\['duties', 'Lịch công tác'\]/);
   assert.match(main, /chooseDutyView\('create'\)|onDutyNavigate\?\.\('create'\)|onDutyNavigate\('create'\)/);
   assert.match(main, /SharedDutyScheduleView/);
   assert.match(main, /DutyReportsView/);
@@ -341,4 +345,75 @@ test('native Lịch CT mở hub trên tab, PDF qua cùng gateway, deep link vào
   assert.match(iosRoot, /shouldSelect/);
   assert.match(iosRoot, /openPersonal/);
   assert.match(iosRepo, /\/api\/duties\/shared-schedule\.pdf/);
+});
+
+test('PDF/bảng lịch từ bản làm việc chưa duyệt có dấu "BẢN NHÁP – CHƯA DUYỆT"; bản đã duyệt/công khai không đổi', async () => {
+  const { sharedScheduleIsDraft, buildSharedSchedulePayload, SHARED_SCHEDULE_DRAFT_MARK } = await import('../src/duties/sharedDutySchedule.js');
+  const { buildAuthorizedSharedSchedulePdf } = await import('../scripts/lib/shared-duty-schedule-pdf.mjs');
+  const approvedWeek = { weekStart: '2026-09-07', status: 'approved' };
+  assert.equal(SHARED_SCHEDULE_DRAFT_MARK, 'BẢN NHÁP – CHƯA DUYỆT');
+  assert.equal(sharedScheduleIsDraft({ viewer: 'public', weeks: [], events: [{ approvalChange: 'added' }] }), false);
+  assert.equal(sharedScheduleIsDraft({ viewer: 'manager', weeks: [approvedWeek], events: sampleEvents }), false);
+  assert.equal(sharedScheduleIsDraft({ viewer: 'manager', weeks: [{ ...approvedWeek, status: 'empty' }], events: [] }), false);
+  for (const status of ['draft', 'submitted', 'returned', 'approved_changed']) {
+    assert.equal(sharedScheduleIsDraft({ viewer: 'manager', weeks: [{ ...approvedWeek, status }], events: [] }), true, status);
+  }
+  assert.equal(sharedScheduleIsDraft({ viewer: 'reviewer', weeks: [approvedWeek], events: [{ approvalChange: 'changed' }] }), true);
+  assert.equal(sharedScheduleIsDraft(undefined), false);
+
+  const draftData = { viewer: 'manager', weeks: [{ ...approvedWeek, status: 'approved_changed' }], events: sampleEvents };
+  const draftPayload = buildSharedSchedulePayload('week', '2026-09-09', draftData);
+  assert.equal(draftPayload.draft, true);
+  const draftPdf = buildSharedDutySchedulePdf(draftPayload);
+  assert.equal(draftPdf.draft, true);
+  assert.ok(draftPdf.visibleTexts.includes(SHARED_SCHEDULE_DRAFT_MARK));
+  assert.match(Buffer.from(draftPdf.bytes).toString('latin1'), /\/ca 0\.12/, 'watermark is drawn with low opacity');
+
+  const publicPdf = buildSharedDutySchedulePdf(buildSharedSchedulePayload('week', '2026-09-09', { viewer: 'public', events: sampleEvents }));
+  assert.equal(publicPdf.draft, false);
+  assert.ok(!publicPdf.visibleTexts.includes(SHARED_SCHEDULE_DRAFT_MARK));
+
+  // Server gateway path builds through the same payload helper.
+  const fakeClient = (data) => ({ query: async () => data });
+  const serverDraft = await buildAuthorizedSharedSchedulePdf(fakeClient(draftData), 'week', '2026-09-09');
+  assert.equal(serverDraft.draft, true);
+  const serverApproved = await buildAuthorizedSharedSchedulePdf(
+    fakeClient({ viewer: 'manager', weeks: [approvedWeek], events: sampleEvents }),
+    'week',
+    '2026-09-09',
+  );
+  assert.equal(serverApproved.draft, false);
+
+  const table = readFileSync(new URL('../src/duties/DutyScheduleTable.jsx', import.meta.url), 'utf8');
+  assert.match(table, /lct-draft-mark/);
+  const view = readFileSync(new URL('../src/duties/SharedDutyScheduleView.jsx', import.meta.url), 'utf8');
+  assert.match(view, /buildSharedSchedulePayload\(mode, anchorIso, data\)/);
+  assert.match(view, /draft=\{built\.draft\}/);
+});
+
+test('Lịch công tác: chi tiết và xem trước import không hiện ngày ISO; nút Tải PDF có lề', () => {
+  const reports = readFileSync(new URL('../src/reports/DutyReportsView.jsx', import.meta.url), 'utf8');
+  assert.match(reports, /formatVnDateSpan\(event\.startDate, event\.endDate\)/);
+  assert.doesNotMatch(reports, /event\.startDate === event\.endDate \? event\.startDate/);
+  const bulk = readFileSync(new URL('../src/duties/DutyBulkImport.jsx', import.meta.url), 'utf8');
+  assert.match(bulk, /formatVnDate\(row\.startDate\)/);
+  const css = readFileSync(new URL('../src/duties/sharedDutySchedule.css', import.meta.url), 'utf8');
+  assert.match(css, /\.lct-shared-view \{\n  \/\*[^*]*\*\/\n  padding: 0 24px 32px;/);
+});
+
+test('lịch cá nhân: tiêu đề kỳ tuần dùng dd/MM/yyyy và cùng khoảng Thứ 2–Thứ 7 với tiêu đề bảng', () => {
+  // Week across months: Monday 28/09/2026 → Saturday 03/10/2026 (not "28/9–4/10, 2026").
+  assert.equal(weekPeriodHeading('2026-10-01'), '28/09/2026 – 03/10/2026');
+  assert.equal(weekPeriodHeading('2026-10-04'), '28/09/2026 – 03/10/2026');
+  const range = scheduleRange('week', '2026-10-01');
+  assert.equal(range.title, 'LỊCH CÔNG TÁC TỪ NGÀY 28/09/2026 ĐẾN 03/10/2026');
+  const personal = readFileSync(new URL('../src/reports/DutyReportsView.jsx', import.meta.url), 'utf8');
+  assert.match(personal, /title: weekPeriodHeading\(toSharedIsoDate\(anchor\)\)/);
+  assert.doesNotMatch(personal, /getMonth\(\) \+ 1\}, \$\{end\.getFullYear\(\)\}/);
+});
+
+test('Báo cáo trên điện thoại: thanh công cụ và thẻ Nhân sự dùng hết chiều ngang', () => {
+  const css = readFileSync(new URL('../src/reports/dutyCalendar.css', import.meta.url), 'utf8');
+  assert.match(css, /\.report-calendar-toolbar \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(css, /\.report-people-group \{ flex: 0 0 100%;/);
 });

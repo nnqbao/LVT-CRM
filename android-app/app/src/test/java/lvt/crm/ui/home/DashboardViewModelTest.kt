@@ -74,7 +74,7 @@ class DashboardViewModelTest {
                     note: String?,
                     documentTypeId: String?,
                 ) = Unit
-                override suspend fun decideApproval(documentId: String, approve: Boolean) = Unit
+                override suspend fun decideApproval(documentId: String, approve: Boolean, reason: String?) = Unit
                 override suspend fun reviewCompletion(
                     review: WorkCompletionReviewItem,
                     approve: Boolean,

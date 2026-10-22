@@ -7,11 +7,13 @@ import { useNotificationFocus, WORK_NOTIFICATION_FOCUS_TYPES } from '../notifica
 import WorkAssignmentRows from './WorkAssignmentRows';
 import WorkCreatePreview from './WorkCreatePreview';
 import { EditActionConfirm } from '../lib/ConfirmActionModal';
+import { messageFor } from '../lib/appErrorMessage';
 import { DutyListHeading } from '../duties/DutyListFilters';
 import { WorkListEmpty, WorkListSearch, WorkListTabs } from './WorkListFilters';
 import WorkListSummary from './WorkListSummary';
 import { PencilIcon, TrashIcon, WorkExpandHint, WorkIconButton } from './WorkCardIcons';
 import WorkTaskChatModal, { WorkChatButton } from './WorkTaskChatModal';
+import { WorkApprovalProgress, WorkApproverPicker, WorkDocumentDecisionModal } from './WorkApprovalParts';
 import { useNotificationChatModal } from '../lib/chatAutoOpen';
 import {
   assignmentsFromDocument,
@@ -20,13 +22,22 @@ import {
   filterWorksByTab,
   findWorkChatFocusItem,
   formatWorkDate,
+  formatWorkDateTime,
   workListTabCounts,
   workListTabOf,
   workReminderSourceType,
   workTabAllowsPersonalReminder,
   WORK_LIST_TAB_TODO,
   WORK_COMPLETION_NOTE_MAX_LENGTH,
+  isWorkDocumentUnreleased,
+  workAssignmentDisplayStatus,
   workAssignmentPayload,
+  workCreatorLabel,
+  workEditFormRequiresApproval,
+  workFormRequiresApproval,
+  workLastEditedLabel,
+  WORK_HAS_SUBMISSIONS_NOTE,
+  WORK_REAPPROVAL_WARNING,
 } from './workDisplay';
 import {
   canPreviewWorkFile,
@@ -448,8 +459,11 @@ function workStatusLabel(status) {
   return {
     pending: 'Chờ duyệt',
     approved: 'Đã duyệt',
-    rejected: 'Không duyệt',
+    rejected: 'Bị trả lại',
+    awaiting_approval: 'Chờ duyệt',
+    approval_returned: 'Bị trả lại',
     unassigned: 'Chưa giao việc',
+    unreleased: 'Chờ duyệt (chưa giao)',
     in_progress: 'Đang thực hiện',
     completed: 'Đã hoàn thành',
     completed_late: 'Hoàn thành trễ',
@@ -544,7 +558,8 @@ function SubmitterNote({ note, label = 'Nội dung từ người nộp' }) {
   );
 }
 
-function DocumentTypeField({ types, value, onChange, id = 'document-type' }) {
+function DocumentTypeField({ types, value, onChange, id = 'document-type', error = '' }) {
+  const errorId = `${id}-error`;
   return (
     <label className="duty-field work-document-type-field" htmlFor={id}>
       <span className="duty-field-label">Loại văn bản</span>
@@ -553,12 +568,15 @@ function DocumentTypeField({ types, value, onChange, id = 'document-type' }) {
         required
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
       >
         <option value="">Chọn loại văn bản</option>
         {(types || []).map((item) => (
           <option key={item._id} value={item._id}>{item.name}</option>
         ))}
       </select>
+      {error ? <span id={errorId} className="work-field-error" role="alert">{error}</span> : null}
     </label>
   );
 }
@@ -568,6 +586,7 @@ function CompletionSubmitModal({ title, onClose, onSubmit, saving, documentTypes
   const [file, setFile] = useState(null);
   const [note, setNote] = useState('');
   const [documentTypeId, setDocumentTypeId] = useState('');
+  const [documentTypeError, setDocumentTypeError] = useState('');
   const [error, setError] = useState('');
   const submit = async (event) => {
     event.preventDefault();
@@ -576,9 +595,11 @@ function CompletionSubmitModal({ title, onClose, onSubmit, saving, documentTypes
       return;
     }
     if (requireDocumentType && !documentTypeId) {
-      setError('Vui lòng chọn loại văn bản.');
+      setError('');
+      setDocumentTypeError('Vui lòng chọn loại văn bản.');
       return;
     }
+    setDocumentTypeError('');
     setError('');
     try {
       const token = await fetchAccessToken({ forceRefreshToken: false });
@@ -615,7 +636,7 @@ function CompletionSubmitModal({ title, onClose, onSubmit, saving, documentTypes
   };
   return (
     <div className="work-modal-backdrop" role="presentation">
-      <form className="work-modal" onSubmit={submit}>
+      <form className="work-modal" onSubmit={submit} noValidate>
         <button type="button" className="work-modal-close" onClick={onClose} aria-label="Đóng">×</button>
         <span className="work-kicker">Nộp công việc</span>
         <h3>{title}</h3>
@@ -625,7 +646,10 @@ function CompletionSubmitModal({ title, onClose, onSubmit, saving, documentTypes
           label="Kéo thả tài liệu/hình vào đây"
           onFile={(nextFile, fileError) => {
             setFile(nextFile);
-            if (!nextFile) setDocumentTypeId('');
+            if (!nextFile) {
+              setDocumentTypeId('');
+              setDocumentTypeError('');
+            }
             if (fileError) setError(fileError);
           }}
         />
@@ -634,7 +658,11 @@ function CompletionSubmitModal({ title, onClose, onSubmit, saving, documentTypes
             id="completion-document-type"
             types={documentTypes}
             value={documentTypeId}
-            onChange={setDocumentTypeId}
+            onChange={(next) => {
+              setDocumentTypeId(next);
+              if (next) setDocumentTypeError('');
+            }}
+            error={documentTypeError}
           />
         ) : null}
         <label className="work-field-label" htmlFor="completion-note">Nội dung gửi người giao (không bắt buộc)</label>
@@ -761,6 +789,7 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
   const [listSearch, setListSearch] = useState(emptyWorkSearch);
   const [expanded, setExpanded] = useState(null);
   const [approverIds, setApproverIds] = useState([]);
+  const [approverError, setApproverError] = useState('');
   const [feedback, setFeedback] = useState({ type: '', text: '' });
   const [saving, setSaving] = useState(false);
   const [pendingSettlement, setPendingSettlement] = useState(null);
@@ -773,6 +802,24 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
 
   const documents = listData?.documents || [];
   const pendingCompletionReviews = listData?.pendingCompletionReviews || [];
+  // Creator-based rule (server enforces): admin/mod documents go to Ban giám hiệu
+  // first, unless the only assignee is the creator (self-only work is released now).
+  // An admin edit of an approved/released document goes back to Ban giám hiệu
+  // unless the admin is the only assignee (`editRequiresReapproval`).
+  const formRequiresApproval = editingDocument
+    ? workEditFormRequiresApproval({ document: editingDocument, assignments, editorId: options?.selfUserId })
+    : workFormRequiresApproval({
+        followsApprovalFlow: options?.requiresApproval,
+        assignments,
+        creatorId: options?.selfUserId,
+      });
+  // Only admin/mod pick approvers. A non-ops creator editing a document an admin
+  // sent back to approval keeps its current approvers (the server falls back to them).
+  const canPickApprovers = options?.isOps !== false;
+  const needsApproverPick = formRequiresApproval && canPickApprovers;
+  const showReapprovalWarning = Boolean(editingDocument?.editRequiresReapproval) && formRequiresApproval;
+  // Admin/mod of other departments (`editOnly`) are selectable only while an admin edits.
+  const assignableUsers = (options?.users || []).filter((user) => editingDocument || !user.editOnly);
 
   useEffect(() => {
     if (focusTarget?.sourceType !== 'work_chat' || !focusTarget?.sourceId) return;
@@ -801,6 +848,7 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
     setTitle('');
     setAssignments([]);
     setApproverIds([]);
+    setApproverError('');
     setPreviewOpen(false);
   };
 
@@ -815,7 +863,14 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
     setFile(null);
     setDocumentTypeId(document.documentTypeId || '');
     setTitle(document.title || document.fileName || '');
-    setApproverIds([]);
+    // Keep only approvers still eligible (active Ban giám hiệu); the server re-validates.
+    const eligibleApproverIds = new Set((options?.approvers || []).map((person) => String(person._id)));
+    setApproverIds(
+      (document.approvers || [])
+        .map((person) => String(person._id))
+        .filter((id) => eligibleApproverIds.has(id)),
+    );
+    setApproverError('');
     setAssignments(assignmentsFromDocument(document));
     setPreviewOpen(false);
     setFeedback({ type: '', text: '' });
@@ -831,6 +886,31 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
     const fallback = types.find((item) => item.code === 'BIEN_BAN');
     if (fallback?._id) setDocumentTypeId(fallback._id);
   }, [documentTypeId, editingDocument, listData?.documentTypes, options?.documentTypes]);
+
+  /**
+   * Client-side checks run before any confirmation/preview (the server re-checks).
+   * A missing approver shows only the picker's field error, not a second banner.
+   */
+  const validateWorkForm = () => {
+    if (!title.trim()) {
+      setFeedback({ type: 'error', text: 'Vui lòng nhập tên công việc.' });
+      return false;
+    }
+    if (!assignments.length) {
+      setFeedback({ type: 'error', text: 'Vui lòng thêm ít nhất một phân công.' });
+      return false;
+    }
+    if (file && !documentTypeId) {
+      setFeedback({ type: 'error', text: 'Vui lòng chọn loại văn bản.' });
+      return false;
+    }
+    if (needsApproverPick && !approverIds.length) {
+      setFeedback({ type: '', text: '' });
+      setApproverError('Vui lòng chọn ít nhất một người duyệt.');
+      return false;
+    }
+    return true;
+  };
 
   const persistWork = async () => {
     if (saving) return;
@@ -856,15 +936,7 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
       }
       return;
     }
-    if (!title.trim()) {
-      return setFeedback({ type: 'error', text: 'Vui lòng nhập tên công việc.' });
-    }
-    if (!assignments.length) {
-      return setFeedback({ type: 'error', text: 'Vui lòng thêm ít nhất một phân công.' });
-    }
-    if (file && !documentTypeId) {
-      return setFeedback({ type: 'error', text: 'Vui lòng chọn loại văn bản.' });
-    }
+    if (!validateWorkForm()) return;
     setSaving(true);
     let stage = file ? 'upload' : 'save';
     let uploaded = null;
@@ -893,6 +965,7 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
         title: title.trim(),
         assignments: workAssignmentPayload(assignments),
         ...(documentTypeId ? { documentTypeId } : {}),
+        ...(needsApproverPick ? { approverUserIds: approverIds } : {}),
       };
       const fileArgs = uploaded ? {
         driveFileId: uploaded.driveFileId,
@@ -919,7 +992,11 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
       });
       setFeedback({
         type: 'success',
-        text: editingDocument ? 'Đã cập nhật công việc.' : 'Đã tạo công việc.',
+        text: formRequiresApproval
+          ? (editingDocument
+              ? 'Đã lưu và gửi Ban giám hiệu duyệt lại.'
+              : 'Đã gửi công việc cho Ban giám hiệu duyệt. Người nhận sẽ thấy sau khi được duyệt.')
+          : (editingDocument ? 'Đã cập nhật công việc.' : 'Đã tạo công việc.'),
       });
       closeEditor();
     } catch (error) {
@@ -942,7 +1019,9 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
       } else {
         setFeedback({
           type: 'error',
-          text: workUploadErrorMessage(error?.message),
+          text: /WORK_|INVALID_|MODERATOR_|ASSIGNMENT_/.test(String(error?.message || ''))
+            ? messageFor(error)
+            : workUploadErrorMessage(error?.message),
         });
       }
       console.error('Work document submission failed', {
@@ -960,12 +1039,10 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
       void persistWork();
       return;
     }
+    // Validate first so a missing field never hides behind the save confirmation.
+    if (!validateWorkForm()) return;
     if (editingDocument) {
       setEditConfirm('save');
-      return;
-    }
-    if (!assignments.length) {
-      setFeedback({ type: 'error', text: 'Vui lòng thêm ít nhất một phân công.' });
       return;
     }
     setPreviewOpen(true);
@@ -985,13 +1062,13 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
         console.error('Work deleted file cleanup deferred', cleanupError);
       });
       if (editingDocument?._id === document._id) reset();
-      setFeedback({ type: 'success', text: 'Đã xóa công văn chưa duyệt.' });
+      setFeedback({ type: 'success', text: 'Đã xóa công việc.' });
     } catch (error) {
       setFeedback({
         type: 'error',
-        text: String(error?.message || '').includes('WORK_DOCUMENT_IMMUTABLE')
-          ? 'Công văn đã được duyệt nên không thể sửa hoặc xóa.'
-          : 'Không thể xóa công văn lúc này.',
+        text: /WORK_DOCUMENT_IMMUTABLE|WORK_HAS_SUBMISSIONS/.test(String(error?.message || ''))
+          ? messageFor(error)
+          : 'Không thể xóa công việc lúc này.',
       });
     } finally {
       setSaving(false);
@@ -1084,9 +1161,27 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
             assignments={assignments}
             onChange={setAssignments}
             departments={options.departments}
-            users={options.users || []}
-            showDepartments={options.isOps !== false}
+            users={assignableUsers}
+            showDepartments={options.canAssignDepartments ?? options.isOps !== false}
           />
+          {showReapprovalWarning ? (
+            <p className="work-reapproval-warning" role="note">{WORK_REAPPROVAL_WARNING}</p>
+          ) : null}
+          {formRequiresApproval && !canPickApprovers ? (
+            <p className="work-muted">Sau khi lưu, công việc được gửi lại cho người duyệt hiện tại.</p>
+          ) : formRequiresApproval ? (
+            <WorkApproverPicker
+              approvers={options.approvers || []}
+              value={approverIds}
+              onChange={(next) => {
+                setApproverIds(next);
+                if (next.length) setApproverError('');
+              }}
+              error={approverError}
+            />
+          ) : (editingDocument ? editingDocument.approvalFlow : options?.requiresApproval) ? (
+            <p className="work-muted">Việc chỉ giao cho chính bạn không cần Ban giám hiệu duyệt và được giao ngay.</p>
+          ) : null}
           {feedback.text ? <div className={`work-feedback ${feedback.type}`}>{feedback.text}</div> : null}
           <div className="work-editor-actions duty-editor-actions">
             <button type="button" className="work-ghost-button" onClick={editingDocument ? () => setEditConfirm('cancel') : reset}>{editingDocument ? 'Hủy sửa' : 'Xóa biểu mẫu'}</button>
@@ -1096,8 +1191,8 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
                 : pendingSettlement
                   ? 'Thử hoàn tất lại'
                   : editingDocument
-                    ? 'Lưu thay đổi'
-                    : 'Tạo'}
+                    ? (formRequiresApproval ? 'Lưu và gửi duyệt lại' : 'Lưu thay đổi')
+                    : (formRequiresApproval ? 'Gửi duyệt' : 'Tạo')}
             </button>
           </div>
         </form>
@@ -1109,6 +1204,11 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
           fileName={file?.name || ''}
           assignments={assignments}
           catalogs={options}
+          approverNames={needsApproverPick
+            ? (options?.approvers || [])
+                .filter((person) => approverIds.includes(String(person._id)))
+                .map((person) => person.name)
+            : null}
           pending={saving}
           onCancel={() => setPreviewOpen(false)}
           onConfirm={() => void persistWork()}
@@ -1221,9 +1321,18 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
                       </WorkIconButton>
                     ) : null}
                   </div>
-                  {document.canEdit || document.canDelete ? null : (
-                    <p className="work-document-locked">Đã có người nộp · Không thể sửa hoặc xóa</p>
+                  {document.canEdit || document.canDelete || !(document.hasSubmissions || document.approvalLocked) ? null : (
+                    <p className="work-document-locked">
+                      {document.hasSubmissions
+                        ? WORK_HAS_SUBMISSIONS_NOTE
+                        : 'Ban giám hiệu đã duyệt · Không thể sửa hoặc xóa'}
+                    </p>
                   )}
+                  {document.approvalTotal > 0 && (document.status !== 'approved' || cardOpen) ? (
+                    <div className="duty-detail">
+                      <WorkApprovalProgress document={document} />
+                    </div>
+                  ) : null}
                   {cardOpen ? (
                     <div className="duty-detail">
                       {document.privateFile && document.fileName ? (
@@ -1246,21 +1355,26 @@ export function WorkManagement({ allowCreate = true, hideCompletionQueue = false
                             <strong>
                               {assignment.type === 'individual' ? 'Cá nhân' : assignment.departmentName}
                             </strong>
-                            <WorkStatus status={assignment.status || 'unassigned'} />
+                            <WorkStatus status={workAssignmentDisplayStatus(document, assignment)} />
                           </header>
                           <p>{assignment.content}</p>
                           <small>
                             Hạn {formatWorkDate(assignment.deadline)}
-                            {assignment.taskCount != null ? ` · ${assignment.taskCompletedCount || 0}/${assignment.taskCount} hoàn thành` : ''}
+                            {assignment.taskCount != null && !isWorkDocumentUnreleased(document)
+                              ? ` · ${assignment.taskCompletedCount || 0}/${assignment.taskCount} hoàn thành`
+                              : ''}
                           </small>
                           {assignment.members?.length ? (
                             <div className="work-member-progress">
-                              {assignment.members.map((member) => (
+                              {assignment.members.map((member) => (isWorkDocumentUnreleased(document) ? (
+                                // Not handed out yet: list who will receive it, without progress.
+                                <span key={member._id} className="work-member-chip status-unreleased">{member.name}</span>
+                              ) : (
                                 <span key={member._id} className={`work-member-chip status-${member.status}`}>
                                   {member.name} · {workStatusLabel(member.status)}
                                   {member.qualityPercent != null ? ` · ${member.qualityPercent}%` : ''}
                                 </span>
-                              ))}
+                              )))}
                             </div>
                           ) : null}
                         </section>
@@ -1362,7 +1476,8 @@ function WorkUserViewBody({ focusTarget = null, reminderFailed = false }) {
   const [completingSaving, setCompletingSaving] = useState(false);
   const [reviewing, setReviewing] = useState(null);
   const [reviewSaving, setReviewSaving] = useState(false);
-  const [decidingId, setDecidingId] = useState(null);
+  const [deciding, setDeciding] = useState(null);
+  const [decisionSaving, setDecisionSaving] = useState(false);
   const [feedback, setFeedback] = useState({ type: '', text: '' });
   const [listTab, setListTab] = useState(WORK_LIST_TAB_TODO);
   const [listSearch, setListSearch] = useState(emptyWorkSearch);
@@ -1470,23 +1585,91 @@ function WorkUserViewBody({ focusTarget = null, reminderFailed = false }) {
     }
   };
 
-  const handleDecision = async (documentId, decision) => {
-    setDecidingId(documentId);
+  const handleDecision = async ({ decision, reason }) => {
+    if (!deciding) return;
+    const documentId = deciding.document._id;
+    setDecisionSaving(true);
     setFeedback({ type: '', text: '' });
     try {
       if (decision === 'approve') {
         await approveDocument({ documentId });
-        setFeedback({ type: 'success', text: 'Bạn đã duyệt công văn.' });
+        setFeedback({ type: 'success', text: 'Bạn đã duyệt công việc.' });
       } else {
-        await rejectDocument({ documentId });
-        setFeedback({ type: 'success', text: 'Bạn đã xác nhận không duyệt công văn.' });
+        await rejectDocument({ documentId, reason });
+        setFeedback({ type: 'success', text: 'Đã trả lại công việc cho người tạo.' });
       }
-    } catch {
-      setFeedback({ type: 'error', text: 'Không thể cập nhật quyết định duyệt công văn lúc này.' });
+      setDeciding(null);
+    } catch (error) {
+      setDeciding(null);
+      setFeedback({ type: 'error', text: messageFor(error) });
     } finally {
-      setDecidingId(null);
+      setDecisionSaving(false);
     }
   };
+
+  const approvals = data.approvals || [];
+  const awaitingApprovals = approvals.filter((document) => document.awaitingMyDecision);
+  const decidedApprovals = approvals.filter((document) => !document.awaitingMyDecision);
+  const renderApprovalCard = (document) => (
+    <article className="work-user-card approval-card" key={document._id} data-focus-id={document._id}>
+      <div className="work-user-card-top">
+        <span className="work-card-eyebrow">
+          {workCreatorLabel(document)}
+          {document.submittedAt ? ` · gửi ${formatWorkDateTime(document.submittedAt)}` : ''}
+        </span>
+        <WorkStatus status={document.status} />
+      </div>
+      <h3>{document.title || document.fileName}</h3>
+      {workLastEditedLabel(document) ? (
+        <p className="work-edited-note">{workLastEditedLabel(document)}</p>
+      ) : null}
+      {document.privateFile && document.fileName ? (
+        <PrivateFileLink
+          className="work-file-link"
+          documentId={document._id}
+          fileName={document.fileName}
+          fileUrl={document.fileUrl}
+          privateFile={document.privateFile}
+        >
+          {document.fileName}
+        </PrivateFileLink>
+      ) : null}
+      <div className="work-document-assignments">
+        {(document.assignments || []).map((assignment) => (
+          <section key={assignment._id || `${assignment.departmentId}-${assignment.content}`}>
+            <header>
+              <strong>{assignment.type === 'individual' ? 'Cá nhân' : assignment.departmentName}</strong>
+            </header>
+            <p>{assignment.content}</p>
+            <small>Hạn {formatWorkDate(assignment.deadline)} · {assignment.taskCount || 0} người</small>
+          </section>
+        ))}
+      </div>
+      <WorkApprovalProgress document={document} />
+      {document.awaitingMyDecision ? (
+        <div className="work-approval-actions">
+          {document.canReject ? (
+            <button
+              type="button"
+              className="work-reject-button"
+              disabled={decisionSaving}
+              onClick={() => setDeciding({ document, mode: 'reject' })}
+            >
+              Trả lại
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="work-primary-button"
+            disabled={decisionSaving}
+            onClick={() => setDeciding({ document, mode: 'approve' })}
+          >
+            Duyệt
+          </button>
+        </div>
+      ) : null}
+    </article>
+  );
 
   /** @param {{ uploaded?: { driveFileId: string, driveChecksum?: string, cleanupToken: string, fileName: string, fileType: string, fileSize: number }, note?: string, documentTypeId?: string }} [result] */
   const handleCompleteWorkItem = async (result = {}) => {
@@ -1611,62 +1794,24 @@ function WorkUserViewBody({ focusTarget = null, reminderFailed = false }) {
         </section>
       ) : null}
 
-      {false && isApprover ? (
-        <div className="work-user-list">
-          {!data.approvals.length ? (
-            <div className="work-empty"><span>✓</span><h3>Không có công văn cần xử lý</h3><p>Khi Admin chỉ định bạn duyệt, hồ sơ sẽ xuất hiện tại đây.</p></div>
-          ) : data.approvals.map((document) => {
-            const ownApproval = document.approvers.find((person) => String(person._id) === String(data.userId));
-            const canApprove = document.status === 'pending' && ownApproval && !ownApproval.approved && !ownApproval.rejected;
-            const canReject = canApprove && document.approvalCount === 0;
-            return (
-              <article className="work-user-card approval-card" key={document._id} data-focus-id={document._id}>
-                <div className="work-user-card-top">
-                  <div>
-                    <span className="work-file-badge doc">{document.fileName.split('.').pop().toUpperCase()}</span>
-                    <span className="work-card-eyebrow">Công văn · {document.assignmentCount} phân công</span>
-                  </div>
-                  <WorkStatus status={document.status} />
-                </div>
-                <h3>{document.fileName}</h3>
-                <div className="work-card-meta"><span>Duyệt <strong>{document.approvalCount}/{document.approvalTotal}</strong></span></div>
-                <PrivateFileLink
-                  className="work-file-link"
-                  documentId={document._id}
-                  fileName={document.fileName}
-                  fileUrl={document.fileUrl}
-                  privateFile={document.privateFile}
-                >
-                  {document.fileName}
-                </PrivateFileLink>
-                <div className="work-document-assignments">
-                  {document.assignments.map((assignment) => (
-                    <section key={assignment._id || assignment.departmentId}>
-                      <header>
-                        <strong>{assignment.type === 'individual' ? 'Cá nhân' : assignment.departmentName}</strong>
-                        <WorkStatus status={assignment.status || 'unassigned'} />
-                      </header>
-                      <p>{assignment.content}</p>
-                      <small>Hạn {formatWorkDate(assignment.deadline)} · {assignment.taskCount || 0} người</small>
-                    </section>
-                  ))}
-                </div>
-                {canApprove ? (
-                  <div className="work-approval-actions">
-                    <button type="button" className="work-primary-button" disabled={decidingId === document._id} onClick={() => void handleDecision(document._id, 'approve')}>
-                      ✓ Tôi duyệt công văn này
-                    </button>
-                    {canReject ? (
-                      <button type="button" className="work-reject-button" disabled={decidingId === document._id} onClick={() => void handleDecision(document._id, 'reject')}>
-                        × Tôi không duyệt công văn này
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
-        </div>
+      {approvals.length ? (
+        <section className="duty-list-section work-approval-queue" aria-label="Công việc chờ tôi duyệt">
+          <DutyListHeading>Chờ tôi duyệt</DutyListHeading>
+          {awaitingApprovals.length ? (
+            <div className="work-user-list">{awaitingApprovals.map(renderApprovalCard)}</div>
+          ) : (
+            <div className="work-empty">
+              <h3>Không có công việc chờ bạn duyệt</h3>
+              <p>Khi Văn thư/Quản trị gửi công việc cần Ban giám hiệu duyệt, công việc sẽ xuất hiện tại đây.</p>
+            </div>
+          )}
+          {decidedApprovals.length ? (
+            <details className="work-approval-history">
+              <summary>Đã xử lý trong 30 ngày ({decidedApprovals.length})</summary>
+              <div className="work-user-list">{decidedApprovals.map(renderApprovalCard)}</div>
+            </details>
+          ) : null}
+        </section>
       ) : null}
 
       {isAdminMod || isAssigner || (!isAdminMod && !isApprover && !isAssigner) ? (
@@ -1936,8 +2081,17 @@ function WorkUserViewBody({ focusTarget = null, reminderFailed = false }) {
           saving={reviewSaving}
         />
       ) : null}
+      {deciding ? (
+        <WorkDocumentDecisionModal
+          document={deciding.document}
+          mode={deciding.mode}
+          onClose={() => setDeciding(null)}
+          onSubmit={(result) => void handleDecision(result)}
+          saving={decisionSaving}
+        />
+      ) : null}
     </section>
-      {data.canCreate ? <WorkManagement allowCreate hideCompletionQueue focusTarget={focusTarget} /> : null}
+      {data.canCreate ?<WorkManagement allowCreate hideCompletionQueue focusTarget={focusTarget} /> : null}
       {workChatDialog}
     </>
   );

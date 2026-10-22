@@ -13,6 +13,7 @@ Vận hành production:
 
 - Build + deploy web prod: `npm run build:production` (chạy trong `~/projects/LVT-CRM` là deploy luôn)
 - Chạy local production: `npm run start`
+- **Hướng dẫn sử dụng cho người dùng:** cẩm nang trong app tại `/huong-dan-su-dung.html` (nguồn `docs/guide/`, build `npm run guide:build`, ảnh minh họa dữ liệu giả `npm run guide:shots`). Mỗi trang có nút tròn **?** cạnh tên trang mở đúng mục hướng dẫn trong khung bên phải (`?embed=1`); bảng menu → mục nằm ở `GUIDE_ANCHORS` trong `src/navigationRoutes.js`. Server chỉ cho trang này được nhúng iframe cùng origin (`scripts/lib/static-frame-policy.mjs`); mọi thứ khác vẫn `X-Frame-Options: DENY`.
 - **Hướng dẫn AI session:** Cursor đọc `.cursor/rules/*.mdc`; Claude Code đọc `CLAUDE.md`; chi tiết sản phẩm/import user trong `README.md`.
 - Backup Convex prod (gồm file storage) tự động lúc 00:30 bằng `~/ops/scripts/lvt-crm-convex-backup.sh`, lưu `~/projects/LVT-CRM/.runtime/backups/convex/cloud-*.zip`, giữ 7 ngày.
 - Deploy key Convex Cloud chỉ đọc từ `~/projects/LVT-CRM/.convex-cloud-keys.csv` (untracked) qua `scripts/lvt-convex-cloud-env.sh`; không lưu trong source, bundle hay log.
@@ -31,7 +32,7 @@ Vận hành production:
   - `user` — **User**: các chức năng chính theo **nhóm quyền** do Administrator gán.
 - Administrator quản lý thông số tối cao; Administrator và Moderator cùng quản lý nghiệp vụ (công tác, công việc, …).
 - Mật khẩu băm bởi Convex Auth (Scrypt); plaintext không lưu / không ghi audit. Tài khoản tạo/reset có `mustChangePassword=true`.
-- **Đã có luồng dữ liệu:** Lịch công tác (cá nhân + lịch chung dạng mẫu Word/PDF, xác nhận tham gia, địa điểm nhập text), Công việc (tạo/giao ngay, nộp + duyệt hoàn thành), Báo cáo (Công việc; Bán trú đang ẩn), Thông báo (mốc hạn + click mở đúng mục), Thiết lập hiển thị.
+- **Đã có luồng dữ liệu:** Lịch công tác (cá nhân + lịch chung dạng mẫu Word/PDF, xác nhận tham gia, địa điểm nhập text), Công việc (tạo/giao ngay, nộp + duyệt hoàn thành), Báo cáo (Công việc · Bán trú), **Bán trú** (kỳ bán trú + giáo viên tham gia), Thông báo (mốc hạn + click mở đúng mục), Thiết lập hiển thị.
 - **Đã có nền tảng Lớp chủ nhiệm (Phase 1):** năm học, lớp, phân công GVCN/Giám thị, học sinh/phụ huynh, nhập danh sách Excel (atomic), Giám thị điểm danh trên menu Điểm danh (tick vắng hoặc nhập Excel 3 cột; nhập file camera đã ngừng), sổ điểm danh ngày, GVCN đánh dấu vắng không phép, báo cáo/xuất cơ bản. Ngày chuyển lớp / thay GVCN thuộc lớp/GVCN mới; bản ghi cũ đóng ngày trước đó (`endDate`/`effectiveTo` inclusive). Chưa chốt workbook camera thật và lịch ngày học nhà trường.
 - **Vẫn placeholder:** Đánh giá nhân sự.
 
@@ -90,19 +91,21 @@ CRUD chức vụ với **cấp bậc 1–5 sao** (vàng). Cấp bậc dùng cho 
 
 ### Công việc / công văn
 
-- Công việc **không duyệt công văn**. Tạo xong là giao ngay. User **Nộp** kèm file bằng chứng và có thể gửi thêm nội dung text (không bắt buộc) cho người giao; **người tạo** mới đánh dấu hoàn thành (kèm %) hoặc trả về (kèm lý do, có thể đổi hạn).
-- Badge menu **Công việc** = task chờ duyệt hoàn thành + việc chưa hoàn thành của tôi + việc chưa hoàn thành tôi tạo.
+- **Duyệt theo người tạo**: công việc do **Văn thư (admin/mod)** tạo phải chọn ít nhất một **Người duyệt (Ban giám hiệu)** — user 4/5★ đang hoạt động, không phải admin/mod. Công việc ở trạng thái **Chờ duyệt** cho đến khi **đủ** người duyệt bấm **Duyệt**, rồi mới giao cho người nhận (chuông + push). Người duyệt có thể **Trả lại** (bắt buộc lý do) khi chưa ai duyệt; Văn thư sửa rồi gửi duyệt lại. Lần duyệt đầu tiên khóa sửa/xóa vĩnh viễn với mọi người trừ **Quản trị viên (admin)**: admin vẫn sửa được nhưng công việc phải gửi Ban giám hiệu duyệt lại (tạm ẩn với người nhận); xóa vẫn bị khóa. Khi đã có người nộp kết quả, công việc chỉ xem với mọi người (`WORK_HAS_SUBMISSIONS`). Mỗi lần sửa ghi “Đã chỉnh sửa bởi … lúc …”. Trong lúc chờ duyệt / bị trả lại chỉ người tạo, người duyệt và admin/mod (trong phạm vi) thấy công việc.
+- Công việc do người khác tạo được giao ngay: tổ trưởng/tổ phó (và mọi user 2★ trở lên) giao cho cấp thấp hơn **cùng phòng ban**; Ban giám hiệu (4/5★) giao cho cấp thấp hơn ở **mọi phòng ban** và được giao cả phòng ban. User 1★ không tạo được công việc (dùng **Việc của tôi** cho việc cá nhân).
+- User **Nộp** kèm file bằng chứng và có thể gửi thêm nội dung text (không bắt buộc) cho người giao; **người tạo** mới đánh dấu hoàn thành (kèm %) hoặc trả về (kèm lý do, có thể đổi hạn).
+- Badge menu **Công việc** = công việc chờ tôi duyệt (Ban giám hiệu) + task chờ duyệt hoàn thành + việc chưa hoàn thành của tôi + việc chưa hoàn thành tôi tạo.
 - Danh sách **Việc của tôi** / **Việc tôi tạo**: bốn tab **Việc cần làm**, **Đang chờ duyệt**, **Quá hạn**, **Đã duyệt hoàn thành** — mỗi tab hiện số việc. Thẻ công việc dùng icon Thu gọn/Chi tiết/Sửa/Xóa; icon chat mở trao đổi (rich text) trên Convex cho mọi người đã thấy việc đó (người giao, người nhận, admin/mod, 4/5★ theo chế độ hiển thị). Người gửi có thể **thu hồi** tin của mình trong 15 phút (giữ dòng, hiện *Tin nhắn đã được thu hồi*). Tin nhắn mới (chưa thu hồi) tạo thông báo chuông cho người khác được xem thread; bấm thông báo mở đúng việc và popup Trao đổi.
-- Sửa/xóa: người tạo đến khi user nộp; admin/mod mọi lúc.
+- Sửa/xóa: chỉ khi chưa có ai duyệt; ngoài ra người tạo đến khi user nộp, admin/mod (trong phạm vi) mọi lúc.
 - File đính kèm công việc là tùy chọn. Có file thì **bắt buộc chọn Loại văn bản** (Kế hoạch / Biên bản / Báo cáo, catalog admin). File cũ chưa có loại được gắn mặc định **Biên bản**. Danh sách ưu tiên **tên công việc**.
 - Nộp hoàn thành: bắt buộc file bằng chứng **và** loại văn bản. Bằng chứng cũ chưa có loại cũng gắn **Biên bản**.
 - File xem/tải qua `/api/files/:documentId` + cache server; không trả URL Drive hay Convex Storage cho client.
 
 ### Cấu trúc menu
 
-1. **Chức năng chính**: Báo cáo (submenu: Công việc; Bán trú đang ẩn), **Trao đổi** (hub hai cột `/trao-doi`, luôn hiện với người đã đăng nhập; danh sách cuộc trò chuyện Công tác / Công việc / Nhóm), **Lịch công tác** (tab **cá nhân** = lịch tuần/tháng/quý/năm kèm cột nhân sự như Báo cáo Công việc; tab **chung** = mẫu Word/PDF; nút **Tạo công tác** / **Import Excel** cho admin/mod và tổ trưởng/tổ phó 2/3★ — tạo mở trang riêng `/cong-tac/tao`; thẻ/hàng công tác dùng icon Thu gọn/Chi tiết/Sửa/Xóa và icon chat trao đổi trên Convex — quyền chat = quyền thấy công tác trên lịch cá nhân: admin/mod, `view_all`, người tạo, người tham gia, cấp dưới cùng phòng), Công việc (nút **Tạo công việc** cùng nhóm), Lớp chủ nhiệm, Đánh giá nhân sự, Ghi nhận lỗi. **Thông báo** không nằm trên sidebar; mở từ chuông góc trên → **Xem toàn bộ**. **Hồ sơ nội bộ / Đổi mật khẩu / Quản lý thiết bị đăng nhập** mở từ avatar tròn góc trên (không còn mục Thông tin cá nhân trên sidebar). `/bao-cao/cong-tac` chuyển vào tab lịch chung.
-2. **Quản trị hệ thống**: đang ẩn (Quản lý công tác / bán trú / công việc đã gộp hoặc tạm tắt).
-3. **Thiết lập tối cao** (chỉ Administrator): Thiết lập người dùng, phòng ban, nhóm quyền, chức vụ, **loại văn bản**, **Thiết lập hiển thị**. Thiết lập địa điểm đã gỡ; địa điểm công tác nhập text tự do.
+1. **Chức năng chính**: Báo cáo (submenu: Công việc · Bán trú), **Trao đổi** (hub hai cột `/trao-doi`, luôn hiện với người đã đăng nhập; danh sách cuộc trò chuyện Công tác / Công việc / Nhóm), **Lịch công tác** (tab **cá nhân** = lịch tuần/tháng/quý/năm kèm cột nhân sự như Báo cáo Công việc; tab **chung** = mẫu Word/PDF; nút **Tạo công tác** / **Import Excel** cho admin/mod và tổ trưởng/tổ phó 2/3★ — tạo mở trang riêng `/cong-tac/tao`; thẻ/hàng công tác dùng icon Thu gọn/Chi tiết/Sửa/Xóa và icon chat trao đổi trên Convex — quyền chat = quyền thấy công tác trên lịch cá nhân: admin/mod, `view_all`, người tạo, người tham gia, cấp dưới cùng phòng), Công việc (nút **Tạo công việc** cùng nhóm), Lớp chủ nhiệm, Điểm danh, **Bán trú** (`/ban-tru`; `/quan-ly-ban-tru` cũ chuyển về đây — admin/mod có tab **Kỳ bán trú** để thêm/sửa/xóa kỳ và tab **Danh sách tham gia**; người khác chỉ xem danh sách. Không có khóa ma trận quyền riêng: menu hiện theo mức **Báo cáo**, đúng như `convex/boarding.ts` kiểm tra — `boarding:write` cho admin/mod, `report` cho người có Báo cáo khác Ẩn; `Xem` chỉ thấy phòng ban mình, `Xem tối cao` thấy toàn trường), Đánh giá nhân sự, Ghi nhận lỗi. **Thông báo** không nằm trên sidebar; mở từ chuông góc trên → **Xem toàn bộ**. **Hồ sơ nội bộ / Đổi mật khẩu / Quản lý thiết bị đăng nhập** mở từ avatar tròn góc trên (không còn mục Thông tin cá nhân trên sidebar). `/bao-cao/cong-tac` chuyển vào tab lịch chung.
+2. **Quản trị hệ thống**: đang ẩn (Quản lý công tác / công việc đã gộp vào menu chính; Quản lý bán trú nay là menu **Bán trú**).
+3. **Thiết lập tối cao** (chỉ Administrator): Thiết lập người dùng, phòng ban, nhóm quyền, chức vụ, **loại văn bản**, **Thiết lập hiển thị**. **Thiết lập năm học**, **Thư viện giao diện**. Thiết lập địa điểm đã gỡ (`/thiet-lap-dia-diem` chuyển về Thiết lập phòng ban); địa điểm công tác (form, import Excel cột `dia_diem`, BGH sửa) là text tự do tối đa 200 ký tự, không tra danh mục. Bảng `locations` và dữ liệu cũ giữ nguyên để hiển thị tên địa điểm của các công tác cũ dùng `locationIds`.
 
 ### Thông báo & Thiết lập hiển thị
 
@@ -118,7 +121,7 @@ CRUD chức vụ với **cấp bậc 1–5 sao** (vàng). Cấp bậc dùng cho 
 |------|----------|
 | `users` (+ authTables) | Hồ sơ, `role`, `departmentId`, `permissionGroupId`, `positionId`, status, `mustChangePassword`, `loginLockedAt`, `importRollbackAt` |
 | `departments` | Phòng ban (`code` unique) |
-| `locations` | Địa điểm (catalog cũ; công tác mới dùng `duties.locationText`) |
+| `locations` | Địa điểm (catalog cũ: không còn màn hình thiết lập, chỉ dùng để hiển thị tên địa điểm của công tác cũ; công tác mới dùng `duties.locationText`) |
 | `permissionGroups` | Nhóm quyền + `code` + `menuAccess[]` (`supervisor` chỉ cho `attendance`) |
 | `schoolYears`, `schoolCalendarDays`, `homeroomClasses`, `homeroomAssignments` | Năm học, lịch ngày học, lớp, phân công GVCN/Giám thị |
 | `students`, `studentGuardians`, `classEnrollments` | Học sinh, liên hệ, quá trình học theo năm |
@@ -136,7 +139,7 @@ CRUD chức vụ với **cấp bậc 1–5 sao** (vàng). Cấp bậc dùng cho 
 | `chatGroups` / `chatGroupMembers` / `groupMessages` | Nhóm do user tạo: chủ nhóm quản lý, thành viên rời, admin xem/giải tán |
 | `chatHubSync` | Con trỏ backfill một lần cho thread Công tác/Công việc đã có trước hub |
 | `personalReminders` | Nhắc nhở cá nhân theo user + công tác/công việc |
-| `boardingPeriods` | Kỳ bán trú (menu đang ẩn) |
+| `boardingPeriods` | Kỳ bán trú (menu **Bán trú**) |
 | `officeDocuments` | Công việc đã giao, tên, tệp đính kèm tùy chọn |
 | `workItems` | Phân công phòng ban / cá nhân và tiến độ nộp |
 | `personalTasks` | Đầu mục cá nhân, người thực hiện, deadline và trạng thái hoàn thành |
@@ -434,7 +437,7 @@ Chi tiết và thứ tự sandbox → prod: xem [`AGENTS.md`](AGENTS.md).
 - [ ] First admin qua internal action; password tạm đã rotate.
 - [ ] Public signup/reset/email verification disabled.
 - [ ] Vai trò chỉ `admin`|`moderator`|`user`; user cũ `manager` đã migrate.
-- [ ] Test: CRUD user/PB/địa điểm/nhóm quyền/chức vụ; gán user; menu ẩn/xem/xem tối cao; profile + đổi MK; self-disable/delete blocked; audit.
+- [ ] Test: CRUD user/PB/nhóm quyền/chức vụ; gán user; menu ẩn/xem/xem tối cao; profile + đổi MK; self-disable/delete blocked; audit.
 - [ ] Test: thông báo (chuông, đọc, click → Công tác/Công việc); thiết lập hiển thị; báo cáo 3 loại.
 - [ ] Hiểu JWT TTL vs session invalidation (beta).
 - [ ] `SITE_URL` / origins khớp domain thật.

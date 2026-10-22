@@ -23,6 +23,8 @@ import {
 import {
   buildSharedScheduleRows,
   toIsoDate as toSharedIsoDate,
+  formatVnDateSpan,
+  weekPeriodHeading,
 } from '../duties/sharedDutySchedule.js';
 import { dutyListDateWindow } from '../duties/dutyListRange.js';
 import { refreshCachedDutyCalendar } from '../duties/dutyScheduleCache.js';
@@ -90,15 +92,11 @@ function viewRange(mode, anchor) {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
   if (mode === 'week') {
-    const start = startOfWeek(anchor);
-    const end = endOfWeek(anchor);
-    const sameMonth = start.getMonth() === end.getMonth();
+    // Data window stays Mon–Sun; the heading matches the Mon–Sat duty sheet title.
     return {
-      start,
-      end,
-      title: sameMonth
-        ? `${start.getDate()}–${end.getDate()} tháng ${end.getMonth() + 1}, ${end.getFullYear()}`
-        : `${start.getDate()}/${start.getMonth() + 1}–${end.getDate()}/${end.getMonth() + 1}, ${end.getFullYear()}`,
+      start: startOfWeek(anchor),
+      end: endOfWeek(anchor),
+      title: weekPeriodHeading(toSharedIsoDate(anchor)),
     };
   }
   if (mode === 'month') {
@@ -234,7 +232,7 @@ function EventDetail({
       <dl>
         <div><dt>Nhân sự</dt><dd>{personName}</dd></div>
         <div><dt>Thời gian</dt><dd>{eventTime(event)}</dd></div>
-        <div><dt>Ngày</dt><dd>{event.startDate === event.endDate ? event.startDate : `${event.startDate} → ${event.endDate}`}</dd></div>
+        <div><dt>Ngày</dt><dd>{formatVnDateSpan(event.startDate, event.endDate)}</dd></div>
         <div><dt>Địa điểm</dt><dd>{event.locationNames?.length ? event.locationNames.join(', ') : 'Chưa chỉ định'}</dd></div>
         {event.content ? (
           <div>

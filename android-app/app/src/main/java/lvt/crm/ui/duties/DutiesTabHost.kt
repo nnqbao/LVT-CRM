@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import lvt.crm.data.chat.ChatRepository
 import lvt.crm.data.duties.DutiesRepository
 import lvt.crm.ui.components.LvtScreen
+import lvt.crm.ui.components.GuideAnchors
 
 private enum class DutiesTabPage { Hub, Personal, SharedPicker }
 
@@ -91,7 +92,7 @@ fun DutiesHubScreen(
     onOpenPersonal: () -> Unit,
     onOpenShared: () -> Unit,
 ) {
-    LvtScreen(title = "Lịch CT", showAccountHeader = true) {
+    LvtScreen(title = "Lịch CT", showAccountHeader = true, helpAnchor = GuideAnchors.DUTIES) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier

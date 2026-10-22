@@ -45,6 +45,9 @@ enum NotificationCenterService {
         if item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" {
             return "Trao đổi"
         }
+        if item.kind == "work", let label = WorkApprovalRules.notificationLabel(sourceType: item.sourceType) {
+            return label
+        }
         if !item.milestoneLabel.isEmpty {
             return item.milestoneLabel
         }

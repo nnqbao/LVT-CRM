@@ -141,9 +141,16 @@ test('việc của tôi: backend chỉ dùng người dùng hiện tại, không
   const schema = readFileSync(new URL('../convex/schema.ts', import.meta.url), 'utf8');
   assert.match(schema, /personalTodos: defineTable/);
   assert.match(schema, /by_user_active_due/);
-  const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
-  assert.match(main, /id === 'chat' \|\| id === 'work'/);
+  const routes = readFileSync(new URL('../src/navigationRoutes.js', import.meta.url), 'utf8');
+  assert.match(routes, /menuId === 'chat' \|\| menuId === 'work'/);
   const hub = readFileSync(new URL('../src/work/WorkHub.jsx', import.meta.url), 'utf8');
   assert.match(hub, /Việc của tôi/);
   assert.match(hub, /workHidden \? null/);
+});
+
+test('Việc của tôi: ô Hạn chót và Nhắc lúc thẳng hàng (trường xếp từ trên xuống)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../src/work/personalTodos.css', import.meta.url), 'utf8');
+  const block = css.slice(css.indexOf('.todo-field {'), css.indexOf('}', css.indexOf('.todo-field {')));
+  assert.match(block, /align-content: start;/);
 });

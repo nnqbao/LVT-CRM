@@ -80,6 +80,8 @@ fun LvtScreen(
     onRefresh: (() -> Unit)? = null,
     navigationIcon: @Composable (() -> Unit)? = null,
     showAccountHeader: Boolean = false,
+    /** Guide anchor (web GUIDE_ANCHORS id); shows a "?" action that opens that guide topic. */
+    helpAnchor: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -103,6 +105,9 @@ fun LvtScreen(
                     }
                 }
                 actions()
+                if (helpAnchor != null) {
+                    HelpGuideButton(helpAnchor)
+                }
                 if (accountHeader != null) {
                     AccountHeaderCluster(accountHeader)
                 }

@@ -70,6 +70,7 @@ import lvt.crm.ui.homeroom.HomeroomTone
 import lvt.crm.ui.homeroom.StatusChip
 import lvt.crm.ui.homeroom.formatDate
 import lvt.crm.ui.homeroom.toneColors
+import lvt.crm.ui.components.GuideAnchors
 
 private const val UNSAVED_PROMPT = "Lớp đang mở có thay đổi chưa lưu. Bỏ các thay đổi này?"
 
@@ -109,6 +110,7 @@ fun AttendanceScreen(
     }
     LvtScreen(
         title = "Điểm danh",
+        helpAnchor = GuideAnchors.ATTENDANCE,
         refreshing = state.refreshing,
         onRefresh = viewModel::refresh,
         showAccountHeader = onBack == null,

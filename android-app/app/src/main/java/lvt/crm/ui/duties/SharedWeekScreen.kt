@@ -63,6 +63,7 @@ import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.homeroom.HomeroomBanner
 import lvt.crm.ui.homeroom.HomeroomTone
 import lvt.crm.ui.homeroom.toneColors
+import lvt.crm.ui.components.GuideAnchors
 
 private const val RETURN_NOTE_MAX = 500
 
@@ -142,6 +143,7 @@ fun SharedWeekScreen(
     val canDecide = SharedWeekPresentation.canDecide(week, current?.canReview == true)
     LvtScreen(
         title = "Lịch công tác chung",
+        helpAnchor = GuideAnchors.DUTIES,
         refreshing = loading,
         onRefresh = { reload += 1 },
         navigationIcon = {

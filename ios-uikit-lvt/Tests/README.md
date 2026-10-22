@@ -6,7 +6,13 @@
 sh ios-uikit-lvt/Tests/run-checks.sh
 ```
 
-Compiles every `Tests/*Checks.swift` together with the actual Foundation sources (`AuthModels`, `CredentialStore`, `ConvexHttpClient`, `HomeroomRepository`, `HomeroomDetail`, `HomeroomWrites`, `HomeroomUploadSupport`, `HomeroomManagement`, `HomeroomPendingJournal`, `HomeroomPresentation`, `DutyWeekPresentation`, `SupervisorAttendance`, `PersonalTodos`) in a disposable scratch directory and runs each one; it ends with `ALL UIKIT SOURCE CHECKS PASSED` or prints the failing check. No app launch, credentials or network. The per-area commands below remain valid for running one check by hand.
+Compiles every `Tests/*Checks.swift` together with the actual Foundation sources (`AuthModels`, `CredentialStore`, `ConvexHttpClient`, `HomeroomRepository`, `HomeroomDetail`, `HomeroomWrites`, `HomeroomUploadSupport`, `HomeroomManagement`, `HomeroomPendingJournal`, `HomeroomPresentation`, `DutyWeekPresentation`, `SupervisorAttendance`, `PersonalTodos`, `ConvexConfig`, `WorkCreate`, `WorkApproval`, `HelpGuide`) in a disposable scratch directory and runs each one; it ends with `ALL UIKIT SOURCE CHECKS PASSED` or prints the failing check. No app launch, credentials or network. The per-area commands below remain valid for running one check by hand.
+
+## Công việc duyệt bởi Ban giám hiệu and "?" help (2.1.0)
+
+- `WorkApprovalChecks.swift` (adds `NotificationModels.swift` via its `// extra-sources:` first line; `run-checks.sh` compiles such per-check sources too): `documentView` approval decoding (approvers, decision times, `approvalLocked`, `requiresApproval`, `awaitingMyDecision`/`canReject`, legacy rows), Chờ duyệt x/y / Bị trả lại + lý do / Chờ duyệt (chưa giao) wording, first-approval lock (admin/mod included), return-reason validation, `work:formOptions` server flags (`requiresApproval`, `canAssignDepartments`, approvers), the văn thư self-only rule (no approver required client-side), `approverUserIds` payload, Vietnamese wording for the new error codes, bell/push routing for `approval` / `work_approved` / `work_returned`, and the `huong-dan-su-dung.html?embed=1#…` guide URLs (web `GUIDE_ANCHORS`).
+
+- `BoardingChecks.swift` (adds `Boarding.swift` via `// extra-sources:`): Báo cáo › Bán trú — strict `boarding:report` / `boarding:listAdmin` decoding (semester 1/2, consecutive school year, empty/malformed rows), "Học kỳ N · Năm học …" labels, department vs whole-school wording, visibility (Báo cáo `view`/`view_all` or admin/mod; "Kỳ bán trú" management admin/mod only), July school-year rollover and options, form validation, create/update payloads, exact endpoints and the web error wording.
 
 ## Điểm danh (Giám thị) and "Việc của tôi" (2.0.0)
 

@@ -69,7 +69,8 @@ final class AuthFlowCoordinator {
                 avatarRepository: container.avatarRepository,
                 homeroomRepository: container.homeroomRepository,
                 attendanceRepository: container.attendanceRepository,
-                personalTodoRepository: container.personalTodoRepository
+                personalTodoRepository: container.personalTodoRepository,
+                boardingRepository: container.boardingRepository
             )
             root = tabBarController
             if let pendingDestination {
