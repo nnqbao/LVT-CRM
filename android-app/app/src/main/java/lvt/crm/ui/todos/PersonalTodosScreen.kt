@@ -56,6 +56,7 @@ import lvt.crm.ui.homeroom.HomeroomChip
 import lvt.crm.ui.homeroom.HomeroomTone
 import lvt.crm.ui.homeroom.StatusChip
 import lvt.crm.ui.homeroom.toneColors
+import lvt.crm.ui.components.GuideAnchors
 
 /** "Việc của tôi": private to-dos, visible only to their owner. */
 @Composable
@@ -92,6 +93,7 @@ fun PersonalTodosScreen(viewModel: PersonalTodosViewModel) {
     }
     LvtScreen(
         title = "Việc của tôi",
+        helpAnchor = GuideAnchors.WORK,
         refreshing = state.refreshing,
         onRefresh = viewModel::refresh,
         showAccountHeader = true,

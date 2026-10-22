@@ -76,6 +76,8 @@ import lvt.crm.ui.home.PlaceholderScreen
 import lvt.crm.ui.homeroom.HomeroomScreen
 import lvt.crm.ui.homeroom.HomeroomViewModel
 import lvt.crm.ui.attendance.AttendanceScreen
+import lvt.crm.ui.boarding.BoardingScreen
+import lvt.crm.ui.boarding.BoardingViewModel
 import lvt.crm.ui.attendance.AttendanceViewModel
 import lvt.crm.ui.todos.PersonalTodosViewModel
 import lvt.crm.ui.work.WorkHubScreen
@@ -101,6 +103,7 @@ private object Routes {
     const val Homeroom = "homeroom"
     const val Attendance = "attendance"
     const val Profile = "profile"
+    const val Boarding = "boarding"
 }
 
 @Composable
@@ -142,6 +145,8 @@ fun LvtRoot(
                 canSeeHomeroom = state.session.canSeeHomeroom,
                 canSeeAttendance = state.session.canSeeAttendance,
                 canSeeWork = state.session.canSeeWork,
+                canSeeBoarding = state.session.canSeeBoarding,
+                canManageBoarding = state.session.canManageBoarding,
                 notificationDestination = notificationDestination,
                 onNotificationDestinationHandled = onNotificationDestinationHandled,
                 onSignOut = {
@@ -168,6 +173,8 @@ private fun MainShell(
     canSeeHomeroom: Boolean,
     canSeeAttendance: Boolean,
     canSeeWork: Boolean,
+    canSeeBoarding: Boolean,
+    canManageBoarding: Boolean,
     notificationDestination: NotificationDestination?,
     onNotificationDestinationHandled: () -> Unit,
     onSignOut: () -> Unit,
@@ -410,7 +417,21 @@ private fun MainShell(
                             workFilterToken += 1
                         }
                     },
+                    onOpenBoarding = if (canSeeBoarding) {
+                        { navController.navigate(Routes.Boarding) { launchSingleTop = true } }
+                    } else {
+                        null
+                    },
                 )
+            }
+            if (canSeeBoarding) {
+                composable(Routes.Boarding) {
+                    val vm: BoardingViewModel = viewModel(
+                        key = "boarding-$sessionUserId-$canManageBoarding",
+                        factory = BoardingViewModel.factory(container.boardingRepository, canManageBoarding),
+                    )
+                    BoardingScreen(viewModel = vm, onBack = { navController.popBackStack() })
+                }
             }
             composable(Routes.Notifications) {
                 NotificationsScreen(

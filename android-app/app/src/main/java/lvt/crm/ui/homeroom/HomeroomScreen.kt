@@ -38,6 +38,7 @@ import lvt.crm.data.homeroom.HomeroomClassSummary
 import lvt.crm.data.homeroom.HomeroomOverview
 import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.components.StatePanel
+import lvt.crm.ui.components.GuideAnchors
 
 /**
  * Lớp chủ nhiệm. [onOpenAttendance] (admin/mod, or a GVCN who is also Giám thị) opens the
@@ -63,6 +64,7 @@ fun HomeroomScreen(viewModel: HomeroomViewModel, canManage: Boolean = false, onO
     }
     LvtScreen(
         title = "Lớp chủ nhiệm",
+        helpAnchor = GuideAnchors.HOMEROOM,
         refreshing = state.refreshing,
         onRefresh = viewModel::refresh,
         showAccountHeader = true,

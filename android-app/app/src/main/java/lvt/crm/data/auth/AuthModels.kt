@@ -62,6 +62,21 @@ data class UserSession(
     val canSeeAttendance: Boolean
         get() = canUseApp && (isOperationalManager || isAttendanceSupervisor)
 
+    /** Báo cáo level; `supervisor` is only meaningful on homeroom, so it counts as hidden here. */
+    val reportsAccess: MenuAccess
+        get() = (menuAccess["reports"] ?: MenuAccess.Hidden).takeIf { it != MenuAccess.Supervisor } ?: MenuAccess.Hidden
+
+    /**
+     * Bán trú has no permission-matrix key: like the web menu it follows the Báo cáo level
+     * (participant list); convex/boarding.ts re-checks every call.
+     */
+    val canSeeBoarding: Boolean
+        get() = canUseApp && (isOperationalManager || reportsAccess != MenuAccess.Hidden)
+
+    /** Kỳ bán trú management (`boarding:write`) is for operational managers only. */
+    val canManageBoarding: Boolean
+        get() = canUseApp && isOperationalManager
+
     /** Work documents/tasks. "Việc của tôi" stays available to every active account regardless. */
     val canSeeWork: Boolean
         get() = canUseApp && (isOperationalManager || workAccess != MenuAccess.Hidden)
