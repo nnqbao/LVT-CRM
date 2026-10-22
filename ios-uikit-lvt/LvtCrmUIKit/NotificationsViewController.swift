@@ -278,6 +278,8 @@ final class NotificationsViewController: UITableViewController {
             ? "Mở trao đổi"
             : item.sourceType == PersonalTodos.notificationSourceType || item.kind == PersonalTodos.notificationKind
             ? "Mở Việc của tôi"
+            : WorkApprovalRules.isDocumentNotification(sourceType: item.sourceType) && item.kind != "duty"
+            ? "Mở công việc"
             : "Mở \(item.kind == "duty" ? "tab Lịch CT" : "tab Công việc")"
         cell.accessibilityTraits = .button
     }
@@ -293,9 +295,7 @@ final class NotificationsViewController: UITableViewController {
         if item.sourceType == PersonalTodos.notificationSourceType || item.kind == PersonalTodos.notificationKind { return "Nhắc việc" }
         if item.sourceType == "completion_rejected" { return "Từ chối hoàn thành" }
         if item.kind == "duty" { return "Công tác" }
-        if item.sourceType == "document" || item.sourceType == "approval" {
-            return "Công văn cần duyệt"
-        }
+        if let label = WorkApprovalRules.notificationLabel(sourceType: item.sourceType) { return label }
         return "Công việc"
     }
 

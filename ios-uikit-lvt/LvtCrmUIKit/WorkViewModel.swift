@@ -23,7 +23,8 @@ enum WorkDashboardFilter: Equatable {
 
 enum WorkListRules {
     private static let completed: Set<String> = ["completed", "completed_late"]
-    private static let pendingReview: Set<String> = ["pending_completion", "pending_approval"]
+    /// `awaiting_approval` = a document waiting for Ban giám hiệu (web PENDING_REVIEW_STATUSES).
+    private static let pendingReview: Set<String> = ["pending_completion", "pending_approval", "awaiting_approval"]
 
     static func vietnamToday(_ now: Date = Date()) -> String {
         var calendar = Calendar(identifier: .gregorian)
@@ -41,13 +42,15 @@ enum WorkListRules {
     }
 
     static func isDocumentCompleted(_ document: WorkApprovalItem) -> Bool {
-        if completed.contains(document.status) { return true }
+        if completed.contains(WorkApprovalRules.effectiveStatus(document)) { return true }
+        if WorkApprovalRules.isUnreleased(document) { return false }
         let assignmentStatuses = document.assignments.map(\.status)
         return !assignmentStatuses.isEmpty && assignmentStatuses.allSatisfy { completed.contains($0) }
     }
 
     static func isDocumentPendingReview(_ document: WorkApprovalItem) -> Bool {
-        if pendingReview.contains(document.status) { return true }
+        if pendingReview.contains(WorkApprovalRules.effectiveStatus(document)) { return true }
+        if WorkApprovalRules.isUnreleased(document) { return false }
         return document.assignments.contains { pendingReview.contains($0.status) }
     }
 
@@ -176,6 +179,9 @@ final class WorkViewModel {
     private(set) var accessLevel = 0
     private(set) var tasks: [WorkTaskItem] = []
     private(set) var approvals: [WorkApprovalItem] = []
+    /// Ban giám hiệu "Chờ tôi duyệt" (awaiting first, then decided in the last 30 days).
+    private(set) var approvalQueue: [WorkApprovalItem] = []
+    private(set) var currentUserId = ""
     private(set) var completionReviews: [WorkCompletionReviewItem] = []
     private(set) var busyTaskId: String?
     private(set) var busyApprovalId: String?
@@ -186,7 +192,7 @@ final class WorkViewModel {
     var search = ListSearchValues() { didSet { if search != oldValue { notifyChange() } } }
     var onChange: (() -> Void)?
 
-    var canApprove: Bool { false }
+    var awaitingApprovalCount: Int { approvalQueue.filter(\.awaitingMyDecision).count }
 
     var tabMine: [WorkTaskItem] {
         WorkListRules.filterTasks(tasks, tab: mineTab)
@@ -264,6 +270,19 @@ final class WorkViewModel {
         }
     }
 
+    func queueItem(focusId: String) -> WorkApprovalItem? {
+        approvalQueue.first { $0.id == focusId }
+    }
+
+    /// Approver picker requirement for the create/edit form (UX only; the server decides).
+    func approversRequired(requiresApproval: Bool, assignments: [WorkCreateAssignment]) -> Bool {
+        WorkApprovalRules.approversRequired(
+            requiresApproval: requiresApproval,
+            assignments: assignments,
+            currentUserId: currentUserId
+        )
+    }
+
     func review(focusId: String) -> WorkCompletionReviewItem? {
         completionReviews.first { $0.id == focusId || $0.workItemId == focusId }
     }
@@ -310,14 +329,18 @@ final class WorkViewModel {
         fileData: Data?,
         fileName: String?,
         mimeType: String?,
-        documentTypeId: String = ""
+        documentTypeId: String = "",
+        requiresApproval: Bool = false,
+        approverUserIds: [String] = []
     ) async throws {
         let hasFile = fileData != nil && fileName != nil && mimeType != nil
         if let message = WorkCreatePolicy.validate(
             title: title,
             assignments: assignments,
             hasFile: hasFile,
-            documentTypeId: documentTypeId
+            documentTypeId: documentTypeId,
+            approversRequired: approversRequired(requiresApproval: requiresApproval, assignments: assignments),
+            approverCount: approverUserIds.count
         ) {
             throw ConvexException(code: "VALIDATION", message: message)
         }
@@ -332,7 +355,8 @@ final class WorkViewModel {
             documentTypeId: {
                 let trimmed = documentTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
                 return trimmed.isEmpty ? nil : trimmed
-            }()
+            }(),
+            approverUserIds: approverUserIds
         )
         try await loadSnapshot()
     }
@@ -344,14 +368,20 @@ final class WorkViewModel {
         fileData: Data?,
         fileName: String?,
         mimeType: String?,
-        documentTypeId: String = ""
+        documentTypeId: String = "",
+        requiresApproval: Bool = false,
+        reapproval: Bool = false,
+        approverUserIds: [String] = []
     ) async throws {
         let hasFile = fileData != nil && fileName != nil && mimeType != nil
+        let needsApprovers = reapproval || approversRequired(requiresApproval: requiresApproval, assignments: assignments)
         if let message = WorkCreatePolicy.validate(
             title: title,
             assignments: assignments,
             hasFile: hasFile,
-            documentTypeId: documentTypeId
+            documentTypeId: documentTypeId,
+            approversRequired: needsApprovers,
+            approverCount: approverUserIds.count
         ) {
             throw ConvexException(code: "VALIDATION", message: message)
         }
@@ -365,10 +395,13 @@ final class WorkViewModel {
             title: title,
             assignments: assignments,
             evidence: evidence,
-            documentTypeId: trimmedType.isEmpty ? nil : trimmedType
+            documentTypeId: trimmedType.isEmpty ? nil : trimmedType,
+            approverUserIds: approverUserIds
         )
         try await loadSnapshot()
-        notice = "Đã cập nhật công việc."
+        notice = needsApprovers
+            ? "Đã lưu và gửi duyệt lại."
+            : "Đã cập nhật công việc."
         notifyChange()
     }
 
@@ -426,15 +459,35 @@ final class WorkViewModel {
         }
     }
 
-    func decideApproval(_ item: WorkApprovalItem, approve: Bool) {
+    /// Ban giám hiệu approval (confirmed in the UI; irreversible, locks edit/delete).
+    func approve(_ item: WorkApprovalItem) {
+        decide(item, notice: "Đã duyệt công việc.") {
+            try await self.repository.approveDocument(documentId: item.id)
+        }
+    }
+
+    /// Return to the creator with a required reason (only before anyone approved).
+    func returnDocument(_ item: WorkApprovalItem, reason: String) {
+        decide(item, notice: "Đã trả lại công việc cho người tạo.") {
+            try await self.repository.returnDocument(documentId: item.id, reason: reason)
+        }
+    }
+
+    private func decide(
+        _ item: WorkApprovalItem,
+        notice message: String,
+        operation: @escaping @MainActor () async throws -> Void
+    ) {
         guard busyApprovalId == nil else { return }
         busyApprovalId = item.id
         runMutation {
-            try await self.repository.decideApproval(documentId: item.id, approve: approve)
-            self.approvals = self.approvals.map {
+            try await operation()
+            self.notice = message
+            self.approvalQueue = self.approvalQueue.map {
                 guard $0.id == item.id else { return $0 }
                 var updated = $0
-                updated.myDecision = approve ? "approved" : "rejected"
+                updated.awaitingMyDecision = false
+                updated.canReject = false
                 return updated
             }
         } finish: {
@@ -513,6 +566,8 @@ final class WorkViewModel {
         dropResolvedLocalCompletions(snapshot.tasks)
         tasks = overlayLocalCompletions(snapshot.tasks)
         approvals = snapshot.approvals
+        approvalQueue = snapshot.approvalQueue
+        currentUserId = snapshot.currentUserId
         completionReviews = snapshot.completionReviews
         loading = false
         refreshing = false

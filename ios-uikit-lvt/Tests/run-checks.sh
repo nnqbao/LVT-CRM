@@ -8,14 +8,17 @@ app="$here/../LvtCrmUIKit"
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/lvt-uikit-checks.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 export TMPDIR="$scratch"
-sources="AuthModels CredentialStore ConvexHttpClient HomeroomRepository HomeroomDetail HomeroomWrites HomeroomUploadSupport HomeroomManagement HomeroomPendingJournal HomeroomPresentation DutyWeekPresentation SupervisorAttendance PersonalTodos"
+sources="AuthModels CredentialStore ConvexHttpClient HomeroomRepository HomeroomDetail HomeroomWrites HomeroomUploadSupport HomeroomManagement HomeroomPendingJournal HomeroomPresentation DutyWeekPresentation SupervisorAttendance PersonalTodos ConvexConfig WorkCreate WorkApproval HelpGuide"
 files=""
 for name in $sources; do files="$files $app/$name.swift"; done
 status=0
 for check in "$here"/*Checks.swift; do
   name=$(basename "$check" .swift)
+  # Optional per-check Foundation sources: a first-line comment "// extra-sources: Name Other".
+  extra=""
+  for more in $(sed -n '1s#^// extra-sources: ##p' "$check"); do extra="$extra $app/$more.swift"; done
   # shellcheck disable=SC2086
-  if swiftc -module-cache-path "$scratch/cache" $files "$check" -o "$scratch/$name" 2>"$scratch/$name.log" && "$scratch/$name"; then
+  if swiftc -module-cache-path "$scratch/cache" $files $extra "$check" -o "$scratch/$name" 2>"$scratch/$name.log" && "$scratch/$name"; then
     :
   else
     echo "FAIL $name"; cat "$scratch/$name.log"; status=1

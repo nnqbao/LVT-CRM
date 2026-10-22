@@ -12,6 +12,7 @@ final class WorkViewController: UITableViewController {
         case error(String)
         case reviewBanner(Int)
         case approvals([WorkApprovalItem])
+        case approvalQueue([WorkApprovalItem])
         case tasks([WorkTaskItem])
         case reviews([WorkCompletionReviewItem])
     }
@@ -90,6 +91,7 @@ final class WorkViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch sectionKinds[section] {
         case .approvals(let items): return max(items.count, 1)
+        case .approvalQueue(let items): return max(items.count, 1)
         case .tasks(let items): return max(items.count, 1)
         case .reviews(let items): return max(items.count, 1)
         default: return 1
@@ -98,6 +100,10 @@ final class WorkViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if case .reviews = sectionKinds[section] { return "Duyệt hoàn thành" }
+        if case .approvalQueue = sectionKinds[section] {
+            let count = viewModel.awaitingApprovalCount
+            return count > 0 ? "Chờ tôi duyệt (\(count))" : "Chờ tôi duyệt"
+        }
         return nil
     }
 
@@ -207,17 +213,33 @@ final class WorkViewController: UITableViewController {
             let cell = workCell(at: indexPath)
             cell.configureApproval(
                 item,
-                admin: viewModel.isAdmin,
                 isOps: viewModel.isOps,
                 busy: viewModel.busyApprovalId == item.id,
                 focused: isFocused(approval: item),
                 onChat: { [weak self] in self?.presentWorkChat(documentId: item.id, title: item.title) },
                 onEdit: { [weak self] in self?.openEdit(item) },
                 onDelete: { [weak self] in self?.confirmDelete(item) }
+            ) { [weak self] _ in
+                self?.showDocument(item)
+            }
+            return cell
+        case .approvalQueue(let items):
+            guard !items.isEmpty else {
+                return emptyCell(indexPath, "Không có công việc chờ bạn duyệt", "Khi Văn thư/Quản trị gửi công việc cần Ban giám hiệu duyệt, công việc sẽ xuất hiện tại đây.")
+            }
+            let item = items[indexPath.row]
+            let cell = workCell(at: indexPath)
+            cell.configureQueue(
+                item,
+                busy: viewModel.busyApprovalId == item.id,
+                focused: pendingFocusId == item.id
             ) { [weak self] action in
                 guard let self else { return }
-                if action == .detail { showDocument(item) }
-                else { confirmApproval(item, approve: action == .approve) }
+                switch action {
+                case .detail: showDocument(item, fromQueue: true)
+                case .approve: confirmApprove(item)
+                case .reject: promptReturn(item)
+                }
             }
             return cell
         case .tasks(let items):
@@ -268,6 +290,8 @@ final class WorkViewController: UITableViewController {
             break
         case .approvals(let items) where !items.isEmpty:
             showDocument(items[indexPath.row])
+        case .approvalQueue(let items) where !items.isEmpty:
+            showDocument(items[indexPath.row], fromQueue: true)
         case .tasks(let items) where !items.isEmpty:
             showTask(items[indexPath.row])
         case .reviews(let items) where !items.isEmpty:
@@ -285,6 +309,12 @@ final class WorkViewController: UITableViewController {
         if let task = viewModel.tasks.first(where: { $0.id == itemId || $0.documentId == itemId }) {
             viewModel.mineTab = WorkListRules.tab(for: task)
         }
+        let known = viewModel.queueItem(focusId: itemId) != nil
+            || viewModel.approval(focusId: itemId) != nil
+            || viewModel.tasks.contains { $0.id == itemId || $0.documentId == itemId }
+            || viewModel.review(focusId: itemId) != nil
+        // A push (chờ duyệt / đã duyệt / bị trả lại) can arrive before the list knows the document.
+        if !known && !viewModel.loading { viewModel.refresh() }
         render()
     }
 
@@ -304,7 +334,14 @@ final class WorkViewController: UITableViewController {
     }
 
     private func scrollToReviewsIfNeeded() {
-        guard let section = sectionKinds.firstIndex(where: { if case .reviews = $0 { true } else { false } }) else { return }
+        let queueFirst = viewModel.awaitingApprovalCount > 0
+        guard let section = sectionKinds.firstIndex(where: {
+            switch $0 {
+            case .approvalQueue: return queueFirst
+            case .reviews: return !queueFirst
+            default: return false
+            }
+        }) ?? sectionKinds.firstIndex(where: { if case .reviews = $0 { true } else { false } }) else { return }
         let rowCount = tableView.numberOfRows(inSection: section)
         guard rowCount > 0 else { return }
         tableView.scrollToRow(at: IndexPath(row: 0, section: section), at: .top, animated: false)
@@ -316,6 +353,9 @@ final class WorkViewController: UITableViewController {
         if let notice = viewModel.notice { sections.append(.notice(notice)) }
         if let error = viewModel.error { return sections + [.error(error)] }
         if viewModel.loading { return sections + [.loading] }
+        if !viewModel.approvalQueue.isEmpty {
+            sections.append(.approvalQueue(viewModel.approvalQueue))
+        }
         if viewModel.canCreate, !viewModel.completionReviews.isEmpty {
             sections.append(.reviews(viewModel.completionReviews))
         }
@@ -397,7 +437,7 @@ final class WorkViewController: UITableViewController {
     }
 
     private func processPendingFocusIfPossible() {
-        guard let focusId = pendingFocusId, !viewModel.loading else { return }
+        guard let focusId = pendingFocusId, !viewModel.loading, !viewModel.refreshing else { return }
         let openChat = pendingOpenChat
         if viewModel.error != nil {
             pendingFocusId = nil
@@ -406,7 +446,11 @@ final class WorkViewController: UITableViewController {
             return
         }
         pendingOpenChat = false
-        if let item = viewModel.approval(focusId: focusId), item.id == focusId || !openChat {
+        if !openChat, let item = viewModel.queueItem(focusId: focusId) {
+            scrollToQueue(item)
+            pendingFocusId = nil
+            DispatchQueue.main.async { [weak self] in self?.showDocument(item, fromQueue: true) }
+        } else if let item = viewModel.approval(focusId: focusId), item.id == focusId || !openChat {
             viewModel.createdTab = WorkListRules.tab(for: item)
             scrollToApproval(item)
             pendingFocusId = nil
@@ -455,6 +499,12 @@ final class WorkViewController: UITableViewController {
         scrollAndAnnounce(IndexPath(row: row, section: section))
     }
 
+    private func scrollToQueue(_ item: WorkApprovalItem) {
+        guard let section = sectionKinds.firstIndex(where: { if case .approvalQueue = $0 { true } else { false } }),
+              let row = viewModel.approvalQueue.firstIndex(where: { $0.id == item.id }) else { return }
+        scrollAndAnnounce(IndexPath(row: row, section: section))
+    }
+
     private func scrollToTask(_ item: WorkTaskItem) {
         guard let section = sectionKinds.firstIndex(where: { if case .tasks = $0 { true } else { false } }),
               let row = viewModel.visibleTasks.firstIndex(where: { $0.id == item.id }) else { return }
@@ -471,15 +521,51 @@ final class WorkViewController: UITableViewController {
         return approval.id == pendingFocusId || approval.assignments.contains { $0.id == pendingFocusId }
     }
 
-    private func confirmApproval(_ item: WorkApprovalItem, approve: Bool) {
+    /// Approve: confirm first (irreversible; the first approval locks edit/delete).
+    private func confirmApprove(_ item: WorkApprovalItem) {
         let alert = UIAlertController(
-            title: approve ? "Duyệt công văn?" : "Từ chối công văn?",
-            message: "Thao tác này không thể hoàn tác.",
+            title: "Duyệt công việc “\(WorkHelpers.listTitle(item))”?",
+            message: WorkApprovalRules.approveConfirmMessage,
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: "Huỷ", style: .cancel))
-        alert.addAction(UIAlertAction(title: approve ? "Duyệt" : "Từ chối", style: approve ? .default : .destructive) { [weak self] _ in
-            self?.viewModel.decideApproval(item, approve: approve)
+        alert.addAction(UIAlertAction(title: "Đóng", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Duyệt", style: .default) { [weak self] _ in
+            self?.viewModel.approve(item)
+        })
+        presentFromVisibleController(alert)
+    }
+
+    /// Return: the reason is required (≤ 500 characters); only offered while nobody approved.
+    private func promptReturn(_ item: WorkApprovalItem, draft: String = "") {
+        guard item.canReject else { return }
+        let alert = UIAlertController(
+            title: "Trả lại công việc “\(WorkHelpers.listTitle(item))”",
+            message: "Lý do trả lại (bắt buộc). \(WorkApprovalRules.returnHint)",
+            preferredStyle: .alert
+        )
+        alert.addTextField {
+            $0.placeholder = "Lý do trả lại"
+            $0.accessibilityLabel = "Lý do trả lại, bắt buộc"
+            $0.text = draft
+            $0.autocapitalizationType = .sentences
+        }
+        alert.addAction(UIAlertAction(title: "Đóng", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Trả lại", style: .destructive) { [weak self, weak alert] _ in
+            let raw = alert?.textFields?.first?.text ?? ""
+            switch WorkApprovalRules.validateReturnReason(raw) {
+            case .success(let reason):
+                self?.viewModel.returnDocument(item, reason: reason)
+            case .failure(let error):
+                self?.presentReturnRetry(item, draft: raw, message: error.message)
+            }
+        })
+        presentFromVisibleController(alert)
+    }
+
+    private func presentReturnRetry(_ item: WorkApprovalItem, draft: String, message: String) {
+        let alert = UIAlertController(title: "Thông tin chưa hợp lệ", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Nhập lại", style: .default) { [weak self] _ in
+            self?.promptReturn(item, draft: String(draft.prefix(WorkApprovalRules.returnReasonMaxLength)))
         })
         presentFromVisibleController(alert)
     }
@@ -691,12 +777,21 @@ final class WorkViewController: UITableViewController {
         presentFromVisibleController(alert)
     }
 
-    private func showDocument(_ item: WorkApprovalItem) {
+    private func showDocument(_ item: WorkApprovalItem, fromQueue: Bool = false) {
         navigationController?.pushViewController(
             WorkDocumentViewController(
                 document: item,
-                isOps: viewModel.isOps,
+                isOps: fromQueue ? false : viewModel.isOps,
+                approverView: fromQueue,
                 downloadDocument: downloadDocument,
+                onApprove: fromQueue && item.awaitingMyDecision ? { [weak self] in
+                    self?.navigationController?.popViewController(animated: false)
+                    self?.confirmApprove(item)
+                } : nil,
+                onReturn: fromQueue && item.awaitingMyDecision && item.canReject ? { [weak self] in
+                    self?.navigationController?.popViewController(animated: false)
+                    self?.promptReturn(item)
+                } : nil,
                 onOpenChat: { [weak self] in
                     self?.presentWorkChat(documentId: item.id, title: item.title)
                 },
@@ -836,6 +931,7 @@ private final class WorkItemCell: UITableViewCell {
     private var onChat: (() -> Void)?
     private var onEdit: (() -> Void)?
     private var onDelete: (() -> Void)?
+    private var onAction: (() -> Void)?
     private let spinner = UIActivityIndicatorView(style: .medium)
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -856,6 +952,7 @@ private final class WorkItemCell: UITableViewCell {
         actionButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
         actionButton.titleLabel?.adjustsFontForContentSizeCategory = true
         actionButton.configuration = .bordered()
+        actionButton.addAction(UIAction { [weak self] _ in self?.onAction?() }, for: .touchUpInside)
         let actionRow = UIStackView(arrangedSubviews: [actionButton, spinner])
         actionRow.spacing = 8
         actionRow.alignment = .center
@@ -881,7 +978,6 @@ private final class WorkItemCell: UITableViewCell {
         lockedLabel.adjustsFontForContentSizeCategory = true
         lockedLabel.textColor = .secondaryLabel
         lockedLabel.numberOfLines = 0
-        lockedLabel.text = WorkCreatePolicy.lockedMessage
         let stack = UIStackView(arrangedSubviews: [statusLabel, titleLabel, detailLabel, metaLabel, reasonLabel, actionRow, chatButton, manageRow, lockedLabel])
         stack.axis = .vertical
         stack.alignment = .leading
@@ -902,10 +998,13 @@ private final class WorkItemCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         actionButton.menu = nil
+        actionButton.showsMenuAsPrimaryAction = false
+        actionButton.accessibilityLabel = nil
         actionButton.removeTarget(nil, action: nil, for: .allEvents)
         actionButton.isHidden = false
         chatButton.isHidden = true
         onChat = nil
+        onAction = nil
         onEdit = nil
         onDelete = nil
         manageRow.isHidden = true
@@ -917,9 +1016,9 @@ private final class WorkItemCell: UITableViewCell {
         backgroundColor = .secondarySystemGroupedBackground
     }
 
+    /// "Việc tôi tạo": approval state (Chờ duyệt x/y, Bị trả lại + lý do) until released, then progress.
     func configureApproval(
         _ item: WorkApprovalItem,
-        admin: Bool,
         isOps: Bool,
         busy: Bool,
         focused: Bool,
@@ -928,43 +1027,97 @@ private final class WorkItemCell: UITableViewCell {
         onDelete: @escaping () -> Void,
         action: @escaping (WorkCellAction) -> Void
     ) {
-        statusLabel.text = item.status == "pending" ? "Chờ duyệt · \(item.approvalCount)/\(item.approvalTotal)" : "\(item.status) · \(item.approvalCount)/\(item.approvalTotal)"
-        statusLabel.textColor = item.status == "pending" ? .systemOrange : .systemGreen
+        let status = WorkApprovalRules.effectiveStatus(item)
+        statusLabel.text = WorkApprovalRules.creatorStatusText(item)
+        statusLabel.textColor = WorkPresentation.statusColor(status)
         titleLabel.text = WorkHelpers.listTitle(item)
         detailLabel.text = WorkHelpers.listSubtitle(item)
         detailLabel.isHidden = detailLabel.text?.isEmpty != false
-        metaLabel.text = "Hạn: \(item.deadline)"
-        reasonLabel.isHidden = true
-        backgroundColor = focused ? UIColor.systemIndigo.withAlphaComponent(0.12) : .secondarySystemGroupedBackground
-        if admin {
-            setButton("Xem phân công", busy: busy) { action(.detail) }
-        } else if item.myDecision.isEmpty {
-            actionButton.configuration = .borderedProminent()
-            actionButton.setTitle("Xử lý", for: .normal)
-            actionButton.showsMenuAsPrimaryAction = true
-            actionButton.menu = UIMenu(children: [
-                UIAction(title: "Duyệt", image: UIImage(systemName: "checkmark.circle")) { _ in action(.approve) },
-                UIAction(title: "Từ chối", image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { _ in action(.reject) },
-            ])
-            actionButton.isEnabled = !busy
-            busy ? spinner.startAnimating() : spinner.stopAnimating()
+        metaLabel.text = [
+            ["Hạn: \(item.deadline)", WorkApprovalRules.progressText(item)].compactMap { $0 }.joined(separator: " · "),
+            WorkApprovalRules.lastEditedText(item),
+        ].compactMap { $0 }.joined(separator: "\n")
+        if let reason = WorkApprovalRules.returnReasonText(item) {
+            reasonLabel.text = reason
+            reasonLabel.textColor = .systemRed
+            reasonLabel.isHidden = false
         } else {
-            actionButton.isHidden = true
-            statusLabel.text = item.myDecision == "approved" ? "Bạn đã duyệt" : "Bạn đã từ chối"
-            statusLabel.textColor = item.myDecision == "approved" ? .systemGreen : .systemRed
+            reasonLabel.isHidden = true
         }
+        backgroundColor = focused ? UIColor.systemIndigo.withAlphaComponent(0.12) : .secondarySystemGroupedBackground
+        actionButton.configuration = .bordered()
+        setButton("Xem chi tiết", busy: busy) { action(.detail) }
         setChat(onChat)
-        let canEdit = WorkCreatePolicy.showsEdit(canEdit: item.canEdit, isOps: isOps)
-        let canDelete = WorkCreatePolicy.showsDelete(canDelete: item.canDelete, isOps: isOps)
+        let canEdit = WorkApprovalRules.showsEdit(item, isOps: isOps)
+        let canDelete = WorkApprovalRules.showsDelete(item, isOps: isOps)
         self.onEdit = onEdit
         self.onDelete = onDelete
         editButton.isHidden = !canEdit
         deleteButton.isHidden = !canDelete
         editButton.isEnabled = !busy
         deleteButton.isEnabled = !busy
+        // Returned documents are fixed and resubmitted from the edit form.
+        editButton.configuration?.title = (item.status == "rejected" && item.requiresApproval) || WorkApprovalRules.editNeedsReapproval(item)
+            ? "Sửa và gửi duyệt lại"
+            : "Sửa"
         manageRow.isHidden = !canEdit && !canDelete
-        lockedLabel.isHidden = !WorkCreatePolicy.showsLocked(canEdit: item.canEdit, canDelete: item.canDelete, isOps: isOps)
-        accessibilityLabel = [statusLabel.text, titleLabel.text, detailLabel.text, metaLabel.text, lockedLabel.isHidden ? nil : lockedLabel.text].compactMap { $0 }.joined(separator: ". ")
+        let locked = WorkApprovalRules.lockedMessage(item, isOps: isOps)
+        lockedLabel.text = locked
+        lockedLabel.isHidden = locked == nil
+        accessibilityLabel = [statusLabel.text, titleLabel.text, detailLabel.text, metaLabel.text, reasonLabel.isHidden ? nil : reasonLabel.text, locked]
+            .compactMap { $0 }.joined(separator: ". ")
+    }
+
+    /// "Chờ tôi duyệt" (Ban giám hiệu): Duyệt / Trả lại while awaiting my decision.
+    func configureQueue(
+        _ item: WorkApprovalItem,
+        busy: Bool,
+        focused: Bool,
+        action: @escaping (WorkCellAction) -> Void
+    ) {
+        manageRow.isHidden = true
+        editButton.isHidden = true
+        deleteButton.isHidden = true
+        lockedLabel.isHidden = true
+        setChat(nil)
+        statusLabel.text = WorkApprovalRules.queueStatusText(item)
+        statusLabel.textColor = item.awaitingMyDecision ? .systemOrange : WorkPresentation.statusColor(item.status)
+        titleLabel.text = WorkHelpers.listTitle(item)
+        detailLabel.text = WorkApprovalRules.creatorLabel(item)
+            + (item.submittedAt.map { " · gửi \(WorkApprovalRules.formatDateTime($0))" } ?? "")
+        detailLabel.isHidden = false
+        metaLabel.text = ["Hạn: \(item.deadline)", WorkApprovalRules.progressText(item)]
+            .compactMap { $0 }.joined(separator: " · ")
+        if let reason = WorkApprovalRules.returnReasonText(item) {
+            reasonLabel.text = reason
+            reasonLabel.textColor = .systemRed
+            reasonLabel.isHidden = false
+        } else {
+            reasonLabel.isHidden = true
+        }
+        backgroundColor = focused ? UIColor.systemIndigo.withAlphaComponent(0.12) : .secondarySystemGroupedBackground
+        if item.awaitingMyDecision {
+            actionButton.configuration = .borderedProminent()
+            actionButton.setTitle("Xử lý", for: .normal)
+            actionButton.accessibilityLabel = "Duyệt hoặc trả lại công việc"
+            actionButton.showsMenuAsPrimaryAction = true
+            var actions: [UIMenuElement] = [
+                UIAction(title: "Duyệt", image: UIImage(systemName: "checkmark.circle")) { _ in action(.approve) },
+            ]
+            if item.canReject {
+                actions.append(UIAction(title: "Trả lại", image: UIImage(systemName: "arrow.uturn.backward.circle"), attributes: .destructive) { _ in action(.reject) })
+            }
+            actions.append(UIAction(title: "Xem chi tiết", image: UIImage(systemName: "doc.text.magnifyingglass")) { _ in action(.detail) })
+            actionButton.menu = UIMenu(children: actions)
+            actionButton.isHidden = false
+            actionButton.isEnabled = !busy
+            busy ? spinner.startAnimating() : spinner.stopAnimating()
+        } else {
+            actionButton.configuration = .bordered()
+            setButton("Xem chi tiết", busy: busy) { action(.detail) }
+        }
+        accessibilityLabel = [statusLabel.text, titleLabel.text, detailLabel.text, metaLabel.text, reasonLabel.isHidden ? nil : reasonLabel.text]
+            .compactMap { $0 }.joined(separator: ". ")
     }
 
     func configureTask(
@@ -1040,7 +1193,7 @@ private final class WorkItemCell: UITableViewCell {
         actionButton.isHidden = false
         actionButton.setTitle(title, for: .normal)
         actionButton.isEnabled = !busy
-        actionButton.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        onAction = action
         busy ? spinner.startAnimating() : spinner.stopAnimating()
     }
 }
@@ -1053,15 +1206,15 @@ enum WorkPresentation {
         case "pending_completion": return "Chờ xác nhận"
         case "completed": return "Hoàn thành"
         case "rejected", "rejected_completion": return "Bị từ chối"
-        default: return status
+        default: return WorkApprovalRules.statusLabel(status)
         }
     }
 
     static func statusColor(_ status: String) -> UIColor {
         switch status {
-        case "completed": return .systemGreen
-        case "overdue", "rejected", "rejected_completion": return .systemRed
-        case "pending_completion": return .systemOrange
+        case "completed", "completed_late", "approved": return .systemGreen
+        case "overdue", "rejected", "rejected_completion", "approval_returned", "not_completed": return .systemRed
+        case "pending_completion", "pending", "awaiting_approval", "unreleased": return .systemOrange
         default: return .systemIndigo
         }
     }
@@ -1210,37 +1363,62 @@ private final class WorkTaskDetailViewController: UIViewController, QLPreviewCon
 private final class WorkDocumentViewController: UITableViewController, QLPreviewControllerDataSource {
     private let document: WorkApprovalItem
     private let isOps: Bool
+    private let approverView: Bool
     private let downloadDocument: (WorkApprovalItem) async throws -> URL
     private let groupedAssignments: [(String, [WorkDocumentAssignment])]
+    private let approvalLines: [(String, String?, UIColor)]
     private var previewURL: URL?
     private var openingFile = false
 
     private let onOpenChat: () -> Void
     private let onEdit: () -> Void
     private let onDelete: () -> Void
+    private let onApprove: (() -> Void)?
+    private let onReturn: (() -> Void)?
 
     init(
         document: WorkApprovalItem,
         isOps: Bool,
+        approverView: Bool = false,
         downloadDocument: @escaping (WorkApprovalItem) async throws -> URL,
+        onApprove: (() -> Void)? = nil,
+        onReturn: (() -> Void)? = nil,
         onOpenChat: @escaping () -> Void,
         onEdit: @escaping () -> Void,
         onDelete: @escaping () -> Void
     ) {
         self.document = document
         self.isOps = isOps
+        self.approverView = approverView
         self.downloadDocument = downloadDocument
+        self.onApprove = onApprove
+        self.onReturn = onReturn
         self.onOpenChat = onOpenChat
         self.onEdit = onEdit
         self.onDelete = onDelete
         groupedAssignments = Dictionary(grouping: document.assignments, by: \.departmentName)
             .map { ($0.key, $0.value) }.sorted { $0.0 < $1.0 }
+        var lines: [(String, String?, UIColor)] = []
+        if let progress = WorkApprovalRules.progressText(document) {
+            lines.append((progress, WorkApprovalRules.statusLabel(document.status), WorkPresentation.statusColor(document.status)))
+            for approver in document.approvers {
+                let color: UIColor = approver.approved ? .systemGreen : (approver.rejected ? .systemRed : .secondaryLabel)
+                lines.append((approver.name, WorkApprovalRules.approverDecisionLabel(approver), color))
+            }
+            if let reason = WorkApprovalRules.returnReasonText(document) {
+                lines.append((reason, nil, .systemRed))
+            }
+        }
+        approvalLines = lines
         super.init(style: .insetGrouped)
-        title = "Chi tiết công văn"
+        title = "Chi tiết công việc"
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private var hasApprovalSection: Bool { !approvalLines.isEmpty }
+    private var assignmentOffset: Int { hasApprovalSection ? 2 : 1 }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -1248,17 +1426,35 @@ private final class WorkDocumentViewController: UITableViewController, QLPreview
         tableView.rowHeight = UITableView.automaticDimension
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "DocumentCell")
         var items: [UIBarButtonItem] = []
-        if WorkCreatePolicy.showsDelete(canDelete: document.canDelete, isOps: isOps) {
-            items.append(UIBarButtonItem(title: "Xóa", style: .plain, target: self, action: #selector(deleteDocument)))
-        }
-        if WorkCreatePolicy.showsEdit(canEdit: document.canEdit, isOps: isOps) {
-            items.append(UIBarButtonItem(title: "Sửa", style: .done, target: self, action: #selector(editDocument)))
+        if approverView {
+            if let onApprove {
+                let approve = UIBarButtonItem(title: "Duyệt", primaryAction: UIAction { _ in onApprove() })
+                approve.style = .prominent
+                approve.accessibilityLabel = "Duyệt công việc"
+                items.append(approve)
+            }
+            if let onReturn {
+                let back = UIBarButtonItem(title: "Trả lại", primaryAction: UIAction { _ in onReturn() })
+                back.accessibilityLabel = "Trả lại công việc cho người tạo"
+                items.append(back)
+            }
+        } else {
+            if WorkApprovalRules.showsDelete(document, isOps: isOps) {
+                items.append(UIBarButtonItem(title: "Xóa", style: .plain, target: self, action: #selector(deleteDocument)))
+            }
+            if WorkApprovalRules.showsEdit(document, isOps: isOps) {
+                let editTitle = (document.status == "rejected" && document.requiresApproval) || WorkApprovalRules.editNeedsReapproval(document)
+                    ? "Sửa, gửi lại"
+                    : "Sửa"
+                items.append(UIBarButtonItem(title: editTitle, style: .done, target: self, action: #selector(editDocument)))
+            }
         }
         navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
-        if WorkCreatePolicy.showsLocked(canEdit: document.canEdit, canDelete: document.canDelete, isOps: isOps) {
+        if !approverView, let locked = WorkApprovalRules.lockedMessage(document, isOps: isOps) {
             let footer = UILabel()
-            footer.text = WorkCreatePolicy.lockedMessage
+            footer.text = locked
             footer.font = .preferredFont(forTextStyle: .footnote)
+            footer.adjustsFontForContentSizeCategory = true
             footer.textColor = .secondaryLabel
             footer.numberOfLines = 0
             footer.textAlignment = .center
@@ -1271,14 +1467,18 @@ private final class WorkDocumentViewController: UITableViewController, QLPreview
 
     @objc private func deleteDocument() { onDelete() }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 1 + groupedAssignments.count }
+    override func numberOfSections(in tableView: UITableView) -> Int { assignmentOffset + groupedAssignments.count }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? 2 : groupedAssignments[section - 1].1.count
+        if section == 0 { return approverView ? 1 : 2 }
+        if hasApprovalSection && section == 1 { return approvalLines.count }
+        return groupedAssignments[section - assignmentOffset].1.count
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        section == 0 ? "Công văn" : groupedAssignments[section - 1].0
+        if section == 0 { return "Công việc" }
+        if hasApprovalSection && section == 1 { return "Phê duyệt" }
+        return groupedAssignments[section - assignmentOffset].0
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -1291,6 +1491,7 @@ private final class WorkDocumentViewController: UITableViewController, QLPreview
         var content = cell.defaultContentConfiguration()
         content.textProperties.numberOfLines = 0
         content.secondaryTextProperties.numberOfLines = 0
+        content.imageProperties.tintColor = .systemIndigo
         if indexPath.section == 0 && indexPath.row == 1 {
             content.text = "Trao đổi"
             content.image = UIImage(systemName: "bubble.left")
@@ -1301,7 +1502,17 @@ private final class WorkDocumentViewController: UITableViewController, QLPreview
         } else if indexPath.section == 0 {
             content.text = WorkHelpers.listTitle(document)
             let body = WorkHelpers.listSubtitle(document) ?? ""
-            content.secondaryText = [body, "Hạn: \(document.deadline)", "Phê duyệt: \(document.approvalCount)/\(document.approvalTotal)"].filter { !$0.isEmpty }.joined(separator: "\n")
+            let creator = document.creatorName.isEmpty ? "" : WorkApprovalRules.creatorLabel(document)
+            let submitted = document.submittedAt.map { "Gửi lúc \(WorkApprovalRules.formatDateTime($0))" } ?? ""
+            content.secondaryText = [
+                body,
+                "Trạng thái: \(WorkApprovalRules.statusLabel(WorkApprovalRules.effectiveStatus(document)))",
+                "Hạn: \(document.deadline)",
+                creator,
+                approverView ? submitted : "",
+                WorkApprovalRules.lastEditedText(document) ?? "",
+                document.fileName.isEmpty ? "" : "Tệp: \(document.fileName)",
+            ].filter { !$0.isEmpty }.joined(separator: "\n")
             content.image = UIImage(systemName: document.fileName.isEmpty ? "doc.text" : "doc")
             if !document.fileName.isEmpty {
                 cell.selectionStyle = .default
@@ -1309,14 +1520,34 @@ private final class WorkDocumentViewController: UITableViewController, QLPreview
                 cell.accessibilityTraits.insert(.button)
                 cell.accessibilityHint = "Mở tệp công văn"
             }
+        } else if hasApprovalSection && indexPath.section == 1 {
+            let line = approvalLines[indexPath.row]
+            content.text = line.0
+            content.secondaryText = line.1
+            content.secondaryTextProperties.color = line.2
+            if indexPath.row == 0 {
+                content.image = UIImage(systemName: "checkmark.seal")
+            } else if line.1 == nil {
+                content.textProperties.color = .systemRed
+                content.image = UIImage(systemName: "arrow.uturn.backward")
+                content.imageProperties.tintColor = .systemRed
+            } else {
+                content.image = UIImage(systemName: "person.crop.circle.badge.checkmark")
+            }
         } else {
-            let assignment = groupedAssignments[indexPath.section - 1].1[indexPath.row]
+            let assignment = groupedAssignments[indexPath.section - assignmentOffset].1[indexPath.row]
             content.text = assignment.content
-            let members = assignment.members.map { "\($0.name): \($0.status)" }.joined(separator: "\n")
-            content.secondaryText = ["Hạn: \(assignment.deadline)", members].filter { !$0.isEmpty }.joined(separator: "\n")
+            let display = WorkApprovalRules.assignmentDisplayStatus(document, assignment)
+            let members = display == "unreleased"
+                ? ""
+                : assignment.members.map { "\($0.name): \(WorkPresentation.status($0.status))" }.joined(separator: "\n")
+            content.secondaryText = [
+                "Hạn: \(assignment.deadline)",
+                WorkApprovalRules.statusLabel(display),
+                members,
+            ].filter { !$0.isEmpty }.joined(separator: "\n")
             content.image = UIImage(systemName: "person.2")
         }
-        content.imageProperties.tintColor = .systemIndigo
         cell.contentConfiguration = content
         cell.accessibilityLabel = [content.text, content.secondaryText].compactMap { $0 }.joined(separator: ". ")
         return cell
