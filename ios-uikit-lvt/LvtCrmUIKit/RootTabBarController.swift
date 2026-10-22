@@ -13,6 +13,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private let homeroomRepository: HomeroomRepository
     private let attendanceRepository: SupervisorAttendanceRepository
     private let personalTodoRepository: PersonalTodoRepository
+    private let boardingRepository: BoardingRepository
     private let notificationsViewModel: NotificationsViewModel
     private var tabControllers: [AppTab: UINavigationController] = [:]
     private var headerClusters: [AccountHeaderClusterView] = []
@@ -39,7 +40,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         avatarRepository: AvatarRepository,
         homeroomRepository: HomeroomRepository,
         attendanceRepository: SupervisorAttendanceRepository,
-        personalTodoRepository: PersonalTodoRepository
+        personalTodoRepository: PersonalTodoRepository,
+        boardingRepository: BoardingRepository
     ) {
         self.session = session
         self.authRepository = authRepository
@@ -52,6 +54,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         self.homeroomRepository = homeroomRepository
         self.attendanceRepository = attendanceRepository
         self.personalTodoRepository = personalTodoRepository
+        self.boardingRepository = boardingRepository
         self.notificationsViewModel = NotificationsViewModel(repository: notificationsRepository)
         super.init(nibName: nil, bundle: nil)
     }
@@ -95,7 +98,14 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             dutiesRepository: dutiesRepository,
             workRepository: workRepository,
             onOpenDuties: { [weak self] tab in self?.openDuties(tab: tab) },
-            onOpenWork: { [weak self] filter in self?.openWork(filter: filter) }
+            onOpenWork: { [weak self] filter in self?.openWork(filter: filter) },
+            // Báo cáo › Bán trú (web): Báo cáo not hidden, or admin/mod. No extra tab, so the bar stays ≤ 5.
+            boardingEntry: Boarding.canSeeParticipants(session)
+                ? (Boarding.canManagePeriods(session)
+                    ? "Danh sách giáo viên tham gia và Kỳ bán trú"
+                    : "Danh sách giáo viên tham gia bán trú")
+                : nil,
+            onOpenBoarding: { [weak self] in self?.openBoarding() }
         )
         overviewViewController.navigationItem.rightBarButtonItem = makeAccountHeaderItem()
         overviewViewController.installHelpButton(.overview)
@@ -228,6 +238,21 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         tabControllers[.work]?.popToRootViewController(animated: false)
         workHubViewController?.show(.work)
         workViewController?.applyDashboardFilter(filter)
+    }
+
+    private func openBoarding() {
+        guard Boarding.canSeeParticipants(session), let navigationController = tabControllers[.overview] else { return }
+        selectTab(.overview)
+        detachAuxiliary(from: navigationController)
+        if let existing = navigationController.viewControllers.first(where: { $0 is BoardingViewController }) {
+            navigationController.popToViewController(existing, animated: !UIAccessibility.isReduceMotionEnabled)
+            return
+        }
+        let controller = BoardingViewController(
+            repository: boardingRepository,
+            canManage: Boarding.canManagePeriods(session)
+        )
+        navigationController.pushViewController(controller, animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
     private func openDutyFromChat(_ dutyId: String) {
@@ -398,6 +423,9 @@ private final class DashboardViewController: UIViewController {
     private let workRepository: WorkRepository
     private let onOpenDuties: (DutyListTab) -> Void
     private let onOpenWork: (WorkDashboardFilter?) -> Void
+    private let boardingEntry: String?
+    private let onOpenBoarding: () -> Void
+    private let boardingButton = UIButton(type: .system)
     private let dutiesCard = DashboardCard(
         title: "Công tác",
         subtitle: "Lịch điều phối",
@@ -421,12 +449,16 @@ private final class DashboardViewController: UIViewController {
         dutiesRepository: DutiesRepository,
         workRepository: WorkRepository,
         onOpenDuties: @escaping (DutyListTab) -> Void,
-        onOpenWork: @escaping (WorkDashboardFilter?) -> Void
+        onOpenWork: @escaping (WorkDashboardFilter?) -> Void,
+        boardingEntry: String?,
+        onOpenBoarding: @escaping () -> Void
     ) {
         self.dutiesRepository = dutiesRepository
         self.workRepository = workRepository
         self.onOpenDuties = onOpenDuties
         self.onOpenWork = onOpenWork
+        self.boardingEntry = boardingEntry
+        self.onOpenBoarding = onOpenBoarding
         super.init(nibName: nil, bundle: nil)
         title = "Tổng quan"
     }
@@ -532,7 +564,38 @@ private final class DashboardViewController: UIViewController {
         stack.setCustomSpacing(28, after: headerRow)
         stack.addArrangedSubview(dutiesCard)
         stack.addArrangedSubview(workCard)
-        stack.setCustomSpacing(24, after: workCard)
+        if let boardingEntry {
+            var configuration = UIButton.Configuration.filled()
+            configuration.cornerStyle = .large
+            configuration.baseBackgroundColor = DashboardPalette.dutiesAccent.withAlphaComponent(0.14)
+            configuration.baseForegroundColor = DashboardPalette.dutiesAccent
+            configuration.image = UIImage(systemName: "fork.knife")
+            configuration.imagePadding = 12
+            configuration.imagePlacement = .leading
+            configuration.title = "Báo cáo › Bán trú"
+            configuration.subtitle = boardingEntry
+            configuration.titleAlignment = .leading
+            configuration.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18)
+            configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = .preferredFont(forTextStyle: .headline)
+                return outgoing
+            }
+            configuration.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = .preferredFont(forTextStyle: .footnote)
+                return outgoing
+            }
+            boardingButton.configuration = configuration
+            boardingButton.contentHorizontalAlignment = .leading
+            boardingButton.accessibilityLabel = "Bán trú"
+            boardingButton.accessibilityHint = "Mở \(boardingEntry.lowercased())"
+            boardingButton.addAction(UIAction { [weak self] _ in self?.onOpenBoarding() }, for: .touchUpInside)
+            stack.addArrangedSubview(boardingButton)
+            stack.setCustomSpacing(24, after: boardingButton)
+        } else {
+            stack.setCustomSpacing(24, after: workCard)
+        }
         stack.addArrangedSubview(synchronizationView)
         scrollView.addSubview(stack)
         view.addSubview(scrollView)

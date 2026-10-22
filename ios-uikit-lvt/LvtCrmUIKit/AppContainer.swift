@@ -14,6 +14,7 @@ final class AppContainer {
     let homeroomRepository: HomeroomRepository
     let attendanceRepository: SupervisorAttendanceRepository
     let personalTodoRepository: PersonalTodoRepository
+    let boardingRepository: BoardingRepository
     let notificationSync: NotificationSyncService
     let apnsRegistrar: APNsTokenRegistrar
 
@@ -42,6 +43,7 @@ final class AppContainer {
         homeroomRepository = HomeroomRepository(convex: convex)
         attendanceRepository = SupervisorAttendanceRepository(convex: convex)
         personalTodoRepository = PersonalTodoRepository(convex: convex)
+        boardingRepository = BoardingRepository(convex: convex)
         notificationSync = NotificationSyncService(
             tokenStore: tokenStore,
             repository: notificationsRepository

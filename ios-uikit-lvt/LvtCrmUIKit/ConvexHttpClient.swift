@@ -215,7 +215,7 @@ actor ConvexHttpClient {
         }
     }
     static func extractCode(_ message: String) -> String {
-        let known = workCodes + schoolFeedbackCodes + [
+        let known = workCodes + boardingCodes + schoolFeedbackCodes + [
             "INVALID_PHONE", "INVALID_NAME", "INVALID_TEXT", "INVALID_DISPOSITION_NOTE", "INVALID_DISPOSITION", "CORRECTION_REASON_REQUIRED", "GUARDIAN_LIMIT", "ATTENDANCE_DAY_NOT_FOUND", "CLASS_NOT_FOUND", "STUDENT_NOT_FOUND", "GUARDIAN_NOT_FOUND", "CLASS_ARCHIVED", "DISPOSITION_NOT_ABSENT",
             "INVALID_CREDENTIALS", "InvalidAccountId", "InvalidSecret", "Invalid credentials", "USER_NOT_ACTIVE",
             "ACCOUNT_LOCKED", "PASSWORD_TOO_SHORT", "PASSWORD_CHANGE_FAILED", "PASSWORD_CHANGED_SYNC_PENDING",
@@ -295,6 +295,25 @@ actor ConvexHttpClient {
         }
     }
 
+    /// Bán trú codes (web `BoardingManagement` errorMessage); before the generic FORBIDDEN/Invalid wording.
+    static let boardingCodes = [
+        "BOARDING_TEACHERS_REQUIRED", "INVALID_BOARDING_TEACHER", "BOARDING_PERIOD_EXISTS",
+        "BOARDING_PERIOD_NOT_FOUND", "BOARDING_PERIOD_FORBIDDEN", "INVALID_SEMESTER", "INVALID_SCHOOL_YEAR",
+    ]
+
+    static func boardingMessage(_ code: String) -> String? {
+        switch code {
+        case "INVALID_SEMESTER": return "Học kỳ chỉ được chọn 1 hoặc 2."
+        case "INVALID_SCHOOL_YEAR": return "Năm học không hợp lệ."
+        case "BOARDING_TEACHERS_REQUIRED": return "Vui lòng chọn ít nhất một giáo viên."
+        case "INVALID_BOARDING_TEACHER": return "Có giáo viên không hợp lệ hoặc đã ngưng hoạt động."
+        case "BOARDING_PERIOD_EXISTS": return "Kỳ bán trú này đã tồn tại."
+        case "BOARDING_PERIOD_NOT_FOUND": return "Không tìm thấy kỳ bán trú."
+        case "BOARDING_PERIOD_FORBIDDEN": return "Bạn không có quyền xem kỳ bán trú này."
+        default: return nil
+        }
+    }
+
     /// Duty and weekly-approval codes; checked before the generic "Invalid…" login wording.
     static func dutyMessage(_ code: String) -> String? {
         switch code {
@@ -360,6 +379,7 @@ actor ConvexHttpClient {
     static func humanize(_ message: String) -> String {
         let code = extractCode(message)
         if let work = workMessage(code) { return work }
+        if let boarding = boardingMessage(code) { return boarding }
         if let duty = dutyMessage(code) { return duty }
         if let school = schoolFeedbackMessage(code) { return school }
         switch true {
