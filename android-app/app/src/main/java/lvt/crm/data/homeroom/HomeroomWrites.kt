@@ -25,9 +25,9 @@ object HomeroomWritePayload {
             return args.getString(key)
         }
         val expected = when (write.path) {
-            "studentAttendance:setDisposition", "studentAttendance:setDispositionMany" -> {
-                require(write.targets.all { it.context.yearId == write.context.yearId }) { "INVALID_CONTEXT" }
-                disposition(write.targets, string("nextDisposition"), string("reasonCode", true), string("note", true), write.path.endsWith("Many"))
+            "studentAttendance:setDisposition" -> {
+                require(write.targets.size == 1 && write.targets.single().context == write.context) { "INVALID_CONTEXT" }
+                disposition(write.targets.single(), string("nextDisposition"), string("reasonCode", true), string("note", true))
             }
             "students:updateContacts" -> studentPhone(write.context, write.studentId ?: error("INVALID_WRITE"), string("studentPhone"))
             "students:upsertGuardian" -> {
@@ -40,19 +40,19 @@ object HomeroomWritePayload {
         require(args.keys().asSequence().toSet() == expected.args.keys().asSequence().toSet() && expected.args.keys().asSequence().all { key -> args.get(key).toString() == expected.args.get(key).toString() }) { "INVALID_WRITE_CONTEXT" }
     }
     fun phone(value: String): String = trimmed(value).also { require(it.isEmpty() || Regex("[0-9+().\\-$whitespace]{6,20}").matches(it)) { "Số điện thoại: 6–20 ký tự số, + ( ) . - hoặc khoảng trắng." } }
-    fun disposition(targets: List<AbsenceTarget>, next: String, reason: String, note: String, batch: Boolean): HomeroomWrite {
-        val unique = targets.distinctBy { it.id }
-        require(unique.isNotEmpty() && unique.size <= 100 && (batch || unique.size == 1)) { "Chọn từ 1 đến 100 buổi duy nhất." }
-        require(targets.groupBy { it.id }.all { (_, rows) -> rows.distinct().size == 1 }) { "INVALID_CONTEXT" }
-        unique.forEach { it.context.validate(); require(it.id.isNotBlank() && it.studentId.isNotBlank()) }
-        require(next in listOf("pending", "excused", "unexcused"))
+    /**
+     * GVCN ticks "Vắng không phép" (unexcused) or unticks it (excused) on one absent day.
+     * Reason and note are optional since the Điểm danh redesign; the server still records a correction.
+     */
+    fun disposition(target: AbsenceTarget, next: String, reason: String = "", note: String = ""): HomeroomWrite {
+        target.context.validate()
+        require(target.id.isNotBlank() && target.studentId.isNotBlank()) { "INVALID_CONTEXT" }
+        require(next in listOf("excused", "unexcused")) { "INVALID_DISPOSITION" }
         require(trimmed(note).length <= 500) { "Ghi chú tối đa 500 ký tự." }
-        require(next == "pending" || trimmed(reason).isNotEmpty() || trimmed(note).isNotEmpty()) { "Cần lý do hoặc ghi chú." }
-        val args = JSONObject().put("nextDisposition", next)
-        if (batch) args.put("attendanceDayIds", org.json.JSONArray(unique.map { it.id })) else args.put("attendanceDayId", unique.single().id)
+        val args = JSONObject().put("attendanceDayId", target.id).put("nextDisposition", next)
         if (trimmed(reason).isNotEmpty()) args.put("reasonCode", trimmed(reason))
         if (trimmed(note).isNotEmpty()) args.put("note", trimmed(note))
-        return HomeroomWrite(if (batch) "studentAttendance:setDispositionMany" else "studentAttendance:setDisposition", args, unique.first().context, targets = unique)
+        return HomeroomWrite("studentAttendance:setDisposition", args, target.context, targets = listOf(target))
     }
     fun studentPhone(context: DetailContext, studentId: String, phone: String) = HomeroomWrite("students:updateContacts", JSONObject().put("studentId", studentId).put("studentPhone", phone(phone)), context, studentId)
     fun guardian(context: DetailContext, studentId: String, id: String?, relationship: String, name: String, phone: String, primary: Boolean, notes: String): HomeroomWrite {
@@ -77,7 +77,7 @@ class HomeroomWriteRepository(private val query: suspend (String, JSONObject) ->
             HomeroomWritePayload.validate(write)
             if (!isCurrent()) throw WriteDenied()
             if (write.targets.isNotEmpty()) {
-                require(write.path in listOf("studentAttendance:setDisposition", "studentAttendance:setDispositionMany") && write.targets.size in 1..100)
+                require(write.path == "studentAttendance:setDisposition" && write.targets.size == 1)
                 for ((context, targets) in write.targets.groupBy { it.context }) {
                     val scoped = decodeScopedClass(query("homeroomClasses:getScoped", JSONObject().put("classId", context.classId).put("date", context.date)))
                     if (scoped.id != context.classId || scoped.yearId != context.yearId || scoped.status != "active") throw WriteDenied()
@@ -105,20 +105,25 @@ class HomeroomWriteRepository(private val query: suspend (String, JSONObject) ->
             currentCoroutineContext().ensureActive()
             if (!isCurrent()) return WriteReceipt("Ghi đã được xác nhận; ngữ cảnh đã đổi. Tải lại dữ liệu.", true)
             onAcknowledged()
-            val count = if (write.path.endsWith("Many")) ack.getInt("updated") else null
-            val message = if (count != null) "Máy chủ xác nhận $count/${write.targets.size} buổi thay đổi (các buổi còn lại không đổi)." else if (ack.opt("unchanged") == true) "Máy chủ xác nhận buổi này không thay đổi." else "Máy chủ đã xác nhận ghi."
+            val message = if (ack.opt("unchanged") == true) "Máy chủ xác nhận buổi này không thay đổi." else "Máy chủ đã xác nhận ghi."
             return try {
                 val details = HomeroomDetailRepository(query)
-                for (context in (write.targets.map { it.context } + write.context).distinct()) {
+                if (write.targets.isNotEmpty()) {
+                    // Inline "Vắng không phép" toggle: confirm the class day reads back with the new status.
                     currentCoroutineContext().ensureActive()
                     if (!isCurrent()) throw WriteDenied()
-                    details.loadClass(context)
-                    val ids = write.targets.filter { it.context == context }.map { it.studentId } + listOfNotNull(write.studentId)
-                    for (id in ids.distinct()) details.loadStudent(context, id)
+                    val target = write.targets.single()
+                    val expected = ack.optString("effectiveStatus")
+                    val day = details.loadClass(target.context).daily.rows.firstOrNull { it.day?.id == target.id }?.day
+                    require(day != null && day.effectiveStatus == expected)
+                    return WriteReceipt(message, false)
                 }
+                currentCoroutineContext().ensureActive()
+                if (!isCurrent()) throw WriteDenied()
+                details.loadClass(write.context)
+                write.studentId?.let { details.loadStudent(write.context, it) }
                 val overview = decodeOverview(query("homeroomReports:overview", JSONObject().put("schoolYearId", write.context.yearId).put("date", write.context.date)))
                 require(overview.schoolYear.id == write.context.yearId && overview.date == write.context.date)
-                decodePending(query("homeroomReports:pendingAbsences", JSONObject().put("schoolYearId", write.context.yearId)))
                 WriteReceipt(message, false)
             } catch (error: kotlinx.coroutines.CancellationException) { throw error } catch (error: Exception) { WriteReceipt("$message Không tải được dữ liệu sau ghi; không gửi lại. Chỉ tải lại.", true) }
         } finally { submitting = false }
@@ -127,8 +132,7 @@ class HomeroomWriteRepository(private val query: suspend (String, JSONObject) ->
         when (write.path) {
             "students:updateContacts", "students:removeGuardian" -> require(value.length() == 0)
             "students:upsertGuardian" -> require(value.length() == 1 && value.get("value") is String && value.getString("value").isNotBlank() && (!write.args.has("guardianId") || value.getString("value") == write.args.getString("guardianId")))
-            "studentAttendance:setDispositionMany" -> require(value.length() == 1 && value.get("updated") is Number && value.getDouble("updated") == value.getInt("updated").toDouble() && value.getInt("updated") in 0..write.targets.size)
-            "studentAttendance:setDisposition" -> require(value.get("attendanceDayId") == write.targets.single().id && value.get("unchanged") is Boolean && value.get("effectiveStatus") == mapOf("pending" to "absent_pending", "excused" to "absent_excused", "unexcused" to "absent_unexcused")[write.args.getString("nextDisposition")])
+            "studentAttendance:setDisposition" -> require(value.get("attendanceDayId") == write.targets.single().id && value.get("unchanged") is Boolean && value.get("effectiveStatus") == mapOf("excused" to "absent_excused", "unexcused" to "absent_unexcused")[write.args.getString("nextDisposition")])
             else -> error("INVALID_MUTATION_ACK")
         }
     }

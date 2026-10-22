@@ -3,6 +3,13 @@ package lvt.crm.ui.homeroom
 import android.app.DatePickerDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.outlined.PersonOff
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -32,16 +39,10 @@ fun HomeroomDetailScreen(viewModel: HomeroomDetailViewModel, onClose: () -> Unit
     contactForm?.let { draft -> viewModel.writeOperations?.let { writes -> HomeroomWriteForm(draft, writes, { viewModel.uiState.value.context == draft.context && viewModel.uiState.value.studentId == draft.studentId && viewModel.uiState.value.error == null }, viewModel::clearWriteData, viewModel::refresh) { contactForm = null } } }
     val back = { if (state.studentId != null) viewModel.backToClass() else onClose() }
     BackHandler(onBack = back)
-    LvtScreen(title = if (state.studentId != null) "Học sinh" else "Lớp", refreshing = state.loading, onRefresh = viewModel::refresh, showAccountHeader = true) {
+    LvtScreen(title = if (state.studentId != null) "Học sinh" else "Lớp", refreshing = state.loading || state.refreshing, onRefresh = viewModel::refresh, showAccountHeader = true) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 OutlinedButton(onClick = back, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (state.studentId != null) "Trở lại lớp" else "Trở lại tổng quan") }
-            }
-            item(key = "absence-actions") {
-                val data = state.classData
-                val targets = if (daily && data?.daily?.canCorrect == true && !data.daily.archived) data.daily.rows.mapNotNull { row -> row.day?.takeIf { it.rawObservation == "absent" }?.let { AbsenceTarget(it.id, row.student.id, state.context, row.student.fullName) } } else emptyList()
-                val requestContext = state.context
-                AbsenceActions(targets, viewModel.writeOperations, { viewModel.uiState.value.context == requestContext && viewModel.uiState.value.studentId == null && viewModel.uiState.value.error == null }, viewModel::clearWriteData, viewModel::refresh)
             }
             if (state.studentId == null) {
                 item {
@@ -62,7 +63,7 @@ fun HomeroomDetailScreen(viewModel: HomeroomDetailViewModel, onClose: () -> Unit
                 }
             }
             when {
-                state.loading -> item { CircularProgressIndicator(); Text("Đang tải…") }
+                state.loading && state.classData == null && state.studentData == null -> item { CircularProgressIndicator(); Text("Đang tải…") }
                 state.error != null -> item {
                     DetailCard("Chưa tải được dữ liệu", "${state.error}")
                     Button(onClick = viewModel::refresh, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Thử lại") }
@@ -80,29 +81,7 @@ fun HomeroomDetailScreen(viewModel: HomeroomDetailViewModel, onClose: () -> Unit
                         }
                     }
                     if (daily) {
-                        val schoolDay = data.daily.schoolDay
-                        val rows = data.daily.rows.filter { matchesStudent(it.student, search) }
-                        item {
-                            when {
-                                schoolDay.outsideYear -> HomeroomBanner("Ngoài năm học", "Không cần điểm danh.", HomeroomTone.Info, Icons.Outlined.EventBusy)
-                                !schoolDay.isSchoolDay -> HomeroomBanner("Không phải ngày học", schoolDay.note.ifBlank { "Không cần điểm danh." }, HomeroomTone.Info, Icons.Outlined.EventBusy)
-                                !data.daily.published -> HomeroomBanner("Chưa có dữ liệu điểm danh", "Dữ liệu sẽ hiện sau khi nhập từ camera.", HomeroomTone.Neutral, Icons.Outlined.HourglassEmpty)
-                                else -> StatTiles(HomeroomPresentation.dailyStats(data.daily.rows.map { it.day?.effectiveStatus ?: "no_data" }))
-                            }
-                            if (rows.isEmpty()) Text(if (search.isBlank()) "Lớp chưa có học sinh." else "Không tìm thấy học sinh.", modifier = Modifier.padding(top = 8.dp))
-                        }
-                        val showStatus = data.daily.published && schoolDay.isSchoolDay && !schoolDay.outsideYear
-                        itemsIndexed(rows, key = { _, row -> row.enrollmentId }) { index, row ->
-                            ListSegment(index, rows.size) {
-                                HomeroomListRow(
-                                    title = row.student.fullName,
-                                    subtitle = row.day?.note,
-                                    chips = if (showStatus) listOf(HomeroomPresentation.studentChip(row.day?.effectiveStatus ?: "no_data", row.day?.rawObservedAt?.let(::attendanceClock))) else emptyList(),
-                                    leading = row.rosterNumber?.toString() ?: "—",
-                                    onClick = { viewModel.openStudent(row.student.id) },
-                                )
-                            }
-                        }
+                        dailyAttendanceItems(state, data, canWrite = viewModel.writeOperations != null, search = search, onOpenStudent = viewModel::openStudent, onToggle = viewModel::setUnexcused)
                     } else {
                         val rows = data.roster.rows.filter { matchesStudent(it.student, search) }
                         item {
@@ -188,3 +167,128 @@ internal fun matchesStudent(student: StudentIdentity, search: String): Boolean {
 private fun attendanceClock(milliseconds: Double): String = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Asia/Ho_Chi_Minh")).format(Instant.ofEpochMilli(milliseconds.toLong()))
 
 private fun attendanceTimestamp(milliseconds: Double): String = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale.forLanguageTag("vi-VN")).withZone(ZoneId.of("Asia/Ho_Chi_Minh")).format(Instant.ofEpochMilli(milliseconds.toLong()))
+
+/**
+ * GVCN view of one class day: whole class, absentees first and highlighted (icon + text, not colour only),
+ * with a per-row "Vắng không phép" checkbox. No reason is required; Giám thị marks presence on Điểm danh.
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.dailyAttendanceItems(
+    state: HomeroomDetailState,
+    data: ClassDetail,
+    canWrite: Boolean,
+    search: String,
+    onOpenStudent: (String) -> Unit,
+    onToggle: (DailyRow, Boolean) -> Unit,
+) {
+    val daily = data.daily
+    val schoolDay = daily.schoolDay
+    val notMarked = HomeroomPresentation.classNotMarked(daily.classSaved != null, daily.published)
+    val rows = daily.rows.filter { matchesStudent(it.student, search) }
+    val (absent, others) = HomeroomPresentation.splitAbsentFirst(rows, { it.day?.rawObservation }, { it.day?.effectiveStatus })
+    val canCorrect = canWrite && daily.canCorrect && !daily.archived
+    item(key = "daily-head") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            when {
+                daily.rows.isEmpty() -> Text("Lớp không có học sinh vào ngày này.")
+                notMarked -> HomeroomBanner(
+                    HomeroomPresentation.notMarkedMessage(state.context.date, vietnamToday()),
+                    if (schoolDay.isSchoolDay && !schoolDay.outsideYear) "Khi Giám thị lưu điểm danh, học sinh vắng sẽ hiện ở đầu danh sách để bạn đánh dấu vắng không phép." else "Đây không phải ngày học.",
+                    HomeroomTone.Neutral,
+                    Icons.Outlined.HourglassEmpty,
+                )
+                else -> {
+                    if (schoolDay.outsideYear || !schoolDay.isSchoolDay) {
+                        HomeroomBanner(if (schoolDay.outsideYear) "Ngoài năm học" else "Không phải ngày học", schoolDay.note.ifBlank { null }, HomeroomTone.Info, Icons.Outlined.EventBusy)
+                    }
+                    StatTiles(HomeroomPresentation.dailyStats(daily.rows.map { it.day?.effectiveStatus ?: "no_data" }))
+                    daily.classSaved?.let { saved ->
+                        Text(
+                            "Giám thị lưu lúc ${attendanceClock(saved.savedAt)}${saved.savedByName.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+            if (daily.archived) Text("Lớp đã lưu trữ — chỉ xem.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            state.actionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            state.actionMessage?.let { Text(it, color = toneColors(HomeroomTone.Success).text) }
+            if (!notMarked && !canCorrect && !daily.archived && absent.isNotEmpty()) {
+                Text("Chỉ GVCN của lớp (hoặc quản trị viên) mới đánh dấu được vắng không phép.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            if (rows.isEmpty() && daily.rows.isNotEmpty()) Text("Không tìm thấy học sinh.")
+        }
+    }
+    if (notMarked || daily.rows.isEmpty()) return
+    item(key = "absent-heading") {
+        Column {
+            Text("Vắng (${absent.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            if (absent.isEmpty()) Text("Không có học sinh vắng.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    itemsIndexed(absent, key = { _, row -> "absent-${row.enrollmentId}" }) { index, row ->
+        ListSegment(index, absent.size) {
+            AbsentAttendanceRow(row, canCorrect, busy = state.busyDayId == row.day?.id, locked = state.busyDayId != null || state.refreshing, onOpen = { onOpenStudent(row.student.id) }, onToggle = { checked -> onToggle(row, checked) })
+        }
+    }
+    item(key = "present-heading") {
+        Text("Có mặt (${others.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+    }
+    itemsIndexed(others, key = { _, row -> "other-${row.enrollmentId}" }) { index, row ->
+        ListSegment(index, others.size) {
+            HomeroomListRow(
+                title = row.student.fullName,
+                subtitle = row.day?.note,
+                chips = listOf(HomeroomPresentation.studentChip(row.day?.effectiveStatus ?: "no_data", row.day?.rawObservedAt?.let(::attendanceClock))),
+                leading = row.rosterNumber?.toString() ?: "—",
+                onClick = { onOpenStudent(row.student.id) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AbsentAttendanceRow(row: DailyRow, canCorrect: Boolean, busy: Boolean, locked: Boolean, onOpen: () -> Unit, onToggle: (Boolean) -> Unit) {
+    val day = row.day
+    val status = day?.effectiveStatus ?: "no_data"
+    val unexcused = day?.disposition == "unexcused"
+    val tone = toneColors(if (unexcused) HomeroomTone.Danger else HomeroomTone.Warning)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(tone.background.copy(alpha = 0.55f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .clickable(onClick = onOpen)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Outlined.PersonOff, contentDescription = "Vắng", tint = tone.text, modifier = Modifier.size(20.dp))
+            Column(Modifier.weight(1f)) {
+                Text("${row.rosterNumber?.let { "$it. " } ?: ""}${row.student.fullName}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val detail = listOfNotNull(day?.reasonCode?.takeIf { it.isNotBlank() }, day?.note?.takeIf { it.isNotBlank() }).joinToString(" — ")
+                if (detail.isNotBlank()) Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            StatusChip(HomeroomPresentation.studentChip(status, null))
+        }
+        if (canCorrect && day?.rawObservation == "absent") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .toggleable(value = unexcused, enabled = !locked, role = Role.Checkbox, onValueChange = onToggle)
+                    .padding(start = 44.dp, end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Checkbox(checked = unexcused, onCheckedChange = null, enabled = !locked)
+                Text("Vắng không phép", fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}

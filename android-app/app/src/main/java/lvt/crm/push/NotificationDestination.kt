@@ -16,6 +16,10 @@ data class NotificationDestination(
     val opensChat: Boolean
         get() = opensChat(sourceType)
 
+    /** "Việc của tôi" reminders (kind `todo`, sourceType `todo_reminder`) open the todo list under Công việc. */
+    val opensTodos: Boolean
+        get() = !opensChat && isTodo(kind, sourceType)
+
     val chatKind: String
         get() = when (sourceType) {
             "duty_chat" -> "duty"
@@ -62,8 +66,12 @@ data class NotificationDestination(
                 }
                 .build()
 
+        /** Duty items open Lịch công tác; work items and todo reminders open the Công việc hub. */
         fun routeForKind(kind: String): String =
             if (kind == "duty") "duties" else "work"
+
+        fun isTodo(kind: String, sourceType: String): Boolean =
+            kind == "todo" || sourceType == "todo_reminder"
 
         fun opensChat(sourceType: String): Boolean =
             sourceType == "duty_chat" || sourceType == "work_chat" || sourceType == "group_chat"

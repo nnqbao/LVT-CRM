@@ -163,23 +163,33 @@ class HomeroomDetailTest {
         } finally { Dispatchers.resetMain() }
     }
 
-    @Test fun `supervisor overview cannot open arbitrary class or send detail queries`() = runTest {
+    @Test fun `overview cannot open a class it did not return or send detail queries`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             var detailCalls = 0
             val details = HomeroomDetailRepository { _, _ -> detailCalls++; error("Should not query") }
             val overview = object : HomeroomOperations {
                 override suspend fun listSchoolYears() = listOf(SchoolYear("year", "Năm", context.from, context.to, true))
-                override suspend fun importStatus(schoolYearId: String, date: String) = ImportStatus(0, emptyList())
-                override suspend fun overview(schoolYearId: String, date: String): HomeroomOverview = error("Supervisor cannot read overview")
-                override suspend fun pendingAbsences(schoolYearId: String): PendingAbsences = error("Supervisor cannot read pending")
+                override suspend fun overview(schoolYearId: String, date: String): HomeroomOverview = decodeOverview(JSONObject("""{"date":"$date","today":"$date","mode":"teacher",
+                    "schoolYear":{"_id":"year","name":"Năm"},"classes":[],"schoolDay":{},"missingUpload":{},
+                    "summary":{"counts":{"present":0,"late":0,"absent_excused":0,"absent_unexcused":0,"no_data":0,"absent_pending":0,"exempt":0}}}"""))
             }
-            val model = HomeroomViewModel(overview, true, details)
+            val model = HomeroomViewModel(overview, details)
             advanceUntilIdle()
             model.openClass("class")
             assertNull(model.detailState.value)
             assertEquals(0, detailCalls)
         } finally { Dispatchers.resetMain() }
+    }
+
+    @Test fun `class day decodes the Giam thi saved marker and tolerates its absence`() {
+        val base = """"date":"2026-10-07","rows":[],"published":false,"archived":false,"canCorrect":true,"schoolDay":{"isSchoolDay":true,"kind":"school_day","outsideYear":false}"""
+        assertNull(decodeClassDaily(JSONObject("{$base}")).classSaved)
+        assertNull(decodeClassDaily(JSONObject("{$base,\"classSaved\":null}")).classSaved)
+        val saved = decodeClassDaily(JSONObject("{$base,\"classSaved\":{\"savedAt\":1791356400000,\"savedByName\":\"Giám thị A\",\"source\":\"manual\",\"absentCount\":2}}")).classSaved
+        assertEquals("Giám thị A", saved?.savedByName)
+        assertEquals(2, saved?.absentCount)
+        assertTrue(runCatching { decodeClassDaily(JSONObject("{$base,\"classSaved\":{\"savedAt\":\"bad\"}}")) }.isFailure)
     }
 
     @Test fun `malformed refresh clears loaded class and history corrections remain exact`() = runTest {

@@ -18,7 +18,9 @@ data class ClassRoster(val rows: List<RosterRow>, val showContacts: Boolean)
 data class ScopedClass(val id: String, val yearId: String, val code: String, val name: String, val status: String, val teacherName: String, val rosterCount: Int, val canCorrect: Boolean)
 data class AttendanceRecord(val id: String, val rawObservation: String, val rawObservedAt: Double?, val disposition: String, val effectiveStatus: String, val reasonCode: String?, val note: String?)
 data class DailyRow(val enrollmentId: String, val rosterNumber: Int?, val student: StudentIdentity, val day: AttendanceRecord?)
-data class ClassDaily(val date: String, val rows: List<DailyRow>, val published: Boolean, val archived: Boolean, val canCorrect: Boolean, val schoolDay: SchoolDay)
+/** Giám thị / admin saved this class/day on the Điểm danh menu. */
+data class ClassSavedMarker(val savedAt: Double, val savedByName: String, val source: String, val absentCount: Int)
+data class ClassDaily(val date: String, val rows: List<DailyRow>, val published: Boolean, val archived: Boolean, val canCorrect: Boolean, val schoolDay: SchoolDay, val classSaved: ClassSavedMarker? = null)
 data class StudentEnrollment(val id: String, val classId: String, val classCode: String, val className: String, val startDate: String, val endDate: String?, val status: String, val rosterNumber: Int?, val transferReason: String?, val current: Boolean)
 data class Guardian(val id: String, val relationship: String, val fullName: String, val phone: String?, val isPrimaryContact: Boolean, val notes: String?)
 data class StudentProfile(val student: StudentIdentity, val status: String, val enrollments: List<StudentEnrollment>, val guardians: List<Guardian>, val showContacts: Boolean, val canManage: Boolean, val canEditContacts: Boolean)
@@ -64,7 +66,7 @@ internal val attendanceStatuses = setOf("present", "late", "absent_pending", "ab
 private val dispositions = setOf("none", "pending", "excused", "unexcused", "exempt")
 fun attendanceStatusText(status: String): String = when (status) {
     "present" -> "Có mặt"
-    "late" -> "Trễ"
+    "late" -> "Đi trễ"
     "absent_pending" -> "Vắng chờ xử lý"
     "absent_excused" -> "Vắng có phép"
     "absent_unexcused" -> "Vắng không phép"
@@ -134,7 +136,14 @@ internal fun decodeClassDaily(value: JSONObject): ClassDaily {
         val enrollment = row.getJSONObject("enrollment")
         require(row.has("day"))
         DailyRow(enrollment.text("_id", true), enrollment.optionalInteger("rosterNumber"), row.getJSONObject("student").identity(), if (row.isNull("day")) null else row.getJSONObject("day").record())
-    }, value.flag("published"), value.flag("archived"), value.flag("canCorrect"), SchoolDay(schoolDay.flag("isSchoolDay"), schoolDay.text("kind"), schoolDay.optionalText("note") ?: "", schoolDay.flag("outsideYear")))
+    }, value.flag("published"), value.flag("archived"), value.flag("canCorrect"), SchoolDay(schoolDay.flag("isSchoolDay"), schoolDay.text("kind"), schoolDay.optionalText("note") ?: "", schoolDay.flag("outsideYear")), decodeClassSaved(value))
+}
+
+/** `classSaved` is null until the class is saved on the Điểm danh menu; absent on older servers. */
+private fun decodeClassSaved(value: JSONObject): ClassSavedMarker? {
+    if (!value.has("classSaved") || value.isNull("classSaved")) return null
+    val marker = value.getJSONObject("classSaved")
+    return ClassSavedMarker(marker.number("savedAt"), marker.optionalText("savedByName") ?: "", marker.optionalText("source") ?: "", if (marker.has("absentCount")) marker.integer("absentCount") else 0)
 }
 
 internal fun decodeStudentProfile(value: JSONObject): StudentProfile {

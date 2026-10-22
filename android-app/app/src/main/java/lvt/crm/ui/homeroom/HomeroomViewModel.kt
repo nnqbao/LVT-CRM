@@ -14,14 +14,14 @@ import lvt.crm.data.convex.ConvexException
 import lvt.crm.data.convex.ConvexHttpClient
 import lvt.crm.data.homeroom.HomeroomOperations
 import lvt.crm.data.homeroom.HomeroomOverview
-import lvt.crm.data.homeroom.ImportStatus
-import lvt.crm.data.homeroom.PendingAbsences
 import lvt.crm.data.homeroom.SchoolYear
 import lvt.crm.data.homeroom.vietnamToday
 import lvt.crm.data.homeroom.isVietnamDate
 
-enum class HomeroomPane { Overview, Pending }
-
+/**
+ * Lớp chủ nhiệm overview (GVCN, Xem tối cao, admin/mod). Giám thị no longer lives here:
+ * the Điểm danh menu (ui/attendance) marks attendance; the old "Vắng chờ xử lý" inbox is gone.
+ */
 data class HomeroomUiState(
     val loading: Boolean = true,
     val refreshing: Boolean = false,
@@ -29,21 +29,15 @@ data class HomeroomUiState(
     val years: List<SchoolYear> = emptyList(),
     val selectedYearId: String? = null,
     val date: String = vietnamToday(),
-    val pane: HomeroomPane = HomeroomPane.Overview,
     val overview: HomeroomOverview? = null,
-    val pending: PendingAbsences? = null,
-    val importStatus: ImportStatus? = null,
-    val supervisor: Boolean = false,
 )
 
 class HomeroomViewModel(
     private val repository: HomeroomOperations,
-    supervisor: Boolean,
     private val detailOperations: lvt.crm.data.homeroom.HomeroomDetailOperations? =
         (repository as? lvt.crm.data.homeroom.HomeroomRepository)?.detailOperations,
 ) : ViewModel() {
     val writeOperations = (repository as? lvt.crm.data.homeroom.HomeroomRepository)?.writeOperations
-    private val cameraStores = mutableMapOf<String, lvt.crm.data.homeroom.CameraImportStore>()
     private val managementStores = mutableMapOf<String, lvt.crm.data.homeroom.HomeroomManagementStore>()
     fun management(): lvt.crm.data.homeroom.HomeroomManagementStore? {
         val year = uiState.value.selectedYearId ?: return null
@@ -51,15 +45,9 @@ class HomeroomViewModel(
         val key = "$year/$date"
         return managementStores[key] ?: (repository as? lvt.crm.data.homeroom.HomeroomRepository)?.management(year, date) { uiState.value.selectedYearId == year && uiState.value.date == date }?.also { managementStores[key] = it }
     }
-    fun cameraImport(): lvt.crm.data.homeroom.CameraImportStore? {
-        val year = uiState.value.selectedYearId ?: return null
-        val date = uiState.value.date
-        val key = "$year/$date"
-        return cameraStores[key] ?: (repository as? lvt.crm.data.homeroom.HomeroomRepository)?.cameraImport(year, date) { uiState.value.selectedYearId == year && uiState.value.date == date }?.also { cameraStores[key] = it }
-    }
     private val detail = MutableStateFlow<HomeroomDetailViewModel?>(null)
     val detailState = detail.asStateFlow()
-    private val _uiState = MutableStateFlow(HomeroomUiState(supervisor = supervisor))
+    private val _uiState = MutableStateFlow(HomeroomUiState())
     val uiState: StateFlow<HomeroomUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
     private var generation = 0
@@ -72,12 +60,12 @@ class HomeroomViewModel(
         val current = _uiState.value
         val operations = detailOperations ?: return
         val year = current.years.firstOrNull { it.id == current.selectedYearId } ?: return
-        if (current.supervisor || current.overview?.classes?.none { it.id == id } != false) return
+        if (current.overview?.classes?.none { it.id == id } != false) return
         detail.value?.close()
         detail.value = HomeroomDetailViewModel(operations, lvt.crm.data.homeroom.DetailContext(year.id, id, current.date, year.startDate, year.endDate), writeOperations)
         loadJob?.cancel()
         generation++
-        _uiState.update { it.copy(overview = null, pending = null, importStatus = null) }
+        _uiState.update { it.copy(overview = null) }
     }
 
     fun closeDetail() {
@@ -87,7 +75,6 @@ class HomeroomViewModel(
         if (date != null) _uiState.update { it.copy(date = date) }
         refresh()
     }
-    fun clearWriteData() { _uiState.update { it.copy(overview = null, pending = null) } }
 
     override fun onCleared() {
         managementStores.values.forEach { it.invalidate() }
@@ -99,7 +86,7 @@ class HomeroomViewModel(
         if (_uiState.value.years.none { it.id == id }) return
         if (_uiState.value.selectedYearId == id) return
         managementStores.values.forEach { it.invalidate() }
-        _uiState.update { it.copy(selectedYearId = id, overview = null, pending = null, importStatus = null) }
+        _uiState.update { it.copy(selectedYearId = id, overview = null) }
         load(initial = true, reloadYears = false)
     }
 
@@ -107,20 +94,15 @@ class HomeroomViewModel(
         if (!isVietnamDate(date)) return
         if (_uiState.value.date == date) return
         managementStores.values.forEach { it.invalidate() }
-        _uiState.update { it.copy(date = date, overview = null, importStatus = null) }
+        _uiState.update { it.copy(date = date, overview = null) }
         load(initial = true, reloadYears = false)
-    }
-
-    fun selectPane(pane: HomeroomPane) {
-        if (_uiState.value.supervisor || _uiState.value.pane == pane) return
-        _uiState.update { it.copy(pane = pane) }
     }
 
     private fun load(initial: Boolean, reloadYears: Boolean) {
         loadJob?.cancel()
         val version = ++generation
         val request = _uiState.value
-        _uiState.update { it.copy(loading = initial, refreshing = !initial, error = null, overview = null, pending = null, importStatus = null) }
+        _uiState.update { it.copy(loading = initial, refreshing = !initial, error = null, overview = null) }
         loadJob = viewModelScope.launch {
             try {
                 val years = if (reloadYears || request.years.isEmpty()) repository.listSchoolYears() else request.years
@@ -135,35 +117,19 @@ class HomeroomViewModel(
                     }
                     return@launch
                 }
-                if (request.supervisor) {
-                    val status = repository.importStatus(yearId, request.date)
-                    if (version != generation) return@launch
-                    _uiState.update {
-                        it.copy(
-                            loading = false,
-                            refreshing = false,
-                            years = years,
-                            selectedYearId = yearId,
-                            importStatus = status,
-                        )
-                    }
-                } else {
-                    val overview = repository.overview(yearId, request.date)
-                    require(overview.date == request.date && overview.schoolYear.id == yearId) {
-                        "Phản hồi không khớp năm học/ngày đã chọn."
-                    }
-                    val pending = repository.pendingAbsences(yearId)
-                    if (version != generation) return@launch
-                    _uiState.update {
-                        it.copy(
-                            loading = false,
-                            refreshing = false,
-                            years = years,
-                            selectedYearId = yearId,
-                            overview = overview,
-                            pending = pending,
-                        )
-                    }
+                val overview = repository.overview(yearId, request.date)
+                require(overview.date == request.date && overview.schoolYear.id == yearId) {
+                    "Phản hồi không khớp năm học/ngày đã chọn."
+                }
+                if (version != generation) return@launch
+                _uiState.update {
+                    it.copy(
+                        loading = false,
+                        refreshing = false,
+                        years = years,
+                        selectedYearId = yearId,
+                        overview = overview,
+                    )
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -182,11 +148,11 @@ class HomeroomViewModel(
     }
 
     companion object {
-        fun factory(repository: HomeroomOperations, supervisor: Boolean): ViewModelProvider.Factory =
+        fun factory(repository: HomeroomOperations): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    HomeroomViewModel(repository, supervisor) as T
+                    HomeroomViewModel(repository) as T
             }
     }
 }

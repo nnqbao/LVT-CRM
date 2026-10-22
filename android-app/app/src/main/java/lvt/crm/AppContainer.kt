@@ -1,6 +1,7 @@
 package lvt.crm
 
 import android.content.Context
+import lvt.crm.data.attendance.AttendanceRepository
 import lvt.crm.data.auth.AuthRepository
 import lvt.crm.data.chat.ChatRepository
 import lvt.crm.data.auth.AvatarRepository
@@ -11,6 +12,7 @@ import lvt.crm.data.convex.ConvexHttpClient
 import lvt.crm.data.duties.DutiesRepository
 import lvt.crm.data.homeroom.HomeroomRepository
 import lvt.crm.data.notifications.NotificationsRepository
+import lvt.crm.data.todos.PersonalTodosRepository
 import lvt.crm.data.work.WorkRepository
 import lvt.crm.push.NotificationScheduler
 import lvt.crm.push.FcmTokenRegistrar
@@ -44,6 +46,8 @@ class AppContainer(context: Context) {
     )
     val notificationsRepository = NotificationsRepository(convex)
     val homeroomRepository = HomeroomRepository(convex, java.io.File(appContext.noBackupFilesDir, "homeroom-pending"))
+    val attendanceRepository = AttendanceRepository(convex)
+    val personalTodosRepository = PersonalTodosRepository(convex)
     val chatRepository = ChatRepository(convex)
     val workRepository = WorkRepository(
         convex,

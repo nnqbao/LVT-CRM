@@ -35,6 +35,8 @@ data class HomeroomClassSummary(
     val rosterCount: Int,
     val teacherName: String,
     val published: Boolean,
+    /** Giám thị (or admin/mod) saved this class on the Điểm danh menu; old camera days also count. */
+    val saved: Boolean,
     val counts: AttendanceCounts,
     val pendingTotal: Int,
     val canCorrect: Boolean,
@@ -69,45 +71,13 @@ data class HomeroomOverview(
     val pendingTotal: Int,
 )
 
-data class PendingAbsence(
-    val id: String,
-    val attendanceDate: String,
-    val classCode: String,
-    val studentCode: String,
-    val fullName: String,
-    val note: String,
-    val canCorrect: Boolean,
-    val classId: String = "",
-    val studentId: String = "",
-)
-
-data class PendingAbsences(
-    val total: Int,
-    val truncated: Boolean,
-    val rows: List<PendingAbsence>,
-)
-
-data class ImportUpload(
-    val id: String,
-    val fileName: String,
-    val publishedAt: Long,
-    val uploadedByName: String,
-    val rowCount: Int,
-    val matchedCount: Int,
-)
-
-data class ImportStatus(val publishedClassCount: Int, val uploads: List<ImportUpload>)
-
 interface HomeroomOperations {
     suspend fun listSchoolYears(): List<SchoolYear>
     suspend fun overview(schoolYearId: String, date: String): HomeroomOverview
-    suspend fun pendingAbsences(schoolYearId: String): PendingAbsences
-    suspend fun importStatus(schoolYearId: String, date: String): ImportStatus
 }
 
 class HomeroomRepository(private val convex: ConvexHttpClient, private val journalDirectory: java.io.File) : HomeroomOperations {
     fun management(year: String, date: String, isCurrent: () -> Boolean) = HomeroomManagementStore.live(convex, year, date, isCurrent, HomeroomPendingJournal(journalDirectory, "management", year, date))
-    fun cameraImport(year: String, date: String, isCurrent: () -> Boolean) = CameraImportStore.live(convex, year, date, isCurrent, HomeroomPendingJournal(journalDirectory, "camera", year, date))
     val writeOperations = HomeroomWriteRepository(convex)
     val detailOperations: HomeroomDetailOperations = HomeroomDetailRepository(convex)
 
@@ -119,22 +89,6 @@ class HomeroomRepository(private val convex: ConvexHttpClient, private val journ
             convex.query(
                 "homeroomReports:overview",
                 JSONObject().put("schoolYearId", schoolYearId).put("date", date),
-            ),
-        )
-
-    override suspend fun pendingAbsences(schoolYearId: String): PendingAbsences =
-        decodePending(
-            convex.query(
-                "homeroomReports:pendingAbsences",
-                JSONObject().put("schoolYearId", schoolYearId),
-            ),
-        )
-
-    override suspend fun importStatus(schoolYearId: String, date: String): ImportStatus =
-        decodeImportStatus(
-            convex.query(
-                "attendanceImport:uploadsForDate",
-                JSONObject().put("schoolYearId", schoolYearId).put("attendanceDate", date),
             ),
         )
 }
@@ -189,6 +143,7 @@ internal fun decodeOverview(value: JSONObject): HomeroomOverview {
                 rosterCount = row.optInt("rosterCount"),
                 teacherName = row.optString("teacherName"),
                 published = row.optBoolean("published"),
+                saved = row.optBoolean("saved", row.optBoolean("published")),
                 counts = row.optJSONObject("counts").toCounts(),
                 pendingTotal = row.optInt("pendingTotal"),
                 canCorrect = row.optBoolean("canCorrect"),
@@ -203,38 +158,6 @@ internal fun decodeOverview(value: JSONObject): HomeroomOverview {
         pendingTotal = value.optInt("pendingTotal"),
     )
 }
-
-internal fun decodePending(value: JSONObject): PendingAbsences = PendingAbsences(
-    total = value.getInt("total"),
-    truncated = value.getBoolean("truncated"),
-    rows = value.getJSONArray("rows").objects().map { row ->
-        PendingAbsence(
-            id = row.optString("_id"),
-            attendanceDate = row.optString("attendanceDate"),
-            classCode = row.optString("classCode"),
-            studentCode = row.optString("studentCode"),
-            fullName = row.optString("fullName"),
-            note = row.optString("note"),
-            canCorrect = row.optBoolean("canCorrect"),
-            classId = row.optString("classId"),
-            studentId = row.optString("studentId"),
-        )
-    },
-)
-
-internal fun decodeImportStatus(value: JSONObject): ImportStatus = ImportStatus(
-    publishedClassCount = value.getInt("publishedClassCount"),
-    uploads = value.getJSONArray("uploads").objects().map { row ->
-        ImportUpload(
-            id = row.optString("_id"),
-            fileName = row.optString("fileName"),
-            publishedAt = row.optLong("publishedAt"),
-            uploadedByName = row.optString("uploadedByName"),
-            rowCount = row.optInt("rowCount"),
-            matchedCount = row.optInt("matchedCount"),
-        )
-    },
-)
 
 private fun JSONObject?.toCounts(): AttendanceCounts {
     val value = requireNotNull(this) { "Thiếu số liệu điểm danh." }
@@ -267,7 +190,7 @@ private fun JSONObject?.toMissingUpload(): MissingUpload {
     return MissingUpload(
         shouldAlert = value.optBoolean("shouldAlert"),
         cutoffTime = value.optString("cutoffTime"),
-        missingClassCodes = value.optJSONArray("missingClasses").objects().map { it.optString("code") },
+        missingClassCodes = value.optJSONArray("missingClasses").objects().map { it.optString("name").ifBlank { it.optString("code") } },
     )
 }
 

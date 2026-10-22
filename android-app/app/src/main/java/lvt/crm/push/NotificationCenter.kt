@@ -69,6 +69,7 @@ object NotificationCenter {
             item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" ->
                 "Trao đổi · ${item.milestoneLabel.ifBlank { "Tin nhắn mới" }}"
             item.kind == "duty" -> "Công tác · ${item.milestoneLabel}"
+            NotificationDestination.isTodo(item.kind, item.sourceType) -> "Việc của tôi · ${item.milestoneLabel.ifBlank { "Nhắc việc" }}"
             else -> "Công việc · ${item.milestoneLabel}"
         }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
