@@ -60,6 +60,7 @@ import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.components.StatePanel
 import lvt.crm.ui.components.StatusPill
 import lvt.crm.ui.components.StatusTone
+import lvt.crm.ui.components.GuideAnchors
 
 @Composable
 fun DutiesScreen(
@@ -149,6 +150,7 @@ fun DutiesScreen(
 
     LvtScreen(
         title = "Lịch công tác cá nhân",
+        helpAnchor = GuideAnchors.DUTIES,
         refreshing = state.refreshing,
         onRefresh = { viewModel.refresh() },
         showAccountHeader = true,

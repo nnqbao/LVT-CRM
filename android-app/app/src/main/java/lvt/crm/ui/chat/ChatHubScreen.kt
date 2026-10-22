@@ -66,6 +66,7 @@ import lvt.crm.data.chat.chatThreadKey
 import lvt.crm.data.chat.formatChatListTime
 import lvt.crm.data.convex.ConvexException
 import lvt.crm.ui.components.LvtScreen
+import lvt.crm.ui.components.GuideAnchors
 
 private const val POLL_MS = 8_000L
 private val FILTERS = listOf(
@@ -196,6 +197,7 @@ fun ChatHubScreen(
     }
     LvtScreen(
         title = "Trao đổi",
+        helpAnchor = GuideAnchors.CHAT,
         refreshing = refreshing,
         onRefresh = {
             refreshing = true

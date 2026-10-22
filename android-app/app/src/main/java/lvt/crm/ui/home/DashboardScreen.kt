@@ -37,6 +37,7 @@ import lvt.crm.R
 import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.duties.DutyListTab
 import lvt.crm.ui.work.WorkDashboardFilter
+import lvt.crm.ui.components.GuideAnchors
 
 @Composable
 fun DashboardScreen(
@@ -50,6 +51,7 @@ fun DashboardScreen(
 
     LvtScreen(
         title = stringResource(R.string.nav_overview),
+        helpAnchor = GuideAnchors.OVERVIEW,
         refreshing = state.refreshing || state.loading,
         onRefresh = { viewModel.refresh() },
         showAccountHeader = true,

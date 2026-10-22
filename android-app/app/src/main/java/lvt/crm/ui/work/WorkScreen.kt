@@ -104,6 +104,7 @@ import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.components.StatePanel
 import lvt.crm.ui.components.StatusPill
 import lvt.crm.ui.components.StatusTone
+import lvt.crm.ui.components.GuideAnchors
 
 @Composable
 fun WorkScreen(
@@ -315,6 +316,7 @@ fun WorkScreen(
             )
         } ?: LvtScreen(
             title = "Công việc",
+            helpAnchor = GuideAnchors.WORK,
             refreshing = state.refreshing,
             onRefresh = { viewModel.refresh() },
             showAccountHeader = true,
@@ -724,6 +726,7 @@ private fun AdminWorkScreen(
                 null
             },
             showAccountHeader = selectedDocument == null && selectedTask == null,
+            helpAnchor = GuideAnchors.WORK.takeIf { selectedDocument == null && selectedTask == null },
             actions = {
                 if (selectedDocument == null && selectedTask == null) {
                     TextButton(onClick = onCreate) { Text("Tạo") }

@@ -65,6 +65,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import lvt.crm.ui.components.GuideAnchors
 
 @Composable
 fun NotificationsScreen(
@@ -84,6 +85,7 @@ fun NotificationsScreen(
 
     LvtScreen(
         title = "Thông báo",
+        helpAnchor = GuideAnchors.NOTIFICATIONS,
         refreshing = state.refreshing,
         onRefresh = { viewModel.refresh() },
         navigationIcon = onBack?.let { back ->

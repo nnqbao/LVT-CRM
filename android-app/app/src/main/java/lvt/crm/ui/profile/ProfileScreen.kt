@@ -77,6 +77,7 @@ import lvt.crm.ui.components.StatusPill
 import lvt.crm.ui.components.StatusTone
 import lvt.crm.ui.theme.AppearanceMode
 import lvt.crm.ui.theme.AppearanceStore
+import lvt.crm.ui.components.GuideAnchors
 
 @Composable
 fun ProfileScreen(
@@ -187,6 +188,7 @@ fun ProfileScreen(
 
     LvtScreen(
         title = stringResource(R.string.nav_profile),
+        helpAnchor = GuideAnchors.PROFILE,
         navigationIcon = onBack?.let { back ->
             {
                 IconButton(onClick = back) {

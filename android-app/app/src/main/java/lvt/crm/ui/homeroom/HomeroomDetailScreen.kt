@@ -29,6 +29,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import lvt.crm.data.homeroom.*
 import lvt.crm.ui.components.LvtScreen
+import lvt.crm.ui.components.GuideAnchors
 
 @Composable
 fun HomeroomDetailScreen(viewModel: HomeroomDetailViewModel, onClose: () -> Unit) {
@@ -39,7 +40,7 @@ fun HomeroomDetailScreen(viewModel: HomeroomDetailViewModel, onClose: () -> Unit
     contactForm?.let { draft -> viewModel.writeOperations?.let { writes -> HomeroomWriteForm(draft, writes, { viewModel.uiState.value.context == draft.context && viewModel.uiState.value.studentId == draft.studentId && viewModel.uiState.value.error == null }, viewModel::clearWriteData, viewModel::refresh) { contactForm = null } } }
     val back = { if (state.studentId != null) viewModel.backToClass() else onClose() }
     BackHandler(onBack = back)
-    LvtScreen(title = if (state.studentId != null) "Học sinh" else "Lớp", refreshing = state.loading || state.refreshing, onRefresh = viewModel::refresh, showAccountHeader = true) {
+    LvtScreen(title = if (state.studentId != null) "Học sinh" else "Lớp", refreshing = state.loading || state.refreshing, onRefresh = viewModel::refresh, showAccountHeader = true, helpAnchor = GuideAnchors.HOMEROOM) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 OutlinedButton(onClick = back, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (state.studentId != null) "Trở lại lớp" else "Trở lại tổng quan") }
