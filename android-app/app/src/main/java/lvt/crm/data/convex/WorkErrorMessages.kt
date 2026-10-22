@@ -31,7 +31,7 @@ object WorkErrorMessages {
         // Sandbox addition in progress (no web copy yet): văn thư/admin may assign another
         // văn thư/admin only inside the same department.
         "WORK_ASSIGNEE_OPS_FORBIDDEN" to
-            "Chỉ được giao việc cho Văn thư/Quản trị viên khác trong cùng phòng ban.",
+            "Chỉ giao việc cho tài khoản quản trị cùng phòng ban.",
         "WORK_DEPARTMENT_FORBIDDEN" to "Chỉ Văn thư và Ban giám hiệu được giao việc cho cả phòng ban.",
         "WORK_ASSIGNEE_NOT_SUBORDINATE" to
             "Chỉ được giao cho người có cấp thấp hơn bạn. Tổ trưởng/tổ phó chỉ giao trong phòng ban của mình.",

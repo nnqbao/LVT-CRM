@@ -8,7 +8,7 @@ data class AppChangelogEntry(
 object AppChangelog {
     val entries: List<AppChangelogEntry> = listOf(
         AppChangelogEntry(
-            "1.1.0",
+            "2.0.0",
             listOf(
                 "Công việc do Văn thư/Quản trị tạo phải chọn Người duyệt (Ban giám hiệu) và bấm Gửi duyệt. Người nhận chỉ thấy việc sau khi đủ người duyệt.",
                 "Ban giám hiệu có mục Chờ tôi duyệt: bấm Duyệt hoặc Trả lại (bắt buộc ghi lý do). Sau lần duyệt đầu tiên công việc không sửa hoặc xóa được nữa.",

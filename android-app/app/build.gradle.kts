@@ -20,7 +20,7 @@ fun localProperty(name: String): String? {
 }
 
 val lvtVersionCode = 50
-val lvtVersionName = "1.1.0"
+val lvtVersionName = "2.0.0"
 
 android {
     namespace = "lvt.crm"

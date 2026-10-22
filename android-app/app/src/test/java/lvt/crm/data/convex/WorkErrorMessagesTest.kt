@@ -22,7 +22,7 @@ class WorkErrorMessagesTest {
             ConvexHttpClient.humanize(server("WORK_ASSIGNEE_BGH_FORBIDDEN")),
         )
         assertEquals(
-            "Chỉ được giao việc cho Văn thư/Quản trị viên khác trong cùng phòng ban.",
+            "Chỉ giao việc cho tài khoản quản trị cùng phòng ban.",
             ConvexHttpClient.humanize(server("WORK_ASSIGNEE_OPS_FORBIDDEN")),
         )
         assertEquals(
