@@ -11,8 +11,8 @@ const androidHeader = readFileSync(new URL('../android-app/app/src/main/java/lvt
 const androidScreen = readFileSync(new URL('../android-app/app/src/main/java/lvt/crm/ui/components/LvtComponents.kt', import.meta.url), 'utf8');
 const androidChangelog = readFileSync(new URL('../android-app/app/src/main/java/lvt/crm/ui/profile/AppChangelog.kt', import.meta.url), 'utf8');
 
-test('iOS bottom bar is Tổng quan, Trao đổi, Lịch CT and Công việc', () => {
-  assert.match(iosRoot, /viewControllers = \[overview, chat, duties, work\]/);
+test('iOS bottom bar is Tổng quan, optional student tab, Trao đổi, Lịch CT and Công việc', () => {
+  assert.match(iosRoot, /viewControllers = \[overview\] \+ makeStudentTabs\(\) \+ \[chat, duties, work\]/);
   assert.match(iosRoot, /title: "Trao đổi"/);
   assert.doesNotMatch(iosRoot, /title: "Thông báo"/);
   assert.doesNotMatch(iosRoot, /title: "Cá nhân"/);
