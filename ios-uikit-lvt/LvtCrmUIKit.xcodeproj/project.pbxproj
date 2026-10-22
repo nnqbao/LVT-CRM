@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        200000000000000000000045 /* SupervisorAttendance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000045 /* SupervisorAttendance.swift */; };
+        200000000000000000000046 /* AttendanceViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000046 /* AttendanceViewController.swift */; };
+        200000000000000000000047 /* PersonalTodos.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000047 /* PersonalTodos.swift */; };
+        200000000000000000000048 /* PersonalTodosViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000048 /* PersonalTodosViewController.swift */; };
+        200000000000000000000049 /* WorkHubViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000049 /* WorkHubViewController.swift */; };
         200000000000000000000040 = {isa = PBXBuildFile; fileRef = 300000000000000000000040; };
         200000000000000000000041 = {isa = PBXBuildFile; fileRef = 300000000000000000000041; };
         200000000000000000000042 = {isa = PBXBuildFile; fileRef = 300000000000000000000042; };
@@ -15,7 +20,6 @@
         20000000000000000000003E = {isa = PBXBuildFile; fileRef = 30000000000000000000003E; };
         20000000000000000000003F = {isa = PBXBuildFile; fileRef = 30000000000000000000003F; };
         20000000000000000000003C = {isa = PBXBuildFile; fileRef = 30000000000000000000003C; };
-        20000000000000000000003D = {isa = PBXBuildFile; fileRef = 30000000000000000000003D; };
         200000000000000000000038 = {isa = PBXBuildFile; fileRef = 300000000000000000000038; };
         200000000000000000000039 = {isa = PBXBuildFile; fileRef = 300000000000000000000039; };
         20000000000000000000003A = {isa = PBXBuildFile; fileRef = 30000000000000000000003A; };
@@ -74,6 +78,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        300000000000000000000045 /* SupervisorAttendance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupervisorAttendance.swift; sourceTree = "<group>"; };
+        300000000000000000000046 /* AttendanceViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttendanceViewController.swift; sourceTree = "<group>"; };
+        300000000000000000000047 /* PersonalTodos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalTodos.swift; sourceTree = "<group>"; };
+        300000000000000000000048 /* PersonalTodosViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalTodosViewController.swift; sourceTree = "<group>"; };
+        300000000000000000000049 /* WorkHubViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkHubViewController.swift; sourceTree = "<group>"; };
         300000000000000000000040 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomPendingJournal.swift; sourceTree = "<group>"; };
         300000000000000000000041 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomPresentation.swift; sourceTree = "<group>"; };
         300000000000000000000042 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomCells.swift; sourceTree = "<group>"; };
@@ -81,8 +90,7 @@
         300000000000000000000044 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DutyEditViewController.swift; sourceTree = "<group>"; };
         30000000000000000000003E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomManagement.swift; sourceTree = "<group>"; };
         30000000000000000000003F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomManagementViewController.swift; sourceTree = "<group>"; };
-        30000000000000000000003C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomCameraImport.swift; sourceTree = "<group>"; };
-        30000000000000000000003D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomCameraImportViewController.swift; sourceTree = "<group>"; };
+        30000000000000000000003C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomUploadSupport.swift; sourceTree = "<group>"; };
         300000000000000000000038 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomDetail.swift; sourceTree = "<group>"; };
         300000000000000000000039 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomDetailViewController.swift; sourceTree = "<group>"; };
         30000000000000000000003A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomWrites.swift; sourceTree = "<group>"; };
@@ -167,6 +175,11 @@
 			isa = PBXGroup;
 			children = (
                 300000000000000000000036 /* HomeroomRepository.swift */,
+                300000000000000000000045 /* SupervisorAttendance.swift */,
+                300000000000000000000046 /* AttendanceViewController.swift */,
+                300000000000000000000047 /* PersonalTodos.swift */,
+                300000000000000000000048 /* PersonalTodosViewController.swift */,
+                300000000000000000000049 /* WorkHubViewController.swift */,
                 300000000000000000000040,
                 300000000000000000000041,
                 300000000000000000000042,
@@ -179,7 +192,6 @@
                 30000000000000000000003C,
                 30000000000000000000003E,
                 30000000000000000000003F,
-                30000000000000000000003D,
                 300000000000000000000037 /* HomeroomViewController.swift */,
 				300000000000000000000001 /* AppDelegate.swift */,
 				300000000000000000000002 /* SceneDelegate.swift */,
@@ -311,6 +323,11 @@
 			buildActionMask = 2147483647;
 			files = (
                 200000000000000000000036 /* HomeroomRepository.swift in Sources */,
+                200000000000000000000045 /* SupervisorAttendance.swift in Sources */,
+                200000000000000000000046 /* AttendanceViewController.swift in Sources */,
+                200000000000000000000047 /* PersonalTodos.swift in Sources */,
+                200000000000000000000048 /* PersonalTodosViewController.swift in Sources */,
+                200000000000000000000049 /* WorkHubViewController.swift in Sources */,
                 200000000000000000000040,
                 200000000000000000000041,
                 200000000000000000000042,
@@ -323,7 +340,6 @@
                 20000000000000000000003C,
                 20000000000000000000003E,
                 20000000000000000000003F,
-                20000000000000000000003D,
                 200000000000000000000037 /* HomeroomViewController.swift in Sources */,
 				200000000000000000000001 /* AppDelegate.swift in Sources */,
 				200000000000000000000002 /* SceneDelegate.swift in Sources */,
@@ -422,7 +438,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LvtCrmUIKit/LvtCrmUIKit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 36;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = 42ZDDJ2B8M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LvtCrmUIKit/Info.plist;
@@ -430,7 +446,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.16.0;
+				MARKETING_VERSION = 2.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = vn.lvt.crm.uikit;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -447,7 +463,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LvtCrmUIKit/LvtCrmUIKitRelease.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 36;
+				CURRENT_PROJECT_VERSION = 37;
 				DEVELOPMENT_TEAM = 42ZDDJ2B8M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LvtCrmUIKit/Info.plist;
@@ -455,7 +471,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.16.0;
+				MARKETING_VERSION = 2.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = vn.lvt.crm.uikit;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

@@ -4,18 +4,22 @@ import Foundation
     @MainActor static func main() async throws {
         let context = DetailContext(yearId: "year", classId: "class", date: "2026-10-07", from: "2026-08-01", to: "2027-06-01")
         let target = AbsenceTarget(id: "day", studentId: "student", context: context)
-        let single = try HomeroomWritePayload.disposition([target], next: "excused", reason: "", note: "Offline fixture reason", batch: false)
-        let batch = try HomeroomWritePayload.disposition([target, target], next: "excused", reason: "fixture", note: "", batch: true)
+        let single = try HomeroomWritePayload.disposition(target, next: "excused", reason: "", note: "Offline fixture reason")
+        // Reason/note are optional since the Điểm danh redesign: the GVCN toggle sends only id + next disposition.
+        let toggle = try HomeroomWritePayload.disposition(target, next: "unexcused")
         var checks = 0
         func check(_ condition: Bool, _ message: String) { checks += 1; precondition(condition, message) }
         func rejected(_ operation: () throws -> Void) { do { try operation(); check(false, "Invalid offline input accepted") } catch { check(true, "Rejected") } }
-        let hundred = (1...100).map { AbsenceTarget(id: "day\($0)", studentId: "student", context: context) }
-        check(try HomeroomWritePayload.disposition(hundred + hundred, next: "pending", reason: "", note: "", batch: true).targets.count == 100, "Dedupe100")
-        rejected { _ = try HomeroomWritePayload.disposition(hundred + [target], next: "pending", reason: "", note: "", batch: true) }
-        for next in ["none", "exempt", "present"] { rejected { _ = try HomeroomWritePayload.disposition([target], next: next, reason: "fixture", note: "", batch: false) } }
-        rejected { _ = try HomeroomWritePayload.disposition([target], next: "excused", reason: "", note: "", batch: false) }
-        rejected { _ = try HomeroomWritePayload.disposition([target], next: "pending", reason: "", note: String(repeating: "x", count: 501), batch: false) }
-        rejected { _ = try HomeroomWritePayload.disposition([target, AbsenceTarget(id: "day", studentId: "other", context: context)], next: "pending", reason: "", note: "", batch: true) }
+        check(toggle.path == "studentAttendance:setDisposition" && Set(toggle.args.keys) == ["attendanceDayId", "nextDisposition"] && toggle.args["nextDisposition"] as? String == "unexcused", "Reasonless unexcused toggle")
+        check(try HomeroomWritePayload.disposition(target, next: "excused").args["nextDisposition"] as? String == "excused", "Reasonless excused toggle")
+        check(try HomeroomWritePayload.disposition(target, next: "unexcused", reason: " leave ", note: " kept ").args["reasonCode"] as? String == "leave", "Existing reason/note passed back trimmed")
+        check(HomeroomPresentation.nextDisposition(unexcused: true) == "unexcused" && HomeroomPresentation.nextDisposition(unexcused: false) == "excused", "Toggle mapping")
+        // No pending/none/exempt from the toggle, no batch, notes ≤500, valid context.
+        for next in ["none", "exempt", "present", "pending"] { rejected { _ = try HomeroomWritePayload.disposition(target, next: next, reason: "fixture") } }
+        rejected { _ = try HomeroomWritePayload.disposition(target, next: "excused", note: String(repeating: "x", count: 501)) }
+        rejected { _ = try HomeroomWritePayload.disposition(AbsenceTarget(id: "", studentId: "student", context: context), next: "excused") }
+        rejected { _ = try HomeroomWritePayload.disposition(AbsenceTarget(id: "day", studentId: "student", context: DetailContext(yearId: "year", classId: "class", date: "bad", from: "2026-08-01", to: "2027-06-01")), next: "excused") }
+        rejected { try HomeroomWritePayload.validate(HomeroomWrite(path: "studentAttendance:setDispositionMany", args: ["attendanceDayIds": ["day"], "nextDisposition": "excused"], context: context, targets: [target])) }
         for phone in ["12345", "123456789012345678901", "abc123"] { rejected { _ = try HomeroomWritePayload.studentPhone(context, studentId: "student", value: phone) } }
         let phone = try HomeroomWritePayload.studentPhone(context, studentId: "student", value: "0123456")
         let clearedPhone = try HomeroomWritePayload.studentPhone(context, studentId: "student", value: " ")
@@ -65,18 +69,20 @@ import Foundation
         limit.guardianCount = 7
         do { _ = try await limit.repository().submit(edit, isCurrent: { true }); check(false, "Malformed seven contacts") } catch { check(true, "Malformed seven") }
         check(limit.writes.count == 1, "No seven mutation")
-        for write in [single, batch, phone, add, remove] {
+        for write in [single, toggle, phone, add, remove] {
             let fake = OfflineWriteFixture(context); fake.guardianCount = 1
             var acknowledged = false
             let receipt = try await fake.repository().submit(write, isCurrent: { true }, onAcknowledged: { acknowledged = true })
             check(!receipt.refreshFailed && acknowledged && fake.writes.count == 1, "Acknowledged offline mutation + refresh")
             check(fake.writes[0].0 == write.path && NSDictionary(dictionary: fake.writes[0].1).isEqual(to: write.args), "Exact mutation path/payload")
-            check(fake.reads.contains("homeroomReports:overview") && fake.reads.contains("homeroomReports:pendingAbsences") && fake.reads.contains("studentAttendance:getStudentHistory"), "Refresh scopes + history")
+            check(!fake.reads.contains("homeroomReports:pendingAbsences") && !fake.reads.contains("homeroomReports:overview"), "Retired pending inbox never read")
+            check(fake.reads.filter { $0 == "studentAttendance:listDailyClass" }.count >= (write.targets.isEmpty ? 1 : 2), "Class day re-read after write")
+            check(fake.reads.contains("studentAttendance:getStudentHistory") == write.targets.isEmpty, "Contacts re-read the student; toggles only the class")
         }
         let post = OfflineWriteFixture(context); post.postReadFailure = true
         let postReceipt = try await post.repository().submit(single, isCurrent: { true })
         check(postReceipt.refreshFailed && postReceipt.status.contains("xác nhận") && postReceipt.status.contains("không gửi lại") && post.writes.count == 1, "Read failure not write failure")
-        for write in [single, batch, phone, add] {
+        for write in [single, toggle, phone, add] {
             let fake = OfflineWriteFixture(context); fake.malformedAck = true
             let before = NSDictionary(dictionary: write.args)
             do { _ = try await fake.repository().submit(write, isCurrent: { true }); check(false, "Malformed acknowledgment") }
@@ -120,16 +126,10 @@ import Foundation
         check(!ConvexHttpClient.humanize("INVALID_PHONE").contains("mật khẩu"), "Contact errors do not claim login failure")
         let deniedMutation = HomeroomWriteRepository(query: validationFake.query, mutation: { _, _ in throw ConvexException(code: "CONTACT_EDIT_FORBIDDEN") })
         do { _ = try await deniedMutation.submit(single, isCurrent: { true }); check(false, "Write revoked") } catch { check((error as? ConvexException)?.code == "WRITE_DENIED", "Denied clears eligibility") }
-        let expanded = OfflineWriteFixture(context); expanded.expandedDays = 100
-        let atomic = try HomeroomWritePayload.disposition(hundred + hundred, next: "excused", reason: "fixture", note: "", batch: true)
-        let atomicReceipt = try await expanded.repository().submit(atomic, isCurrent: { true })
-        check(!atomicReceipt.refreshFailed && expanded.writes.count == 1 && expanded.writes[0].0 == "studentAttendance:setDispositionMany" && atomicReceipt.status.contains("100/100"), "One atomic batch for100 unique")
-        var wrongArgs = atomic.args; wrongArgs["attendanceDayIds"] = ["outside-context"]
-        let wrongWrite = HomeroomWrite(path: atomic.path, args: wrongArgs, context: atomic.context, targets: atomic.targets)
-        do { _ = try await expanded.repository().submit(wrongWrite, isCurrent: { true }); check(false, "Tampered payload") } catch { check(true, "Context payload rejected") }
-        check(expanded.writes.count == 1, "No mismatched context write")
-        let ackRepo = expanded.repository()
-        for bad: [String: Any] in [[:], ["updated": true], ["updated": "1"], ["updated": 1.5], ["updated": -1], ["updated": 2]] { rejected { try ackRepo.validateAck(batch, bad) } }
+        let wrongAck = OfflineWriteFixture(context).repository()
+        for bad: [String: Any] in [[:], ["updated": 1], ["attendanceDayId": "day", "effectiveStatus": "absent_pending", "unchanged": false], ["attendanceDayId": "other", "effectiveStatus": "absent_excused", "unchanged": false], ["attendanceDayId": "day", "effectiveStatus": "absent_excused", "unchanged": "no"]] { rejected { try wrongAck.validateAck(single, bad) } }
+        var tampered = toggle.args; tampered["attendanceDayId"] = "outside-context"
+        do { _ = try await OfflineWriteFixture(context).repository().submit(HomeroomWrite(path: toggle.path, args: tampered, context: toggle.context, targets: toggle.targets), isCurrent: { true }); check(false, "Tampered payload") } catch { check(true, "Context payload rejected") }
         print("PASS \(checks) deterministic Swift L3 assertions; injected offline fixtures only, no network/app launch")
     }
 }
@@ -156,7 +156,6 @@ import Foundation
             return ["date": fault == "date" ? "2026-10-06" : context.date, "rows": rows, "published": true, "archived": false, "canCorrect": !denied, "schoolDay": ["isSchoolDay": true, "kind": "school_day", "outsideYear": false]]
         case "students:getScoped": return profile()
         case "studentAttendance:getStudentHistory": return ["days": [], "corrections": []]
-        case "homeroomReports:pendingAbsences": return ["total": 0, "truncated": false, "rows": []]
         case "homeroomReports:overview": return ["date": context.date, "today": context.date, "mode": "teacher", "schoolYear": ["_id": "year", "name": "Offline fixture year", "startDate": "2026-08-01", "endDate": "2027-06-01", "active": true], "schoolDay": ["isSchoolDay": true, "kind": "school_day", "outsideYear": false], "classes": [], "studentCount": 0, "summary": ["counts": ["present": 0, "late": 0, "absent_excused": 0, "absent_unexcused": 0, "absent_pending": 0, "no_data": 0, "exempt": 0], "attendanceRate": 0, "ratedRows": 0, "totalRows": 0], "missingUpload": ["shouldAlert": false, "cutoffTime": "08:00", "missingClassCodes": []], "pendingTotal": 0]
         default: throw ConvexException(code: "UNEXPECTED_OFFLINE_QUERY")
         }
@@ -165,8 +164,7 @@ import Foundation
         writes.append((path, args))
         if malformedAck { return ["unexpected": true] }
         switch path {
-        case "studentAttendance:setDisposition": return ["attendanceDayId": args["attendanceDayId"]!, "effectiveStatus": "absent_excused", "unchanged": false]
-        case "studentAttendance:setDispositionMany": return ["updated": (args["attendanceDayIds"] as! [String]).count]
+        case "studentAttendance:setDisposition": return ["attendanceDayId": args["attendanceDayId"]!, "effectiveStatus": args["nextDisposition"] as? String == "unexcused" ? "absent_unexcused" : "absent_excused", "unchanged": false]
         case "students:upsertGuardian": return ["value": args["guardianId"] ?? "guardian-fixture-id"]
         default: return [:]
         }

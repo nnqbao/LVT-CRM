@@ -9,9 +9,9 @@ import Foundation
         let bytes = Data([80,75,3,4,1])
         let readURL = URL(fileURLWithPath: ProcessInfo.processInfo.environment["TMPDIR"]!).appendingPathComponent("bounded-roster.fixture")
         try Data(repeating: 80, count: 2 * 1024 * 1024 + 20).write(to: readURL)
-        check(try CameraImportFile.boundedRead(url: readURL, maxBytes: 2 * 1024 * 1024).count == 2 * 1024 * 1024 + 1, "Actual bounded picker read stops at limit plus sentinel")
+        check(try WorkbookFile.boundedRead(url: readURL, maxBytes: 2 * 1024 * 1024).count == 2 * 1024 * 1024 + 1, "Actual bounded picker read stops at limit plus sentinel")
         try FileManager.default.removeItem(at: readURL)
-        do { _ = try CameraImportFile.boundedRead(url: readURL, maxBytes: 2 * 1024 * 1024); check(false, "Provider missing file accepted") } catch { check(true, "Actual unreadable provider path fails") }
+        do { _ = try WorkbookFile.boundedRead(url: readURL, maxBytes: 2 * 1024 * 1024); check(false, "Provider missing file accepted") } catch { check(true, "Actual unreadable provider path fails") }
         for (role, access) in [("user", "supervisor"), ("user", "view_all"), ("user", "view"), ("user", "hidden")] {
             let fixture = ManagementFixture(); fixture.role = role; fixture.access = access
             let store = fixture.store()
@@ -82,7 +82,7 @@ import Foundation
             let fixture = ManagementFixture(); let store = fixture.store(); await store.select("class")
             await store.importFile(name: "fixture.xlsx", bytes: bytes, mode: mode)
             check(store.canCommit && store.uploadId == "upload" && store.storageId == "storage", "Actual roster preview/result decoded")
-            check(fixture.writes.map { $0.1 } == ["studentRosterImport:generateUploadUrl", "studentRosterImport:registerUpload", "studentRosterImport:validateUpload"], "Exact endpoints not camera")
+            check(fixture.writes.map { $0.1 } == ["studentRosterImport:generateUploadUrl", "studentRosterImport:registerUpload", "studentRosterImport:validateUpload"], "Exact roster import endpoints")
             check(Set(fixture.writes[0].2.keys) == ["classId"] && Set(fixture.writes[1].2.keys) == ["storageId", "fileName", "fileSize", "schoolYearId", "classId", "mode"], "Exact upload args")
             check(fixture.writes[1].2["mode"] as? String == mode && fixture.writes[2].0 == "action", "Mode and action")
             check(fixture.queries.filter { $0 == "users:sessionContext" }.count == 6, "Fresh permission before binary and every stage and preview")

@@ -12,6 +12,10 @@ enum HomeroomPalette {
         }
     }
 
+    /// Navy primary action (DESIGN.md `--lvt-navy`) with a readable dark-mode variant.
+    static let primaryBackground = dynamic(0x14355F, 0x8DBDF0)
+    static let primaryForeground = dynamic(0xFFFFFF, 0x0B1A2E)
+
     private static func dynamic(_ light: UInt32, _ dark: UInt32) -> UIColor {
         UIColor { $0.userInterfaceStyle == .dark ? rgb(dark) : rgb(light) }
     }
@@ -106,6 +110,7 @@ final class HomeroomStatTilesCell: UITableViewCell {
         label.adjustsFontForContentSizeCategory = true
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.75
+        label.numberOfLines = 2
         label.textColor = colors.text
         label.textAlignment = .center
         let stack = UIStackView(arrangedSubviews: [value, label])
@@ -184,6 +189,114 @@ final class HomeroomListCell: UITableViewCell {
         accessibilityLabel = ([number, text, detail] + items.map(\.text)).compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
         isAccessibilityElement = true
         accessibilityTraits = tappable ? .button : .staticText
+    }
+}
+
+/// Absent student in the GVCN class day: highlighted (icon + status wording + tint, never colour only), with an
+/// optional "Vắng không phép" switch. Tapping the row outside the switch opens the student.
+final class HomeroomAbsenceCell: UITableViewCell {
+    static let reuseIdentifier = "homeroom-absence"
+    var onToggle: ((Bool) -> Void)?
+    private let icon = UIImageView(image: UIImage(systemName: "exclamationmark.circle.fill"))
+    private let leading = UILabel()
+    private let name = UILabel()
+    private let detail = UILabel()
+    private let chips = UIStackView()
+    private let info = UIStackView()
+    private let toggleLabel = UILabel()
+    private let toggle = UISwitch()
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let toggleRow = UIStackView()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        let danger = HomeroomPalette.colors(.danger)
+        icon.tintColor = danger.text
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(textStyle: .headline)
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        icon.isAccessibilityElement = false
+        leading.font = .preferredFont(forTextStyle: .subheadline)
+        leading.adjustsFontForContentSizeCategory = true
+        leading.textColor = .secondaryLabel
+        leading.setContentHuggingPriority(.required, for: .horizontal)
+        name.font = .preferredFont(forTextStyle: .headline)
+        name.adjustsFontForContentSizeCategory = true
+        name.numberOfLines = 0
+        detail.font = .preferredFont(forTextStyle: .subheadline)
+        detail.adjustsFontForContentSizeCategory = true
+        detail.textColor = .secondaryLabel
+        detail.numberOfLines = 0
+        chips.axis = .horizontal
+        chips.spacing = 6
+        chips.alignment = .leading
+        let chipRow = UIStackView(arrangedSubviews: [chips, UIView()])
+        chipRow.axis = .horizontal
+        let texts = UIStackView(arrangedSubviews: [name, detail, chipRow])
+        texts.axis = .vertical
+        texts.spacing = 4
+        info.addArrangedSubview(icon)
+        info.addArrangedSubview(leading)
+        info.addArrangedSubview(texts)
+        info.axis = .horizontal
+        info.alignment = .firstBaseline
+        info.spacing = 8
+        info.isAccessibilityElement = true
+        info.accessibilityTraits = .button
+        info.accessibilityHint = "Mở hồ sơ học sinh"
+        toggleLabel.text = "Vắng không phép"
+        toggleLabel.font = .preferredFont(forTextStyle: .body)
+        toggleLabel.adjustsFontForContentSizeCategory = true
+        toggleLabel.numberOfLines = 0
+        toggleLabel.isAccessibilityElement = false
+        toggle.onTintColor = danger.text
+        toggle.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.onToggle?(self.toggle.isOn)
+        }, for: .valueChanged)
+        spinner.hidesWhenStopped = true
+        toggleRow.addArrangedSubview(toggleLabel)
+        toggleRow.addArrangedSubview(spinner)
+        toggleRow.addArrangedSubview(toggle)
+        toggleRow.axis = .horizontal
+        toggleRow.alignment = .center
+        toggleRow.spacing = 10
+        toggleRow.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        let stack = UIStackView(arrangedSubviews: [info, toggleRow])
+        stack.axis = .vertical
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: contentView.layoutMarginsGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: contentView.layoutMarginsGuide.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+        ])
+        var background = UIBackgroundConfiguration.listCell()
+        background.backgroundColor = danger.background
+        backgroundConfiguration = background
+        accessoryType = .disclosureIndicator
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func configure(number: String?, name text: String, detail note: String?, chip: HomeroomChip, canToggle: Bool, unexcused: Bool, busy: Bool) {
+        leading.text = number
+        leading.isHidden = number == nil
+        name.text = text
+        detail.text = note
+        detail.isHidden = note?.isEmpty ?? true
+        chips.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        chips.addArrangedSubview(HomeroomChipLabel(chip))
+        toggleRow.isHidden = !canToggle
+        toggle.isOn = unexcused
+        toggle.isEnabled = !busy
+        if busy { spinner.startAnimating() } else { spinner.stopAnimating() }
+        info.accessibilityLabel = [number, text, chip.text, note].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        toggle.accessibilityLabel = "Vắng không phép, \(text)"
+        toggle.accessibilityValue = busy ? "Đang lưu" : nil
+        accessibilityElements = canToggle ? [info, toggle] : [info]
     }
 }
 

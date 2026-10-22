@@ -128,7 +128,7 @@ final class HomeroomManagementViewController: UITableViewController, UIDocumentP
         let mode = importMode
         task = Task {
             do {
-                let bytes = try await Task.detached { try CameraImportFile.read(url: url, maxBytes: 2 * 1024 * 1024) }.value
+                let bytes = try await Task.detached { try WorkbookFile.read(url: url, maxBytes: 2 * 1024 * 1024) }.value
                 await store.importFile(name: url.lastPathComponent, bytes: bytes, mode: mode)
             } catch { confirm("Không đọc được file", "Không có yêu cầu tải lên được gửi. Chọn lại file .xlsx có thể đọc.") {} }
             reading = false; render()

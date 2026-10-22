@@ -11,6 +11,16 @@ enum MenuAccess: String, Equatable, Sendable {
         if raw == "edit" { return .view }
         return MenuAccess(rawValue: raw) ?? .hidden
     }
+
+    /// Mirrors `effectiveMenuAccessLevel` (convex/menuAccess.ts): Giám thị (`supervisor`) is valid only on
+    /// the `attendance` menu, and that menu accepts only `hidden` or `supervisor`. Anything else is hidden.
+    static func decode(_ value: Any?, menu: String) -> MenuAccess {
+        let access = decode(value)
+        if menu == attendanceMenu { return access == .supervisor ? .supervisor : .hidden }
+        return access == .supervisor ? .hidden : access
+    }
+
+    static let attendanceMenu = "attendance"
 }
 
 struct UserSession: Equatable, Sendable {
@@ -31,11 +41,21 @@ struct UserSession: Equatable, Sendable {
         role == "admin" || role == "moderator"
     }
 
+    /// Active account without a pending mandatory password change.
+    var canWork: Bool { status == "active" && !mustChangePassword }
+
     var homeroomAccess: MenuAccess { menuAccess["homeroom"] ?? .hidden }
     var canSeeHomeroom: Bool {
-        status == "active" && !mustChangePassword && (isOperationalManager || homeroomAccess != .hidden)
+        canWork && (isOperationalManager || homeroomAccess != .hidden)
     }
-    var isHomeroomSupervisor: Bool { !isOperationalManager && homeroomAccess == .supervisor }
+
+    /// Điểm danh menu: Giám thị (`attendance` = `supervisor`) or admin/mod. The backend re-checks every call.
+    var attendanceAccess: MenuAccess { menuAccess[MenuAccess.attendanceMenu] ?? .hidden }
+    var isAttendanceSupervisor: Bool { !isOperationalManager && attendanceAccess == .supervisor }
+    var canSeeAttendance: Bool { canWork && (isOperationalManager || attendanceAccess == .supervisor) }
+
+    /// Web WorkHub `workHidden`: ordinary users whose `work` menu is hidden see only "Việc của tôi".
+    var isWorkMenuHidden: Bool { !isOperationalManager && (menuAccess["work"] ?? .hidden) == .hidden }
 
     var roleLabel: String {
         switch role {
@@ -54,7 +74,7 @@ extension UserSession {
         let email = (user["email"] as? String) ?? ""
         let rawMenuAccess = result["menuAccess"] as? [String: Any] ?? [:]
         let menuAccess = rawMenuAccess.reduce(into: [String: MenuAccess]()) { result, entry in
-            result[entry.key] = MenuAccess.decode(entry.value)
+            result[entry.key] = MenuAccess.decode(entry.value, menu: entry.key)
         }
         let rawName = (user["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.init(

@@ -8,6 +8,15 @@ struct AppChangelogEntry: Equatable {
 enum AppChangelog {
     static let entries: [AppChangelogEntry] = [
         AppChangelogEntry(
+            version: "2.0.0",
+            highlights: [
+                "Mục mới Điểm danh cho Giám thị (và quản trị viên): chọn Lớp 6–9, mở lớp, đánh dấu học sinh Vắng rồi Lưu lớp. Mặc định cả lớp có mặt; nhập bằng Excel dùng bản web.",
+                "Lớp chủ nhiệm: học sinh vắng hiện đầu danh sách với Vắng có phép / Vắng không phép; GVCN bật “Vắng không phép” ngay trên dòng, không cần ghi lý do. Lớp chưa được Giám thị điểm danh sẽ hiện thông báo.",
+                "Việc của tôi trong Công việc: thêm việc riêng với hạn chót và giờ nhắc, đánh dấu hoàn thành, sửa, xóa. Bấm thông báo nhắc việc mở đúng danh sách.",
+                "Bỏ nhập điểm danh camera và mục Vắng chờ xử lý theo bản web mới.",
+            ]
+        ),
+        AppChangelogEntry(
             version: "1.16.0",
             highlights: [
                 "Lịch công tác chung xem theo tuần ngay trên app, mỗi ngày một danh sách. Giáo viên chỉ thấy lịch đã được Ban Giám hiệu duyệt.",

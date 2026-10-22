@@ -5,7 +5,7 @@ struct HomeroomPendingJournalChecks {
     @MainActor static func main() async throws {
         let directory = URL(fileURLWithPath: ProcessInfo.processInfo.environment["TMPDIR"]!).appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        func journal(_ lane: String = "camera", year: String = "year") -> HomeroomPendingJournal {
+        func journal(_ lane: String = "legacy", year: String = "year") -> HomeroomPendingJournal {
             HomeroomPendingJournal(directory: directory, lane: lane, year: year, date: "2026-10-07")
         }
         func blocked(_ operation: () throws -> Void) {
@@ -45,21 +45,15 @@ struct HomeroomPendingJournalChecks {
         blocked { try corrupt.clear() }
 
         var writes = 0
-        let query: CameraImportStore.RPC = { path, _ in
+        let query: HomeroomManagementStore.RPC = { path, _ in
             switch path {
-            case "users:sessionContext": return ["user": ["_id": "owner", "role": "admin", "status": "active", "mustChangePassword": false], "menuAccess": ["homeroom": "manage"]]
+            case "users:sessionContext": return ["user": ["_id": "owner", "role": "admin", "status": "active", "mustChangePassword": false], "menuAccess": ["homeroom": "view_all"]]
             case "schoolYears:list": return ["items": [["_id": "year", "name": "2026", "startDate": "2026-08-01", "endDate": "2027-06-01", "active": true]]]
-            case "attendanceImport:uploadsForDate": return ["publishedClassCount": 0, "uploads": [Any]()]
             case "homeroomClasses:listCatalog": return ["items": [Any]()]
             case "homeroomClasses:listAssignmentCandidates": return ["items": [Any]()]
             default: throw ConvexException(code: "OFFLINE_READ_UNAVAILABLE")
             }
         }
-        let camera = CameraImportStore(yearId: "year", date: "2026-10-07", query: query, write: { _, _, _ in writes += 1; return [:] }, binary: { _, _ in writes += 1; return "storage" }, journal: journal())
-        await camera.refreshStatus()
-        await camera.refreshStatus()
-        await camera.select(name: "fixture.xlsx", data: Data([80,75,3,4]))
-        precondition(camera.locked && writes == 0)
 
         let managementOriginal = journal("management")
         _ = try managementOriginal.restore("owner")

@@ -24,9 +24,9 @@ enum HomeroomWritePayload {
         }
         let expected: HomeroomWrite
         switch write.path {
-        case "studentAttendance:setDisposition", "studentAttendance:setDispositionMany":
-            try require(write.targets.allSatisfy { $0.context.yearId == write.context.yearId }, "INVALID_CONTEXT")
-            expected = try disposition(write.targets, next: string("nextDisposition"), reason: string("reasonCode", optional: true), note: string("note", optional: true), batch: write.path.hasSuffix("Many"))
+        case "studentAttendance:setDisposition":
+            try require(write.targets.count == 1, "INVALID_CONTEXT")
+            expected = try disposition(write.targets[0], next: string("nextDisposition"), reason: string("reasonCode", optional: true), note: string("note", optional: true))
         case "students:updateContacts": expected = try studentPhone(write.context, studentId: write.studentId ?? "", value: string("studentPhone"))
         case "students:upsertGuardian":
             guard let primary = write.args["isPrimaryContact"] as? NSNumber, CFGetTypeID(primary) == CFBooleanGetTypeID() else { throw ConvexException(code: "INVALID_WRITE") }
@@ -50,22 +50,17 @@ enum HomeroomWritePayload {
         try require(value.isEmpty || value.range(of: "^[0-9+().\\-\(whitespace)]{6,20}$", options: .regularExpression) != nil, "Số điện thoại: 6–20 ký tự số, + ( ) . - hoặc khoảng trắng.")
         return value
     }
-    static func disposition(_ targets: [AbsenceTarget], next: String, reason: String, note: String, batch: Bool) throws -> HomeroomWrite {
-        var unique: [AbsenceTarget] = []
-        for target in targets {
-            if let existing = unique.first(where: { $0.id == target.id }) { try require(existing == target, "INVALID_CONTEXT") }
-            else { unique.append(target) }
-        }
-        try require(!unique.isEmpty && unique.count <= 100 && (batch || unique.count == 1), "Chọn từ 1 đến 100 buổi duy nhất.")
-        for target in unique { try target.context.validate(); try require(!target.id.isEmpty && !target.studentId.isEmpty, "INVALID_CONTEXT") }
-        try require(["pending", "excused", "unexcused"].contains(next), "Phân loại không hợp lệ.")
+    /// GVCN "Vắng không phép" toggle: one absent day, unexcused ↔ excused. Reason/note are optional since the
+    /// Điểm danh redesign; an existing reason/note is passed back unchanged so the toggle never erases it.
+    static func disposition(_ target: AbsenceTarget, next: String, reason: String = "", note: String = "") throws -> HomeroomWrite {
+        try target.context.validate()
+        try require(!target.id.isEmpty && !target.studentId.isEmpty, "INVALID_CONTEXT")
+        try require(["excused", "unexcused"].contains(next), "Phân loại không hợp lệ.")
         try require(trimmed(note).utf16.count <= 500, "Ghi chú tối đa 500 ký tự.")
-        try require(next == "pending" || !trimmed(reason).isEmpty || !trimmed(note).isEmpty, "Cần lý do hoặc ghi chú.")
-        var args: [String: Any] = ["nextDisposition": next]
-        if batch { args["attendanceDayIds"] = unique.map(\.id) } else { args["attendanceDayId"] = unique[0].id }
+        var args: [String: Any] = ["attendanceDayId": target.id, "nextDisposition": next]
         if !trimmed(reason).isEmpty { args["reasonCode"] = trimmed(reason) }
         if !trimmed(note).isEmpty { args["note"] = trimmed(note) }
-        return HomeroomWrite(path: batch ? "studentAttendance:setDispositionMany" : "studentAttendance:setDisposition", args: args, context: unique[0].context, targets: unique)
+        return HomeroomWrite(path: "studentAttendance:setDisposition", args: args, context: target.context, targets: [target])
     }
     static func studentPhone(_ context: DetailContext, studentId: String, value: String) throws -> HomeroomWrite {
         HomeroomWrite(path: "students:updateContacts", args: ["studentId": studentId, "studentPhone": try phone(value)], context: context, studentId: studentId)
@@ -96,7 +91,7 @@ enum HomeroomWritePayload {
         try HomeroomWritePayload.validate(write)
         guard isCurrent() else { throw denied() }
         if !write.targets.isEmpty {
-            try HomeroomWritePayload.require((1...100).contains(write.targets.count) && ["studentAttendance:setDisposition", "studentAttendance:setDispositionMany"].contains(write.path), "INVALID_WRITE")
+            try HomeroomWritePayload.require(write.targets.count == 1 && write.path == "studentAttendance:setDisposition", "INVALID_WRITE")
             var contexts: [DetailContext] = []
             for target in write.targets where !contexts.contains(target.context) { contexts.append(target.context) }
             for context in contexts {
@@ -130,7 +125,7 @@ enum HomeroomWritePayload {
         try Task.checkCancellation()
         guard isCurrent() else { return WriteReceipt(status: "Ghi đã được xác nhận; ngữ cảnh đã đổi. Tải lại dữ liệu.", refreshFailed: true) }
         onAcknowledged()
-        let message = (ack["updated"] as? Int).map { "Máy chủ xác nhận \($0)/\(write.targets.count) buổi thay đổi (các buổi còn lại không đổi)." } ?? (ack["unchanged"] as? Bool == true ? "Máy chủ xác nhận buổi này không thay đổi." : "Máy chủ đã xác nhận ghi.")
+        let message = ack["unchanged"] as? Bool == true ? "Máy chủ xác nhận buổi này không thay đổi." : "Máy chủ đã xác nhận ghi."
         do {
             let details = HomeroomDetailRepository(query: query)
             var contexts: [DetailContext] = []
@@ -139,12 +134,9 @@ enum HomeroomWritePayload {
                 try Task.checkCancellation()
                 guard isCurrent() else { throw denied() }
                 _ = try await details.loadClass(context)
-                let ids = Set(write.targets.filter { $0.context == context }.map(\.studentId) + [write.studentId].compactMap { $0 })
-                for id in ids { _ = try await details.loadStudent(context, studentId: id) }
+                // Contact writes also re-read the student profile/history; a disposition toggle only needs the class day.
+                if let id = write.studentId { _ = try await details.loadStudent(context, studentId: id) }
             }
-            let overview = try HomeroomRepository.decodeOverview(await query("homeroomReports:overview", ["schoolYearId": write.context.yearId, "date": write.context.date]))
-            try HomeroomDetailDecoder.require(overview.schoolYear.id == write.context.yearId && overview.date == write.context.date)
-            _ = try HomeroomRepository.decodePending(await query("homeroomReports:pendingAbsences", ["schoolYearId": write.context.yearId]))
             return WriteReceipt(status: message, refreshFailed: false)
         } catch is CancellationError { throw CancellationError() }
         catch { return WriteReceipt(status: "\(message) Không tải được dữ liệu sau ghi; không gửi lại. Chỉ tải lại.", refreshFailed: true) }
@@ -155,10 +147,8 @@ enum HomeroomWritePayload {
         case "students:updateContacts", "students:removeGuardian": valid = value.isEmpty
         case "students:upsertGuardian":
             if let id = value["value"] as? String { valid = value.count == 1 && !HomeroomWritePayload.trimmed(id).isEmpty && (write.args["guardianId"] == nil || id == write.args["guardianId"] as? String) }
-        case "studentAttendance:setDispositionMany":
-            if let count = value["updated"] as? NSNumber, CFGetTypeID(count) != CFBooleanGetTypeID() { valid = value.count == 1 && count.doubleValue == Double(count.intValue) && (0...write.targets.count).contains(count.intValue) }
         case "studentAttendance:setDisposition":
-            let status = ["pending": "absent_pending", "excused": "absent_excused", "unexcused": "absent_unexcused"][write.args["nextDisposition"] as? String ?? ""]
+            let status = ["excused": "absent_excused", "unexcused": "absent_unexcused"][write.args["nextDisposition"] as? String ?? ""]
             if let unchanged = value["unchanged"] as? NSNumber { valid = CFGetTypeID(unchanged) == CFBooleanGetTypeID() && value["attendanceDayId"] as? String == write.targets.first?.id && value["effectiveStatus"] as? String == status }
         default: break
         }

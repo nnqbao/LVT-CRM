@@ -11,6 +11,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private let chatRepository: ChatRepository
     private let avatarRepository: AvatarRepository
     private let homeroomRepository: HomeroomRepository
+    private let attendanceRepository: SupervisorAttendanceRepository
+    private let personalTodoRepository: PersonalTodoRepository
     private let notificationsViewModel: NotificationsViewModel
     private var tabControllers: [AppTab: UINavigationController] = [:]
     private var headerClusters: [AccountHeaderClusterView] = []
@@ -18,6 +20,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private var profileViewController: ProfileViewController?
     private weak var dutiesHubViewController: DutiesHubViewController?
     private weak var workViewController: WorkViewController?
+    private weak var workHubViewController: WorkHubViewController?
+    private weak var personalTodosViewController: PersonalTodosViewController?
     private weak var chatHubViewController: ChatHubViewController?
     private var unreadTask: Task<Void, Never>?
     private var pushObserver: NSObjectProtocol?
@@ -33,7 +37,9 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         workRepository: WorkRepository,
         chatRepository: ChatRepository,
         avatarRepository: AvatarRepository,
-        homeroomRepository: HomeroomRepository
+        homeroomRepository: HomeroomRepository,
+        attendanceRepository: SupervisorAttendanceRepository,
+        personalTodoRepository: PersonalTodoRepository
     ) {
         self.session = session
         self.authRepository = authRepository
@@ -44,6 +50,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         self.chatRepository = chatRepository
         self.avatarRepository = avatarRepository
         self.homeroomRepository = homeroomRepository
+        self.attendanceRepository = attendanceRepository
+        self.personalTodoRepository = personalTodoRepository
         self.notificationsViewModel = NotificationsViewModel(repository: notificationsRepository)
         super.init(nibName: nil, bundle: nil)
     }
@@ -107,17 +115,30 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             systemImage: "briefcase",
             viewController: dutiesHubViewController
         )
-        let repository = workRepository
-        let workViewController = WorkViewController(
-            viewModel: WorkViewModel(repository: repository),
-            chatRepository: chatRepository,
-            downloadDocument: { document in try await repository.downloadDocument(document) }
-        )
-        workViewController.trailingAccessoryBarButtonItems = [makeAccountHeaderItem()]
+        // "Việc của tôi" is open to every active account; work documents only when the work menu is visible.
+        let todosViewController = PersonalTodosViewController(repository: personalTodoRepository)
+        todosViewController.trailingAccessoryBarButtonItems = [makeAccountHeaderItem()]
+        let workRoot: UIViewController
+        if session.isWorkMenuHidden {
+            workRoot = todosViewController
+        } else {
+            let repository = workRepository
+            let workViewController = WorkViewController(
+                viewModel: WorkViewModel(repository: repository),
+                chatRepository: chatRepository,
+                downloadDocument: { document in try await repository.downloadDocument(document) }
+            )
+            workViewController.trailingAccessoryBarButtonItems = [makeAccountHeaderItem()]
+            let hub = WorkHubViewController(work: workViewController, todos: todosViewController)
+            self.workViewController = workViewController
+            self.workHubViewController = hub
+            workRoot = hub
+        }
+        self.personalTodosViewController = todosViewController
         let work = navigationController(
             title: "Công việc",
             systemImage: "checkmark.seal",
-            viewController: workViewController
+            viewController: workRoot
         )
         let chatHubViewController = ChatHubViewController(
             repository: chatRepository,
@@ -138,16 +159,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             .work: work,
         ]
         self.dutiesHubViewController = dutiesHubViewController
-        self.workViewController = workViewController
         self.chatHubViewController = chatHubViewController
-        viewControllers = [overview, chat, duties, work]
-        if session.canSeeHomeroom {
-            let homeroom = navigationController(
-                title: "Lớp chủ nhiệm", systemImage: "person.3",
-                viewController: HomeroomViewController(repository: homeroomRepository, session: session)
-            )
-            viewControllers = [overview, homeroom, chat, duties, work]
-        }
+        viewControllers = [overview] + makeStudentTabs() + [chat, duties, work]
         startUnreadPolling()
         pushObserver = NotificationCenter.default.addObserver(
             forName: .pushReceived,
@@ -169,6 +182,23 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         Task { await reloadAvatar() }
     }
 
+    /// Lớp chủ nhiệm (GVCN / view / admin-mod) and Điểm danh (Giám thị = menu `attendance` supervisor, or
+    /// admin/mod). Giám thị no longer gets Lớp chủ nhiệm. Both together share one "Học sinh" tab (max 5 tabs).
+    private func makeStudentTabs() -> [UINavigationController] {
+        let homeroom = session.canSeeHomeroom ? HomeroomViewController(repository: homeroomRepository, session: session) : nil
+        let attendance = session.canSeeAttendance ? AttendanceViewController(repository: attendanceRepository, session: session) : nil
+        switch (homeroom, attendance) {
+        case let (homeroom?, attendance?):
+            return [navigationController(title: "Học sinh", systemImage: "graduationcap", viewController: StudentsHubViewController(homeroom: homeroom, attendance: attendance))]
+        case let (homeroom?, nil):
+            return [navigationController(title: "Lớp chủ nhiệm", systemImage: "person.3", viewController: homeroom)]
+        case let (nil, attendance?):
+            return [navigationController(title: "Điểm danh", systemImage: "checklist", viewController: attendance)]
+        case (nil, nil):
+            return []
+        }
+    }
+
     private func selectTab(_ tab: AppTab) {
         selectedViewController = tabControllers[tab]
     }
@@ -185,6 +215,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private func openWork(filter: WorkDashboardFilter?) {
         selectTab(.work)
         tabControllers[.work]?.popToRootViewController(animated: false)
+        workHubViewController?.show(.work)
         workViewController?.applyDashboardFilter(filter)
     }
 
@@ -200,6 +231,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private func openWorkFromChat(_ documentId: String) {
         selectTab(.work)
         tabControllers[.work]?.popToRootViewController(animated: false)
+        workHubViewController?.show(.work)
         workViewController?.focus(itemId: documentId, openChat: false)
     }
 
@@ -249,7 +281,11 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             )
         } else {
             navigationController.popToRootViewController(animated: false)
-            if tab == .work {
+            if tab == .work, destination.opensTodos {
+                workHubViewController?.show(.todos)
+                personalTodosViewController?.focus(todoId: destination.sourceId)
+            } else if tab == .work {
+                workHubViewController?.show(.work)
                 workViewController?.focus(itemId: destination.sourceId, openChat: destination.opensChat)
             }
         }

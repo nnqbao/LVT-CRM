@@ -276,6 +276,8 @@ final class NotificationsViewController: UITableViewController {
             .joined(separator: ". ")
         cell.accessibilityHint = item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat"
             ? "Mở trao đổi"
+            : item.sourceType == PersonalTodos.notificationSourceType || item.kind == PersonalTodos.notificationKind
+            ? "Mở Việc của tôi"
             : "Mở \(item.kind == "duty" ? "tab Lịch CT" : "tab Công việc")"
         cell.accessibilityTraits = .button
     }
@@ -288,6 +290,7 @@ final class NotificationsViewController: UITableViewController {
 
     private func kindLabel(_ item: NotificationItem) -> String {
         if item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" { return "Trao đổi" }
+        if item.sourceType == PersonalTodos.notificationSourceType || item.kind == PersonalTodos.notificationKind { return "Nhắc việc" }
         if item.sourceType == "completion_rejected" { return "Từ chối hoàn thành" }
         if item.kind == "duty" { return "Công tác" }
         if item.sourceType == "document" || item.sourceType == "approval" {
