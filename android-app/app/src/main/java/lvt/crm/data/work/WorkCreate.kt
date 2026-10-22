@@ -90,25 +90,38 @@ object WorkCreatePolicy {
     private val DATE_RE = Regex("""^\d{4}-\d{2}-\d{2}$""")
 }
 
-const val WORK_LOCKED_MESSAGE = "Đã có người nộp · Không thể sửa hoặc xóa"
+const val WORK_LOCKED_MESSAGE = "Đã có người nộp kết quả — công việc chỉ xem."
 const val WORK_APPROVAL_LOCKED_MESSAGE = "Ban giám hiệu đã duyệt · Không thể sửa hoặc xóa"
 const val WORK_IMMUTABLE_ERROR_MESSAGE =
     "Công việc đã có người duyệt hoặc người nộp nên không thể sửa hoặc xóa."
 
 /**
- * Edit/delete visibility follows the server's `canEdit` / `canDelete` exactly (web parity).
- * The first Ban giám hiệu approval locks the document for everyone, admin/mod included,
- * so a locked document never shows the buttons even if a stale flag says otherwise.
+ * Edit/delete visibility follows only the server's `canEdit` / `canDelete` (absent = false).
+ * The server decides every lock: first approval (admin may still edit an approved document,
+ * which sends it back to Ban giám hiệu), submissions, moderator scope, creator rules.
  */
 object WorkDocumentActions {
-    fun showsEdit(document: WorkApprovalItem) = document.canEdit && !document.approvalLocked
+    fun showsEdit(document: WorkApprovalItem) = document.canEdit
 
-    fun showsDelete(document: WorkApprovalItem) = document.canDelete && !document.approvalLocked
+    fun showsDelete(document: WorkApprovalItem) = document.canDelete
 
+    /**
+     * Read-only note when both actions are hidden: submitted results (only when the server
+     * says so via `hasSubmissions`), otherwise the approval lock; no note for other reasons.
+     */
     fun lockedMessage(document: WorkApprovalItem): String? = when {
         showsEdit(document) || showsDelete(document) -> null
+        document.hasSubmissions == true -> WORK_LOCKED_MESSAGE
         document.approvalLocked -> WORK_APPROVAL_LOCKED_MESSAGE
-        else -> WORK_LOCKED_MESSAGE
+        else -> null
+    }
+
+    /** Muted "Đã chỉnh sửa bởi … lúc HH:mm dd/MM/yyyy" line, or null. */
+    fun lastEditedLine(document: WorkApprovalItem): String? {
+        val name = document.lastEditedByName.trim()
+        if (name.isEmpty()) return null
+        val time = WorkApprovalPolicy.formatTimeDate(document.lastEditedAt)
+        return if (time.isEmpty()) "Đã chỉnh sửa bởi $name" else "Đã chỉnh sửa bởi $name lúc $time"
     }
 
     fun errorMessage(raw: String, deleting: Boolean, fallback: String): String {

@@ -90,10 +90,12 @@ fun WorkCreateScreen(
     // Server flag (admin/mod and Ban giám hiệu); older servers fall back to admin/mod only.
     val showDepartments = options?.canAssignDepartments ?: state.isOps
     // Creator-based rule (server enforces): admin/mod documents go to Ban giám hiệu first.
-    val requiresApproval = editing?.requiresApproval ?: (options?.requiresApproval == true)
+    // Admin re-editing an approved document: the server sends it back to Ban giám hiệu.
+    val reapproval = editing?.editRequiresReapproval == true
+    val requiresApproval = editing?.let { it.requiresApproval || reapproval } ?: (options?.requiresApproval == true)
     val approverIds = remember(editingId) { mutableStateListOf<String>() }
     var approversPrefilled by remember(editingId) { mutableStateOf(false) }
-    val needsApproval = WorkApprovalPolicy.approverRequired(requiresApproval, assignments.toList(), state.currentUserId)
+    val needsApproval = WorkApprovalPolicy.needsApproval(requiresApproval, reapproval, assignments.toList(), state.currentUserId)
     val error = localError ?: state.actionError
     val keptFileName = editing?.fileName?.takeIf { editing.privateFile && it.isNotBlank() }.orEmpty()
 
@@ -138,6 +140,7 @@ fun WorkCreateScreen(
                 documentTypeId = documentTypeId,
                 requiresApproval = requiresApproval,
                 approverIds = approverIds.toList(),
+                reapproval = reapproval,
                 onSuccess = onDone,
             )
         } else {
@@ -200,6 +203,21 @@ fun WorkCreateScreen(
         ) {
             if (state.formOptionsLoading && options == null) {
                 CircularProgressIndicator(modifier = Modifier.padding(top = 24.dp))
+            }
+            if (reapproval) {
+                Card(
+                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        WorkApprovalPolicy.REAPPROVAL_WARNING,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
             }
             OutlinedTextField(
                 value = title,
@@ -356,7 +374,9 @@ fun WorkCreateScreen(
             title = {
                 Text(if (canceling) "Bạn có chắc chắn Hủy sửa không?" else "Bạn có chắc chắn Lưu không?")
             },
-            text = if (!canceling && needsApproval) {
+            text = if (!canceling && reapproval) {
+                { Text(WorkApprovalPolicy.REAPPROVAL_WARNING) }
+            } else if (!canceling && needsApproval) {
                 { Text("Sửa công việc sẽ xóa các quyết định trước và gửi lại Ban giám hiệu duyệt.") }
             } else {
                 null

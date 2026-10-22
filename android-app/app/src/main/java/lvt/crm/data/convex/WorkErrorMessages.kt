@@ -25,6 +25,7 @@ object WorkErrorMessages {
         "WORK_RETURN_REASON_INVALID" to "Vui lòng nhập lý do trả lại (tối đa 500 ký tự).",
         "WORK_DOCUMENT_IMMUTABLE" to "Công việc đã có người duyệt hoặc người nộp nên không thể sửa hoặc xóa.",
         "WORK_DOCUMENT_NOT_FOUND" to "Không tìm thấy công việc hoặc công việc đã bị xóa.",
+        "WORK_HAS_SUBMISSIONS" to "Đã có người nộp kết quả nên không thể sửa công việc này.",
         "WORK_UPDATE_FORBIDDEN" to "Chỉ người tạo mới được sửa hoặc xóa công việc này.",
         "WORK_ASSIGNEE_BGH_FORBIDDEN" to "Văn thư không thể giao công việc cho Ban giám hiệu.",
         // Sandbox addition in progress (no web copy yet): văn thư/admin may assign another

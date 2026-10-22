@@ -94,6 +94,22 @@ class WorkApprovalFlowTest {
     }
 
     @Test
+    fun adminReEditOfApprovedWorkRequiresApprovers() = runTest(dispatcher) {
+        val repo = FakeOperations()
+        val vm = WorkViewModel(repo)
+        advanceUntilIdle()
+        val self = listOf(WorkCreateAssignment("individual", userIds = listOf("me"), content = "Lưu", deadline = "2026-11-01"))
+        vm.updateDocument("doc-1", "Kế hoạch", self, reapproval = true, onSuccess = {})
+        advanceUntilIdle()
+        assertEquals(WorkApprovalPolicy.APPROVER_REQUIRED_MESSAGE, vm.uiState.value.actionError)
+        assertEquals(0, repo.updated.size)
+        vm.updateDocument("doc-1", "Kế hoạch", self, approverIds = listOf("bgh-1"), reapproval = true, onSuccess = {})
+        advanceUntilIdle()
+        assertEquals(listOf("bgh-1"), repo.updated.single())
+        assertEquals("Đã lưu và gửi Ban giám hiệu duyệt lại.", vm.uiState.value.notice)
+    }
+
+    @Test
     fun awaitingApprovalDocumentsSitInTheWaitingTab() {
         val doc = queued("doc-9").copy(
             workStatus = "awaiting_approval",
@@ -127,6 +143,18 @@ class WorkApprovalFlowTest {
     private inner class FakeOperations : WorkOperations {
         val decisions = mutableListOf<Triple<String, Boolean, String?>>()
         val created = mutableListOf<List<String>?>()
+        val updated = mutableListOf<List<String>?>()
+
+        override suspend fun updateDocument(
+            documentId: String,
+            title: String,
+            assignments: List<WorkCreateAssignment>,
+            evidence: WorkUploadedEvidence?,
+            documentTypeId: String?,
+            approverUserIds: List<String>?,
+        ) {
+            updated += approverUserIds
+        }
 
         override suspend fun listMine() = WorkSnapshot(
             assignerMode = "admin_mod",

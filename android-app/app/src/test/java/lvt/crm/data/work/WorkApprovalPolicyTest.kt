@@ -148,6 +148,37 @@ class WorkApprovalPolicyTest {
     }
 
     @Test
+    fun decodesOptionalEditFlags() {
+        val withFlags = parseApproval(
+            JSONObject(
+                """{"_id":"d","status":"approved","approvalLocked":true,"canEdit":true,"canDelete":false,
+                   "editRequiresReapproval":true,"lastEditedByName":"Quản trị","lastEditedAt":1792652700000,
+                   "hasSubmissions":false}""",
+            ),
+            "",
+        )
+        assertTrue(withFlags.canEdit)
+        assertFalse(withFlags.canDelete)
+        assertTrue(withFlags.editRequiresReapproval)
+        assertEquals("Quản trị", withFlags.lastEditedByName)
+        assertEquals(1_792_652_700_000L, withFlags.lastEditedAt)
+        assertEquals(false, withFlags.hasSubmissions)
+        val bare = parseApproval(JSONObject("""{"_id":"d","status":"approved"}"""), "")
+        assertFalse(bare.canEdit)
+        assertFalse(bare.editRequiresReapproval)
+        assertNull(bare.hasSubmissions)
+        assertNull(bare.lastEditedAt)
+    }
+
+    @Test
+    fun reapprovalAlwaysNeedsApprovers() {
+        assertTrue(WorkApprovalPolicy.needsApproval(requiresApproval = true, reapproval = true, selfOnly, "me"))
+        assertTrue(WorkApprovalPolicy.needsApproval(requiresApproval = false, reapproval = true, others, "me"))
+        assertFalse(WorkApprovalPolicy.needsApproval(requiresApproval = false, reapproval = false, others, "me"))
+        assertEquals("Lưu và gửi duyệt lại", WorkApprovalPolicy.submitLabel(editing = true, needsApproval = true))
+    }
+
+    @Test
     fun decodesApprovalQueueWithMyDecision() {
         val queue = JSONArray(
             """

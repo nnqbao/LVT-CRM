@@ -94,6 +94,7 @@ fun WorkDocumentDetailScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
+            WorkLastEditedLine(document, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             if (onDecide != null) {
                 WorkDecisionButtons(
                     document = document,

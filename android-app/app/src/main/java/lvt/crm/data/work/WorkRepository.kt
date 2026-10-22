@@ -120,6 +120,12 @@ data class WorkApprovalItem(
     val awaitingMyDecision: Boolean = false,
     /** Approval queue only: returning is still allowed (nobody approved yet). */
     val canReject: Boolean = false,
+    /** Admin editing an approved document sends it back to Ban giám hiệu (server flag, optional). */
+    val editRequiresReapproval: Boolean = false,
+    val lastEditedByName: String = "",
+    val lastEditedAt: Long? = null,
+    /** Server flag (optional): an assignee submitted results, so the document is read-only. */
+    val hasSubmissions: Boolean? = null,
 )
 
 /** Prefill the create form. Individual assignees are one row each, matching web. */
@@ -724,6 +730,14 @@ internal fun parseApproval(document: JSONObject, myDecision: String) = WorkAppro
     approvers = parseApprovers(document.optJSONArray("approvers")),
     awaitingMyDecision = document.optBoolean("awaitingMyDecision", false),
     canReject = document.optBoolean("canReject", false),
+    editRequiresReapproval = document.optBoolean("editRequiresReapproval", false),
+    lastEditedByName = document.optStringOrBlank("lastEditedByName"),
+    lastEditedAt = document.optLongOrNull("lastEditedAt"),
+    hasSubmissions = if (document.has("hasSubmissions") && !document.isNull("hasSubmissions")) {
+        document.optBoolean("hasSubmissions", false)
+    } else {
+        null
+    },
 )
 
 internal fun parseApprovers(items: org.json.JSONArray?): List<WorkApproverView> {

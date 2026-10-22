@@ -1108,6 +1108,7 @@ private fun AdminDocumentCard(
         if (WorkApprovalPolicy.followsApproval(document) && document.status != "approved") {
             WorkApprovalProgressBlock(document, modifier = Modifier.padding(horizontal = 16.dp))
         }
+        WorkLastEditedLine(document, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         TextButton(
             onClick = onChat,
             modifier = Modifier.padding(start = 8.dp, bottom = 4.dp),
@@ -1362,6 +1363,7 @@ private fun DocumentSummaryCard(
                 }
             }
             WorkApprovalProgressBlock(document, modifier = Modifier.padding(top = 10.dp))
+            WorkLastEditedLine(document, modifier = Modifier.padding(top = 6.dp))
             if (document.fileName.isNotBlank()) {
                 FilledTonalButton(
                     onClick = onOpenDocument,

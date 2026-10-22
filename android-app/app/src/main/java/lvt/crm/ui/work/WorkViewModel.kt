@@ -180,15 +180,20 @@ class WorkViewModel(
         documentTypeId: String = "",
         requiresApproval: Boolean = false,
         approverIds: List<String> = emptyList(),
+        reapproval: Boolean = false,
         onSuccess: () -> Unit,
     ) {
-        val needsApproval = WorkApprovalPolicy.approverRequired(requiresApproval, assignments, _uiState.value.currentUserId)
-        val approverError = WorkApprovalPolicy.validateApprovers(
+        val needsApproval = WorkApprovalPolicy.needsApproval(
             requiresApproval,
+            reapproval,
             assignments,
             _uiState.value.currentUserId,
-            approverIds,
         )
+        val approverError = if (needsApproval && approverIds.none { it.isNotBlank() }) {
+            WorkApprovalPolicy.APPROVER_REQUIRED_MESSAGE
+        } else {
+            null
+        }
         saveDocument(
             deleting = false,
             title = title,
@@ -206,7 +211,7 @@ class WorkViewModel(
                 assignments,
                 evidence,
                 documentTypeId.takeIf { it.isNotBlank() },
-                approverIds.takeIf { requiresApproval && it.isNotEmpty() },
+                approverIds.takeIf { (requiresApproval || reapproval) && it.isNotEmpty() },
             )
             WorkApprovalPolicy.savedNotice(editing = true, needsApproval = needsApproval)
         }

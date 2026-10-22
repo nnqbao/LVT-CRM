@@ -83,26 +83,49 @@ class WorkCreatePolicyTest {
     }
 
     @Test
-    fun editFollowsServerFlagsAndApprovalLock() {
+    fun editFollowsOnlyServerFlags() {
         val base = WorkApprovalItem(
             id = "doc-1", fileName = "", content = "", deadline = "2026-09-01", status = "pending",
             approvalCount = 0, approvalTotal = 1, myDecision = "",
         )
-        // Server says no (submission or out of scope): hidden even for admin/mod, with the lock note.
-        val submitted = base.copy(canEdit = false, canDelete = false)
-        assertFalse(WorkDocumentActions.showsEdit(submitted))
-        assertFalse(WorkDocumentActions.showsDelete(submitted))
+        // Hidden for an unknown reason (scope, creator rule): no note.
+        val hidden = base.copy(canEdit = false, canDelete = false)
+        assertFalse(WorkDocumentActions.showsEdit(hidden))
+        assertFalse(WorkDocumentActions.showsDelete(hidden))
+        assertNull(WorkDocumentActions.lockedMessage(hidden))
+        // Submitted results, reported by the server.
+        val submitted = hidden.copy(hasSubmissions = true)
         assertEquals(WORK_LOCKED_MESSAGE, WorkDocumentActions.lockedMessage(submitted))
-        // Mutable pending/returned document.
+        assertEquals("Đã có người nộp kết quả — công việc chỉ xem.", WORK_LOCKED_MESSAGE)
+        // Approved and locked for this user.
+        val locked = hidden.copy(status = "approved", approvalLocked = true, approvalCount = 1)
+        assertEquals(WORK_APPROVAL_LOCKED_MESSAGE, WorkDocumentActions.lockedMessage(locked))
+        // Admin may still edit an approved document (server flag), but not delete it.
+        val adminApproved = locked.copy(canEdit = true, canDelete = false, editRequiresReapproval = true)
+        assertTrue(WorkDocumentActions.showsEdit(adminApproved))
+        assertFalse(WorkDocumentActions.showsDelete(adminApproved))
+        assertNull(WorkDocumentActions.lockedMessage(adminApproved))
         val mutable = base.copy(canEdit = true, canDelete = true)
         assertTrue(WorkDocumentActions.showsEdit(mutable))
         assertTrue(WorkDocumentActions.showsDelete(mutable))
-        assertNull(WorkDocumentActions.lockedMessage(mutable))
-        // First approval locks for everyone even if a stale flag still says editable.
-        val locked = base.copy(canEdit = true, canDelete = true, approvalLocked = true, approvalCount = 1)
-        assertFalse(WorkDocumentActions.showsEdit(locked))
-        assertFalse(WorkDocumentActions.showsDelete(locked))
-        assertEquals(WORK_APPROVAL_LOCKED_MESSAGE, WorkDocumentActions.lockedMessage(locked))
+    }
+
+    @Test
+    fun lastEditedLineUsesVietnamTime() {
+        val base = WorkApprovalItem(
+            id = "doc-1", fileName = "", content = "", deadline = "2026-09-01", status = "approved",
+            approvalCount = 1, approvalTotal = 1, myDecision = "",
+        )
+        assertNull(WorkDocumentActions.lastEditedLine(base))
+        // 2026-10-22 07:05 UTC = 14:05 Vietnam.
+        assertEquals(
+            "Đã chỉnh sửa bởi Quản trị lúc 14:05 22/10/2026",
+            WorkDocumentActions.lastEditedLine(base.copy(lastEditedByName = "Quản trị", lastEditedAt = 1_792_652_700_000L)),
+        )
+        assertEquals(
+            "Đã chỉnh sửa bởi Quản trị",
+            WorkDocumentActions.lastEditedLine(base.copy(lastEditedByName = "Quản trị")),
+        )
     }
 
     @Test
@@ -124,6 +147,10 @@ class WorkCreatePolicyTest {
             WorkDocumentActions.errorMessage("NETWORK_DOWN", deleting = true, fallback = "x"),
         )
         assertEquals("x", WorkDocumentActions.errorMessage("NETWORK_DOWN", deleting = false, fallback = "x"))
+        assertEquals(
+            "Đã có người nộp kết quả nên không thể sửa công việc này.",
+            WorkDocumentActions.errorMessage("Uncaught Error: WORK_HAS_SUBMISSIONS", deleting = true, fallback = "x"),
+        )
     }
 
     @Test

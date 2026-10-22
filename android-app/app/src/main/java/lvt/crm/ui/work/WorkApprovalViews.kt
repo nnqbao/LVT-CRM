@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import lvt.crm.data.work.WorkApprovalItem
 import lvt.crm.data.work.WorkApprovalPolicy
+import lvt.crm.data.work.WorkDocumentActions
 import lvt.crm.ui.components.StatusPill
 import lvt.crm.ui.components.StatusTone
 
@@ -347,4 +348,16 @@ internal fun LazyListScope.workApprovalQueueItems(
             }
         }
     }
+}
+
+/** Muted "Đã chỉnh sửa bởi … lúc HH:mm dd/MM/yyyy" when the server reports a later edit. */
+@Composable
+internal fun WorkLastEditedLine(document: WorkApprovalItem, modifier: Modifier = Modifier) {
+    val line = WorkDocumentActions.lastEditedLine(document) ?: return
+    Text(
+        line,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier,
+    )
 }

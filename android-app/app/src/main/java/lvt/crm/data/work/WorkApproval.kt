@@ -14,6 +14,8 @@ object WorkApprovalPolicy {
     const val RETURN_REASON_REQUIRED_MESSAGE = "Vui lòng nhập lý do trả lại."
     const val RETURN_REASON_MAX_LENGTH = 500
     const val UNRELEASED_LABEL = "Chờ duyệt (chưa giao)"
+    const val REAPPROVAL_WARNING =
+        "Công việc đã được duyệt. Sau khi lưu, công việc sẽ phải gửi Ban giám hiệu duyệt lại và tạm ẩn với người được giao."
 
     /**
      * Approval-required and not approved yet: nothing has been handed to the assignees, so
@@ -129,6 +131,25 @@ object WorkApprovalPolicy {
             trimmed.length > RETURN_REASON_MAX_LENGTH -> "Lý do trả lại tối đa $RETURN_REASON_MAX_LENGTH ký tự."
             else -> null
         }
+    }
+
+    /**
+     * Whether saving this form must go through Ban giám hiệu: an admin re-editing an approved
+     * document always does; otherwise approval-required work for someone other than the creator.
+     */
+    fun needsApproval(
+        requiresApproval: Boolean,
+        reapproval: Boolean,
+        assignments: List<WorkCreateAssignment>,
+        currentUserId: String,
+    ): Boolean = reapproval || approverRequired(requiresApproval, assignments, currentUserId)
+
+    /** HH:mm dd/MM/yyyy in Vietnam time; empty when unknown. */
+    fun formatTimeDate(millis: Long?): String {
+        val value = formatDateTime(millis)
+        if (value.isEmpty()) return ""
+        val (date, time) = value.split(' ')
+        return "$time $date"
     }
 
     /** dd/MM/yyyy HH:mm in Vietnam time; empty when unknown. */
