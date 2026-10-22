@@ -47,6 +47,7 @@ class AppContainer(context: Context) {
     val notificationsRepository = NotificationsRepository(convex)
     val homeroomRepository = HomeroomRepository(convex, java.io.File(appContext.noBackupFilesDir, "homeroom-pending"))
     val attendanceRepository = AttendanceRepository(convex)
+    val boardingRepository = lvt.crm.data.boarding.BoardingRepository(convex)
     val personalTodosRepository = PersonalTodosRepository(convex)
     val chatRepository = ChatRepository(convex)
     val workRepository = WorkRepository(

@@ -216,6 +216,7 @@ class ConvexHttpClient(
         }
         fun extractCode(message: String): String {
             WorkErrorMessages.codeIn(message)?.let { return it }
+            lvt.crm.data.boarding.BoardingErrorMessages.codeIn(message)?.let { return it }
             val known = listOf(
                 "ATTENDANCE_CAMERA_IMPORT_RETIRED", "ATTENDANCE_DATE_TODAY_ONLY", "ATTENDANCE_DATE_IN_FUTURE", "ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_STUDENT_NOT_IN_CLASS", "ATTENDANCE_TOO_MANY_ABSENT", "SUPERVISOR_REQUIRED", "DISPOSITION_FORBIDDEN", "SCHOOL_YEAR_NOT_FOUND",
                 "INVALID_TODO_TITLE", "INVALID_TODO_NOTE", "INVALID_TODO_TIME", "TODO_REMIND_IN_PAST", "TODO_NOT_FOUND",
@@ -281,6 +282,7 @@ class ConvexHttpClient(
 
         fun humanize(message: String): String {
             WorkErrorMessages.messageFor(message)?.let { return it }
+            lvt.crm.data.boarding.BoardingErrorMessages.messageFor(message)?.let { return it }
             val code = extractCode(message)
             return when {
                 code == "ATTENDANCE_CAMERA_IMPORT_RETIRED" -> "Nhập file điểm danh camera đã ngừng sử dụng. Giám thị điểm danh tại menu Điểm danh."

@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,6 +46,8 @@ fun DashboardScreen(
     tabOpenToken: Int,
     onOpenDuties: (DutyListTab) -> Unit,
     onOpenWork: (WorkDashboardFilter?) -> Unit,
+    /** Bán trú entry (Báo cáo › Bán trú on the web); null hides it. */
+    onOpenBoarding: (() -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsState()
     LaunchedEffect(tabOpenToken) { viewModel.refresh() }
@@ -97,6 +100,26 @@ fun DashboardScreen(
                 onPrimaryClick = { onOpenWork(WorkDashboardFilter.PendingApproval) },
                 onSecondaryClick = { onOpenWork(WorkDashboardFilter.NeedsExecution) },
             )
+            if (onOpenBoarding != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedCard(
+                    onClick = onOpenBoarding,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    ListItem(
+                        headlineContent = { Text("Bán trú") },
+                        supportingContent = { Text("Kỳ bán trú và danh sách giáo viên tham gia") },
+                        leadingContent = {
+                            Icon(
+                                Icons.Outlined.Restaurant,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        trailingContent = { Text("›", style = MaterialTheme.typography.headlineSmall) },
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedCard(modifier = Modifier.fillMaxWidth()) {
                 ListItem(
