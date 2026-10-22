@@ -10,6 +10,7 @@ data class WorkFormUser(
     val name: String,
     val departmentName: String,
     val level: Int,
+    val positionName: String = "",
 )
 
 data class WorkDocumentType(
@@ -24,6 +25,12 @@ data class WorkFormOptions(
     val departments: List<WorkFormDepartment>,
     val users: List<WorkFormUser>,
     val documentTypes: List<WorkDocumentType> = emptyList(),
+    /** Server flag: documents this creator makes go to Ban giám hiệu before release (admin/mod). */
+    val requiresApproval: Boolean = false,
+    /** Server flag: may assign whole departments (admin/mod and Ban giám hiệu). */
+    val canAssignDepartments: Boolean = isOps,
+    /** Eligible Ban giám hiệu approvers (only filled for approval-required creators). */
+    val approvers: List<WorkFormUser> = emptyList(),
 )
 
 data class WorkCreateAssignment(
@@ -48,11 +55,6 @@ fun formatWorkDeadline(millis: Long): String {
 }
 
 object WorkCreatePolicy {
-    fun canCreate(role: String, level: Int): Boolean {
-        if (role == "admin" || role == "moderator") return true
-        return level == 2 || level == 3
-    }
-
     fun validate(
         title: String,
         assignments: List<WorkCreateAssignment>,
@@ -89,24 +91,29 @@ object WorkCreatePolicy {
 }
 
 const val WORK_LOCKED_MESSAGE = "Đã có người nộp · Không thể sửa hoặc xóa"
+const val WORK_APPROVAL_LOCKED_MESSAGE = "Ban giám hiệu đã duyệt · Không thể sửa hoặc xóa"
+const val WORK_IMMUTABLE_ERROR_MESSAGE =
+    "Công việc đã có người duyệt hoặc người nộp nên không thể sửa hoặc xóa."
 
 /**
- * Visibility follows `canEdit` / `canDelete` from the list payload.
- * Admin/mod (`isOps`) keep the longer server right: `updateDocument` / `deleteDocument`
- * still succeed after a submission, so the buttons stay available.
+ * Edit/delete visibility follows the server's `canEdit` / `canDelete` exactly (web parity).
+ * The first Ban giám hiệu approval locks the document for everyone, admin/mod included,
+ * so a locked document never shows the buttons even if a stale flag says otherwise.
  */
 object WorkDocumentActions {
-    fun showsEdit(canEdit: Boolean, isOps: Boolean) = canEdit || isOps
+    fun showsEdit(document: WorkApprovalItem) = document.canEdit && !document.approvalLocked
 
-    fun showsDelete(canDelete: Boolean, isOps: Boolean) = canDelete || isOps
+    fun showsDelete(document: WorkApprovalItem) = document.canDelete && !document.approvalLocked
 
-    fun showsLocked(canEdit: Boolean, canDelete: Boolean, isOps: Boolean) =
-        !showsEdit(canEdit, isOps) && !showsDelete(canDelete, isOps)
+    fun lockedMessage(document: WorkApprovalItem): String? = when {
+        showsEdit(document) || showsDelete(document) -> null
+        document.approvalLocked -> WORK_APPROVAL_LOCKED_MESSAGE
+        else -> WORK_LOCKED_MESSAGE
+    }
 
     fun errorMessage(raw: String, deleting: Boolean, fallback: String): String {
-        if (raw.contains("WORK_DOCUMENT_IMMUTABLE")) return WORK_LOCKED_MESSAGE
-        if (raw.contains("WORK_UPDATE_FORBIDDEN")) return "Bạn không có quyền sửa hoặc xóa công việc này."
-        if (deleting) return "Không thể xóa công văn lúc này."
+        lvt.crm.data.convex.WorkErrorMessages.messageFor(raw)?.let { return it }
+        if (deleting) return "Không thể xóa công việc lúc này."
         return fallback
     }
 }

@@ -8,17 +8,6 @@ import org.junit.Test
 
 class WorkCreatePolicyTest {
     @Test
-    fun opsAndTeamLeadsCanCreate() {
-        assertTrue(WorkCreatePolicy.canCreate("admin", 1))
-        assertTrue(WorkCreatePolicy.canCreate("moderator", 5))
-        assertTrue(WorkCreatePolicy.canCreate("user", 2))
-        assertTrue(WorkCreatePolicy.canCreate("user", 3))
-        assertFalse(WorkCreatePolicy.canCreate("user", 1))
-        assertFalse(WorkCreatePolicy.canCreate("user", 4))
-        assertFalse(WorkCreatePolicy.canCreate("user", 5))
-    }
-
-    @Test
     fun validateRequiresTitleAssignmentsAndDeadline() {
         assertEquals(
             "Vui lòng nhập tên công việc (tối đa 200 ký tự).",
@@ -94,24 +83,47 @@ class WorkCreatePolicyTest {
     }
 
     @Test
-    fun editStaysOpenForOpsAfterSubmissionLock() {
-        assertTrue(WorkDocumentActions.showsEdit(canEdit = false, isOps = true))
-        assertTrue(WorkDocumentActions.showsDelete(canDelete = false, isOps = true))
-        assertFalse(WorkDocumentActions.showsLocked(canEdit = false, canDelete = false, isOps = true))
-        assertFalse(WorkDocumentActions.showsEdit(canEdit = false, isOps = false))
-        assertTrue(WorkDocumentActions.showsLocked(canEdit = false, canDelete = false, isOps = false))
+    fun editFollowsServerFlagsAndApprovalLock() {
+        val base = WorkApprovalItem(
+            id = "doc-1", fileName = "", content = "", deadline = "2026-09-01", status = "pending",
+            approvalCount = 0, approvalTotal = 1, myDecision = "",
+        )
+        // Server says no (submission or out of scope): hidden even for admin/mod, with the lock note.
+        val submitted = base.copy(canEdit = false, canDelete = false)
+        assertFalse(WorkDocumentActions.showsEdit(submitted))
+        assertFalse(WorkDocumentActions.showsDelete(submitted))
+        assertEquals(WORK_LOCKED_MESSAGE, WorkDocumentActions.lockedMessage(submitted))
+        // Mutable pending/returned document.
+        val mutable = base.copy(canEdit = true, canDelete = true)
+        assertTrue(WorkDocumentActions.showsEdit(mutable))
+        assertTrue(WorkDocumentActions.showsDelete(mutable))
+        assertNull(WorkDocumentActions.lockedMessage(mutable))
+        // First approval locks for everyone even if a stale flag still says editable.
+        val locked = base.copy(canEdit = true, canDelete = true, approvalLocked = true, approvalCount = 1)
+        assertFalse(WorkDocumentActions.showsEdit(locked))
+        assertFalse(WorkDocumentActions.showsDelete(locked))
+        assertEquals(WORK_APPROVAL_LOCKED_MESSAGE, WorkDocumentActions.lockedMessage(locked))
+    }
+
+    @Test
+    fun documentActionErrorsUseWebMessages() {
         assertEquals(
-            WORK_LOCKED_MESSAGE,
+            WORK_IMMUTABLE_ERROR_MESSAGE,
             WorkDocumentActions.errorMessage("Error: WORK_DOCUMENT_IMMUTABLE", deleting = true, fallback = "x"),
         )
         assertEquals(
-            "Bạn không có quyền sửa hoặc xóa công việc này.",
+            "Chỉ người tạo mới được sửa hoặc xóa công việc này.",
             WorkDocumentActions.errorMessage("WORK_UPDATE_FORBIDDEN", deleting = false, fallback = "x"),
         )
         assertEquals(
-            "Không thể xóa công văn lúc này.",
-            WorkDocumentActions.errorMessage("WORK_DOCUMENT_NOT_FOUND", deleting = true, fallback = "x"),
+            "Văn thư không thể giao công việc cho Ban giám hiệu.",
+            WorkDocumentActions.errorMessage("Uncaught Error: WORK_ASSIGNEE_BGH_FORBIDDEN", deleting = false, fallback = "x"),
         )
+        assertEquals(
+            "Không thể xóa công việc lúc này.",
+            WorkDocumentActions.errorMessage("NETWORK_DOWN", deleting = true, fallback = "x"),
+        )
+        assertEquals("x", WorkDocumentActions.errorMessage("NETWORK_DOWN", deleting = false, fallback = "x"))
     }
 
     @Test
