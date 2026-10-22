@@ -1,6 +1,5 @@
 package lvt.crm.ui.notifications
 
-import lvt.crm.ui.duties.SharedWeekPresentation
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import lvt.crm.data.notifications.NotificationItem
+import lvt.crm.push.NotificationPresentation
 import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.components.StatePanel
 import java.text.SimpleDateFormat
@@ -304,7 +304,7 @@ private fun NotificationCard(
                         Text(
                             "${kindLabel(item)} · ${item.milestoneLabel}",
                             style = MaterialTheme.typography.labelMedium,
-                            color = if (item.sourceType == "completion_rejected") {
+                            color = if (NotificationPresentation.isRejection(item.sourceType)) {
                                 MaterialTheme.colorScheme.error
                             } else {
                                 MaterialTheme.colorScheme.primary
@@ -350,7 +350,7 @@ private fun NotificationCard(
                             modifier = Modifier.size(17.dp),
                         )
                         Text(
-                            "${if (item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" || SharedWeekPresentation.isWeekNotification(item.sourceType)) "Lúc" else "Hạn"} ${formatDueAt(item.dueAt)}",
+                            "${if (NotificationPresentation.showsEventTime(item.sourceType)) "Lúc" else "Hạn"} ${formatDueAt(item.dueAt)}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = 6.dp),
@@ -395,7 +395,7 @@ private fun FileTypeTile(fileName: String?) {
     val extension = fileName
         ?.substringAfterLast('.', "")
         ?.uppercase()
-        ?.takeIf { it.isNotBlank() }
+        ?.takeIf { it.isNotBlank() && it.length <= 5 && it.all(Char::isLetterOrDigit) }
     if (extension == null) return
     val isPdf = extension == "PDF"
     Column(
@@ -422,25 +422,11 @@ private fun FileTypeTile(fileName: String?) {
     }
 }
 
-private fun kindLabel(item: NotificationItem): String = when {
-    item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" -> "Trao đổi"
-    SharedWeekPresentation.isWeekNotification(item.sourceType) -> "Lịch công tác chung"
-    item.kind == "duty" -> "Công tác"
-    lvt.crm.push.NotificationDestination.isTodo(item.kind, item.sourceType) -> "Việc của tôi"
-    item.sourceType == "completion_rejected" -> "Từ chối hoàn thành"
-    item.sourceType == "approval" -> "Công văn cần duyệt"
-    else -> "Công việc"
-}
+private fun kindLabel(item: NotificationItem): String =
+    NotificationPresentation.kindLabel(item.kind, item.sourceType)
 
-private fun notificationHeadline(item: NotificationItem): Pair<String, String?> {
-    val title = item.title.ifBlank { kindLabel(item) }
-    val marker = "Công văn cần duyệt:"
-    return if (title.startsWith(marker)) {
-        marker to title.removePrefix(marker).trim().takeIf { it.isNotBlank() }
-    } else {
-        title to null
-    }
-}
+private fun notificationHeadline(item: NotificationItem): Pair<String, String?> =
+    NotificationPresentation.headline(item.title, item.kind, item.sourceType)
 
 private fun milestoneSummary(hours: List<Int>): String =
     "Mốc ${hours.joinToString(" · ") { if (it == 0) "Đến hạn" else "${it}h" }}"
