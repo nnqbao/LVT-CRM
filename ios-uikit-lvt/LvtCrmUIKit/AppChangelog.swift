@@ -8,6 +8,16 @@ struct AppChangelogEntry: Equatable {
 enum AppChangelog {
     static let entries: [AppChangelogEntry] = [
         AppChangelogEntry(
+            version: "2.1.0",
+            highlights: [
+                "Công việc do Văn thư/Quản trị giao cho người khác cần Ban giám hiệu duyệt: chọn người duyệt rồi bấm “Gửi duyệt”. Người tạo thấy Chờ duyệt x/y, Đã duyệt hoặc Bị trả lại kèm lý do, sửa rồi “Lưu và gửi duyệt lại”.",
+                "Ban giám hiệu có mục “Chờ tôi duyệt”: Duyệt (có xác nhận) hoặc Trả lại kèm lý do. Sau lượt duyệt đầu tiên, công việc không còn sửa/xóa được (trừ khi máy chủ cho phép quản trị sửa và gửi duyệt lại).",
+                "Ban giám hiệu và tổ trưởng/tổ phó tạo công việc theo quyền máy chủ cấp; phân công chưa được duyệt hiện “Chờ duyệt (chưa giao)”. Thông báo chờ duyệt, đã duyệt, bị trả lại mở đúng công việc.",
+                "Mục mới Báo cáo › Bán trú trên Tổng quan: danh sách giáo viên tham gia theo “Học kỳ · Năm học” (phòng ban mình hoặc toàn trường theo quyền Báo cáo); quản trị viên thêm, sửa, xóa Kỳ bán trú.",
+                "Nút “?” trên các màn hình chính mở hướng dẫn sử dụng đúng chủ đề.",
+            ]
+        ),
+        AppChangelogEntry(
             version: "2.0.0",
             highlights: [
                 "Mục mới Điểm danh cho Giám thị (và quản trị viên): chọn Lớp 6–9, mở lớp, đánh dấu học sinh Vắng rồi Lưu lớp. Mặc định cả lớp có mặt; nhập bằng Excel dùng bản web.",
