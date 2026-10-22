@@ -20,6 +20,8 @@ final class WorkViewController: UITableViewController {
     private let chatRepository: ChatRepository
     private let downloadDocument: (WorkApprovalItem) async throws -> URL
     var trailingAccessoryBarButtonItems: [UIBarButtonItem] = []
+    /// Called after the bar items change, so WorkHub can mirror them on its own navigation item.
+    var onBarItemsChange: (() -> Void)?
     private let searchHeader = ListSearchHeaderView()
     private var pendingFocusId: String?
     private var pendingOpenChat = false
@@ -344,6 +346,7 @@ final class WorkViewController: UITableViewController {
             items.append(UIBarButtonItem(title: "Tạo", style: .done, target: self, action: #selector(openCreate)))
         }
         navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
+        onBarItemsChange?()
     }
 
     @objc private func openCreate() {

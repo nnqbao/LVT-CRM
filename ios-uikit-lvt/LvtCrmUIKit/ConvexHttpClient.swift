@@ -36,7 +36,7 @@ actor ConvexHttpClient {
         configuration.timeoutIntervalForResource = 60
         configuration.waitsForConnectivity = false
         session = sessionOverride ?? URLSession(configuration: configuration)
-        importSession = sessionOverride ?? URLSession(configuration: configuration, delegate: CameraUploadRedirectGuard(), delegateQueue: nil)
+        importSession = sessionOverride ?? URLSession(configuration: configuration, delegate: UploadRedirectGuard(), delegateQueue: nil)
     }
 
     func query(_ path: String, args: [String: Any] = [:], authenticated: Bool = true) async throws -> [String: Any] {
@@ -109,7 +109,7 @@ actor ConvexHttpClient {
         let json = try parseJSONObject(data)
         if (json["status"] as? String) == "success" {
             if noRetry { try Self.validateImportEnvelope(path, envelope: json, statusCode: statusCode) }
-            if kind == "mutation", ["students:updateContacts", "students:removeGuardian", "students:upsertGuardian", "studentAttendance:setDisposition", "studentAttendance:setDispositionMany"].contains(path) {
+            if kind == "mutation", ["students:updateContacts", "students:removeGuardian", "students:upsertGuardian", "studentAttendance:setDisposition"].contains(path) {
                 try Self.validateHomeroomAcknowledgment(path, envelope: json, statusCode: statusCode)
             }
             return unwrapValue(json["value"])
@@ -142,7 +142,7 @@ actor ConvexHttpClient {
         return result
     }
     static func validateImportEnvelope(_ path: String, envelope: [String: Any], statusCode: Int) throws {
-        let stringPaths = ["attendanceImport:generateUploadUrl", "studentRosterImport:generateUploadUrl", "homeroomClasses:create", "homeroomClasses:assignUser", "homeroomClasses:transferStudent", "students:create"]
+        let stringPaths = ["studentRosterImport:generateUploadUrl", "homeroomClasses:create", "homeroomClasses:assignUser", "homeroomClasses:transferStudent", "students:create"]
         let nullPaths = ["homeroomClasses:update", "homeroomClasses:archive", "homeroomClasses:restore", "homeroomClasses:withdrawStudent"]
         let correct = stringPaths.contains(path) ? envelope["value"] is String : nullPaths.contains(path) ? envelope["value"] is NSNull : envelope["value"] is [String: Any]
         guard (200..<300).contains(statusCode), envelope["status"] as? String == "success", correct else { throw ConvexException(code: "IMPORT_UNCERTAIN") }
@@ -199,27 +199,23 @@ actor ConvexHttpClient {
     static func extractImportCode(_ message: String) -> String {
         let management = ["CLASS_CODE_TAKEN", "INVALID_CLASS_CODE", "INVALID_GRADE_LEVEL", "SCHOOL_YEAR_LOCKED", "STUDENT_CODE_EXISTS", "INVALID_STUDENT_CODE", "ENROLLMENT_NOT_FOUND", "ENROLLMENT_NOT_ACTIVE", "ENROLLMENT_YEAR_MISMATCH", "DUPLICATE_ACTIVE_ENROLLMENT", "TRANSFER_BEFORE_START", "WITHDRAW_BEFORE_START", "INVALID_TRANSFER", "INVALID_REASON", "HOMEROOM_TEACHER_OVERLAP", "HOMEROOM_TEACHER_ALREADY_ASSIGNED", "ASSIGNMENT_BEFORE_START", "INVALID_ASSIGNMENT_TYPE", "INVALID_ASSIGNMENT_SCOPE", "USER_NOT_FOUND", "IMPORT_VALIDATION_FAILED", "IMPORT_UPLOAD_ALREADY_COMMITTED", "IMPORT_UPLOAD_IN_PROGRESS", "STUDENT_ENROLLED_OTHER_CLASS"]
         if let code = management.first(where: { message.contains($0) }) { return code }
-        let known = ["ATTENDANCE_REPLACE_MODE_REQUIRED", "ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_DATE_IN_FUTURE", "ATTENDANCE_TEMPLATE_HEADER_NOT_FOUND", "ATTENDANCE_TEMPLATE_COLUMNS_MISSING", "INVALID_IMPORT_FILE", "IMPORT_FILE_TOO_LARGE", "IMPORT_FILE_EMPTY", "IMPORT_TOO_MANY_ROWS", "IMPORT_UPLOAD_EXPIRED", "IMPORT_UPLOAD_NOT_FOUND", "IMPORT_ROWS_UNRESOLVED", "INVALID_REPLACE_MODE", "SCHOOL_YEAR_NOT_FOUND", "INVALID_DATE", "SUPERVISOR_REQUIRED", "HOMEROOM_MENU_HIDDEN", "HOMEROOM_SCOPE_FORBIDDEN"]
+        let known = ["INVALID_IMPORT_FILE", "IMPORT_FILE_TOO_LARGE", "IMPORT_FILE_EMPTY", "IMPORT_TOO_MANY_ROWS", "IMPORT_UPLOAD_EXPIRED", "IMPORT_UPLOAD_NOT_FOUND", "SCHOOL_YEAR_NOT_FOUND", "INVALID_DATE", "HOMEROOM_MENU_HIDDEN", "HOMEROOM_SCOPE_FORBIDDEN"]
         return known.first { message.contains($0) } ?? extractCode(message)
     }
     static func humanizeImport(_ message: String) -> String {
         let code = extractImportCode(message)
         switch code {
-        case "INVALID_IMPORT_FILE", "IMPORT_FILE_EMPTY", "IMPORT_FILE_TOO_LARGE": return "File Excel không hợp lệ, rỗng hoặc quá 4 MiB. Kiểm tra file .xlsx camera toàn trường."
-        case "ATTENDANCE_TEMPLATE_HEADER_NOT_FOUND", "ATTENDANCE_TEMPLATE_COLUMNS_MISSING": return "Không tìm thấy mẫu/cột camera: Lớp học, Tên học sinh, Ngày sinh, Trạng thái điểm danh."
-        case "IMPORT_TOO_MANY_ROWS": return "File vượt quá 3.000 dòng; chuẩn bị file nhỏ hơn."
-        case "IMPORT_UPLOAD_EXPIRED": return "Bản đăng ký quá hạn 2 giờ; không thể công bố. File không được ứng dụng tự xóa."
+        case "INVALID_IMPORT_FILE", "IMPORT_FILE_EMPTY", "IMPORT_FILE_TOO_LARGE": return "File Excel không hợp lệ, rỗng hoặc quá 2 MiB. Kiểm tra file .xlsx danh sách học sinh."
+        case "IMPORT_TOO_MANY_ROWS": return "File vượt quá số dòng cho phép; chuẩn bị file nhỏ hơn."
+        case "IMPORT_UPLOAD_EXPIRED": return "Bản đăng ký đã quá hạn; không thể ghi. File không được ứng dụng tự xóa."
         case "IMPORT_UPLOAD_NOT_FOUND": return "Không tìm thấy bản đăng ký; không tự đăng ký/gửi lại file."
-        case "IMPORT_ROWS_UNRESOLVED": return "Không còn lớp có thể công bố; kiểm tra lại bản xem trước."
-        case "ATTENDANCE_REPLACE_MODE_REQUIRED": return "Dữ liệu ngày này đã thay đổi; kiểm tra lại bản xem trước và chọn lại chế độ trước khi xác nhận."
-        case "ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_DATE_IN_FUTURE", "SCHOOL_YEAR_NOT_FOUND", "INVALID_DATE": return "Năm/ngày học không hợp lệ hoặc ngày ở tương lai; chọn lại ngữ cảnh."
-        case "SUPERVISOR_REQUIRED", "HOMEROOM_MENU_HIDDEN": return "Chỉ Giám thị hoặc quản trị viên được nhập camera."
-        case "INVALID_REPLACE_MODE": return "Chế độ xử lý dữ liệu trùng không hợp lệ; chọn lại trong ba chế độ."
+        case "SCHOOL_YEAR_NOT_FOUND", "INVALID_DATE": return "Năm/ngày học không hợp lệ; chọn lại ngữ cảnh."
+        case "HOMEROOM_MENU_HIDDEN": return "Bạn không có quyền dùng Lớp chủ nhiệm."
         default: return humanize(message)
         }
     }
     static func extractCode(_ message: String) -> String {
-        let known = [
+        let known = schoolFeedbackCodes + [
             "INVALID_PHONE", "INVALID_NAME", "INVALID_TEXT", "INVALID_DISPOSITION_NOTE", "INVALID_DISPOSITION", "CORRECTION_REASON_REQUIRED", "GUARDIAN_LIMIT", "ATTENDANCE_DAY_NOT_FOUND", "CLASS_NOT_FOUND", "STUDENT_NOT_FOUND", "GUARDIAN_NOT_FOUND", "CLASS_ARCHIVED", "DISPOSITION_NOT_ABSENT",
             "INVALID_CREDENTIALS", "InvalidAccountId", "InvalidSecret", "Invalid credentials", "USER_NOT_ACTIVE",
             "ACCOUNT_LOCKED", "PASSWORD_TOO_SHORT", "PASSWORD_CHANGE_FAILED", "PASSWORD_CHANGED_SYNC_PENDING",
@@ -268,9 +264,48 @@ actor ConvexHttpClient {
         }
     }
 
+    /// Điểm danh, Lớp chủ nhiệm and "Việc của tôi" codes (mirrors src/lib/appErrorMessage.js). Listed before the
+    /// generic codes so INVALID_TODO_* / INVALID_DATE never fall into the "Invalid…" login wording.
+    static let schoolFeedbackCodes = [
+        "ATTENDANCE_CAMERA_IMPORT_RETIRED", "SUPERVISOR_REQUIRED", "ATTENDANCE_DATE_TODAY_ONLY",
+        "ATTENDANCE_STUDENT_NOT_IN_CLASS", "ATTENDANCE_TOO_MANY_ABSENT", "ATTENDANCE_DATE_OUTSIDE_YEAR",
+        "ATTENDANCE_DATE_IN_FUTURE", "SCHOOL_YEAR_NOT_FOUND", "DISPOSITION_FORBIDDEN", "DISPOSITION_BATCH_TOO_LARGE",
+        "INVALID_TODO_TITLE", "INVALID_TODO_NOTE", "INVALID_TODO_TIME", "TODO_REMIND_IN_PAST", "TODO_NOT_FOUND",
+        "INVALID_DATE_RANGE", "INVALID_DATE",
+    ]
+
+    static func schoolFeedbackMessage(_ code: String) -> String? {
+        switch code {
+        case "ATTENDANCE_CAMERA_IMPORT_RETIRED": return "Nhập file điểm danh camera đã ngừng sử dụng. Giám thị điểm danh tại menu Điểm danh."
+        case "SUPERVISOR_REQUIRED": return "Chỉ Giám thị hoặc Admin/Mod mới được điểm danh."
+        case "ATTENDANCE_DATE_TODAY_ONLY": return "Giám thị chỉ được điểm danh cho ngày hôm nay."
+        case "ATTENDANCE_STUDENT_NOT_IN_CLASS": return "Có học sinh không thuộc lớp này vào ngày điểm danh. Vui lòng tải lại rồi lưu lại."
+        case "ATTENDANCE_TOO_MANY_ABSENT": return "Số học sinh vắng vượt quá giới hạn của một lớp."
+        case "ATTENDANCE_DATE_OUTSIDE_YEAR": return "Ngày điểm danh nằm ngoài thời gian của năm học."
+        case "ATTENDANCE_DATE_IN_FUTURE": return "Không thể điểm danh cho ngày trong tương lai."
+        case "SCHOOL_YEAR_NOT_FOUND": return "Không tìm thấy năm học."
+        case "CLASS_NOT_FOUND": return "Không tìm thấy lớp."
+        case "CLASS_ARCHIVED": return "Lớp đã lưu trữ. Không thể phân công, nhập danh sách hoặc điểm danh."
+        case "DISPOSITION_FORBIDDEN": return "Chỉ GVCN của lớp trong ngày đó hoặc Admin/Mod mới được phân loại vắng."
+        case "DISPOSITION_NOT_ABSENT": return "Chỉ đánh dấu được học sinh đang Vắng."
+        case "DISPOSITION_BATCH_TOO_LARGE": return "Mỗi lần chỉ phân loại tối đa 100 học sinh."
+        case "INVALID_DISPOSITION": return "Phân loại vắng không hợp lệ."
+        case "ATTENDANCE_DAY_NOT_FOUND": return "Không tìm thấy buổi điểm danh."
+        case "INVALID_TODO_TITLE": return "Vui lòng nhập tên việc (tối đa 200 ký tự)."
+        case "INVALID_TODO_NOTE": return "Ghi chú tối đa 2000 ký tự."
+        case "INVALID_TODO_TIME": return "Thời gian không hợp lệ."
+        case "TODO_REMIND_IN_PAST": return "Giờ nhắc phải ở tương lai."
+        case "TODO_NOT_FOUND": return "Việc này không còn tồn tại."
+        case "INVALID_DATE": return "Ngày không hợp lệ."
+        case "INVALID_DATE_RANGE": return "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc."
+        default: return nil
+        }
+    }
+
     static func humanize(_ message: String) -> String {
         let code = extractCode(message)
         if let duty = dutyMessage(code) { return duty }
+        if let school = schoolFeedbackMessage(code) { return school }
         switch true {
         case code == "INVALID_PHONE": return "Số điện thoại không hợp lệ (6–20 ký tự)."
         case code == "INVALID_NAME": return "Họ tên phải có 1–120 ký tự."

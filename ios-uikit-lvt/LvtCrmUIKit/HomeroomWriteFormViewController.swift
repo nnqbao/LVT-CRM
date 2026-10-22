@@ -4,8 +4,6 @@ import UIKit
     private let repository: HomeroomWriteRepository
     private let context: DetailContext
     private let studentId: String?
-    private let targets: [AbsenceTarget]
-    private let batch: Bool
     private let guardian: StudentProfile.Guardian?
     private let mode: String
     private let isCurrent: () -> Bool
@@ -14,7 +12,6 @@ import UIKit
     private let name = UITextField()
     private let phone = UITextField()
     private let notes = UITextField()
-    private let reason = UITextField()
     private let primary = UISwitch()
     private var choice: String
     private var fields: [(String, UITextField)] = []
@@ -23,13 +20,14 @@ import UIKit
     private var status = "Quyền được kiểm tra lại trước khi ghi. Không gửi tin nhắn; liên hệ chính do máy chủ quyết định."
     private var task: Task<Void, Never>?
 
-    init(repository: HomeroomWriteRepository, context: DetailContext, studentId: String? = nil, targets: [AbsenceTarget] = [], batch: Bool = false, guardian: StudentProfile.Guardian? = nil, mode: String = "phone", initialPhone: String = "", isCurrent: @escaping () -> Bool, onClear: @escaping () -> Void, onRefresh: @escaping () async -> Void) {
-        self.repository = repository; self.context = context; self.studentId = studentId; self.targets = targets; self.batch = batch; self.guardian = guardian; self.mode = mode
+    /// Student phone / guardian contact editor. Attendance dispositions are toggled inline in the class view.
+    init(repository: HomeroomWriteRepository, context: DetailContext, studentId: String, guardian: StudentProfile.Guardian? = nil, mode: String = "phone", initialPhone: String = "", isCurrent: @escaping () -> Bool, onClear: @escaping () -> Void, onRefresh: @escaping () async -> Void) {
+        self.repository = repository; self.context = context; self.studentId = studentId; self.guardian = guardian; self.mode = mode
         self.isCurrent = isCurrent; self.onClear = onClear; self.onRefresh = onRefresh
-        choice = guardian?.relationship ?? (targets.isEmpty ? "guardian" : "excused")
+        choice = guardian?.relationship ?? "guardian"
         super.init(style: .insetGrouped)
         name.text = guardian?.fullName ?? ""; phone.text = guardian?.phone ?? initialPhone; notes.text = guardian?.notes ?? ""; primary.isOn = guardian?.isPrimaryContact ?? false
-        title = targets.isEmpty ? (mode == "phone" ? "Điện thoại học sinh" : "Người giám hộ") : "Phân loại \(Set(targets.map(\.id)).count) buổi"
+        title = mode == "phone" ? "Điện thoại học sinh" : "Người giám hộ"
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit { task?.cancel() }
@@ -38,7 +36,7 @@ import UIKit
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 64
         navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Đóng", style: .plain, target: self, action: #selector(close))
-        fields = !targets.isEmpty ? [("Mã lý do (hoặc ghi chú)", reason), ("Ghi chú (tối đa 500)", notes)] : mode == "phone" ? [("Điện thoại (để trống để xóa)", phone)] : [("Họ tên (1–120)", name), ("Điện thoại (để trống để xóa)", phone), ("Ghi chú (tối đa 300)", notes)]
+        fields = mode == "phone" ? [("Điện thoại (để trống để xóa)", phone)] : [("Họ tên (1–120)", name), ("Điện thoại (để trống để xóa)", phone), ("Ghi chú (tối đa 300)", notes)]
         for (label, field) in fields {
             field.placeholder = label; field.accessibilityLabel = label; field.font = .preferredFont(forTextStyle: .body); field.adjustsFontForContentSizeCategory = true
             field.borderStyle = .roundedRect; field.clearButtonMode = .whileEditing
@@ -52,7 +50,7 @@ import UIKit
     }
     @objc private func close() { guard !busy else { return }; task?.cancel(); dismiss(animated: true) }
     override func numberOfSections(in tableView: UITableView) -> Int { 3 }
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 0 ? fields.count : section == 1 ? (targets.isEmpty && mode == "phone" ? 0 : (targets.isEmpty ? 2 : 1)) : (guardian == nil ? 2 : 3) }
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 0 ? fields.count : section == 1 ? (mode == "phone" ? 0 : 2) : (guardian == nil ? 2 : 3) }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
@@ -82,18 +80,17 @@ import UIKit
         view.endEditing(true)
         if indexPath.section == 1 && indexPath.row == 0 && !locked {
             let picker = UIAlertController(title: "Chọn", message: nil, preferredStyle: .actionSheet)
-            for value in targets.isEmpty ? HomeroomWritePayload.relationships : ["pending", "excused", "unexcused"] { picker.addAction(UIAlertAction(title: Self.label(value), style: .default) { [weak self] _ in self?.choice = value; self?.tableView.reloadData() }) }
+            for value in HomeroomWritePayload.relationships { picker.addAction(UIAlertAction(title: Self.label(value), style: .default) { [weak self] _ in self?.choice = value; self?.tableView.reloadData() }) }
             picker.addAction(UIAlertAction(title: "Hủy", style: .cancel)); picker.popoverPresentationController?.sourceView = tableView.cellForRow(at: indexPath); present(picker, animated: true)
         } else if indexPath.section == 2 && indexPath.row > 0 {
             if locked { task = Task { await onRefresh() }; return }
             do {
                 let write: HomeroomWrite
                 if indexPath.row == 2, let guardian, let studentId { write = HomeroomWritePayload.remove(context, studentId: studentId, id: guardian._id) }
-                else if !targets.isEmpty { write = try HomeroomWritePayload.disposition(targets, next: choice, reason: reason.text ?? "", note: notes.text ?? "", batch: batch) }
                 else if mode == "phone", let studentId { write = try HomeroomWritePayload.studentPhone(context, studentId: studentId, value: phone.text ?? "") }
                 else if let studentId { write = try HomeroomWritePayload.guardian(context, studentId: studentId, id: guardian?._id, relationship: choice, name: name.text ?? "", phone: phone.text ?? "", primary: primary.isOn, notes: notes.text ?? "") }
                 else { return }
-                let confirm = UIAlertController(title: "Xác nhận ghi", message: targets.isEmpty ? (write.path == "students:removeGuardian" ? "Xóa người giám hộ này?" : "Lưu liên hệ này?") : "\(write.targets.count) buổi duy nhất được chọn; thao tác lô toàn bộ hoặc không ghi. Đây chưa phải số thay đổi thành công.", preferredStyle: .alert)
+                let confirm = UIAlertController(title: "Xác nhận ghi", message: write.path == "students:removeGuardian" ? "Xóa người giám hộ này?" : "Lưu liên hệ này?", preferredStyle: .alert)
                 confirm.addAction(UIAlertAction(title: "Quay lại sửa", style: .cancel))
                 confirm.addAction(UIAlertAction(title: "Xác nhận", style: write.path == "students:removeGuardian" ? .destructive : .default) { [weak self] _ in self?.submit(write) })
                 present(confirm, animated: true)
@@ -120,37 +117,5 @@ import UIKit
             }
         }
     }
-    static func label(_ value: String) -> String { ["father": "Cha", "mother": "Mẹ", "guardian": "Người giám hộ", "grandparent": "Ông/Bà", "sibling": "Anh/Chị/Em", "other": "Khác", "pending": "Chờ xử lý", "excused": "Có phép", "unexcused": "Không phép"][value] ?? value }
-}
-
-@MainActor final class HomeroomAbsenceSelectionViewController: UITableViewController {
-    private let targets: [AbsenceTarget]
-    private let labels: [String]
-    private var selected: Set<String> = []
-    var onSelect: (([AbsenceTarget], Bool) -> Void)?
-    init(targets: [AbsenceTarget], labels: [String]) { self.targets = targets; self.labels = labels; super.init(style: .insetGrouped); title = "Chọn buổi vắng · 0/100" }
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    override func viewDidLoad() {
-        super.viewDidLoad(); tableView.rowHeight = UITableView.automaticDimension; tableView.estimatedRowHeight = 64
-        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Phân loại lô", style: .plain, target: self, action: #selector(batchSelected))
-        navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Đóng", style: .plain, target: self, action: #selector(close))
-    }
-    @objc private func close() { dismiss(animated: true) }
-    @objc private func batchSelected() { let chosen = targets.filter { selected.contains($0.id) }; if !chosen.isEmpty { onSelect?(chosen, true) } }
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { targets.count }
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration(); content.text = labels[indexPath.row]; content.secondaryText = "\(VietnamDate.display(targets[indexPath.row].context.date)) · Chạm để chọn lô; nút thông tin để phân loại một buổi"
-        content.textProperties.font = .preferredFont(forTextStyle: .headline); content.secondaryTextProperties.font = .preferredFont(forTextStyle: .body); content.textProperties.numberOfLines = 0; content.secondaryTextProperties.numberOfLines = 0
-        cell.contentConfiguration = content; cell.accessoryType = .detailButton; cell.accessibilityValue = selected.contains(targets[indexPath.row].id) ? "Đã chọn" : "Chưa chọn"
-        cell.backgroundColor = selected.contains(targets[indexPath.row].id) ? .secondarySystemGroupedBackground : .systemBackground
-        cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
-        return cell
-    }
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let id = targets[indexPath.row].id
-        if selected.contains(id) { selected.remove(id) } else if selected.count < 100 { selected.insert(id) }
-        title = "Chọn buổi vắng · \(selected.count)/100"; tableView.reloadData()
-    }
-    override func tableView(_ tableView: UITableView, accessoryButtonTappedForRowWith indexPath: IndexPath) { onSelect?([targets[indexPath.row]], false) }
+    static func label(_ value: String) -> String { ["father": "Cha", "mother": "Mẹ", "guardian": "Người giám hộ", "grandparent": "Ông/Bà", "sibling": "Anh/Chị/Em", "other": "Khác"][value] ?? value }
 }

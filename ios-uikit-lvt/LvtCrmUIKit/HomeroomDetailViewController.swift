@@ -15,9 +15,16 @@ import UIKit
         case banner(String, String?, HomeroomTone, String)
         case stats([HomeroomStat])
         case item(title: String, subtitle: String?, chips: [HomeroomChip], leading: String?, studentId: String?)
+        case heading(String)
+        case absence(DailyRow, canCorrect: Bool)
     }
     private var rows: [Row] = []
     private lazy var writes = repository.writeOperations
+    /// Attendance day currently being toggled (one at a time; the switch is disabled meanwhile).
+    private var busyDayId: String?
+    private var busyUnexcused = false
+    private var toggleTask: Task<Void, Never>?
+    private var toggleStatus: String?
     var onClassDateChanged: ((String) -> Void)?
 
     init(repository: HomeroomRepository, context: DetailContext, studentId: String? = nil) {
@@ -30,7 +37,7 @@ import UIKit
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    deinit { task?.cancel() }
+    deinit { task?.cancel(); toggleTask?.cancel() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -38,10 +45,14 @@ import UIKit
         tableView.estimatedRowHeight = 100
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(retry), for: .valueChanged)
-        navigationItem.rightBarButtonItems = [UIBarButtonItem(title: "Tải lại", style: .plain, target: self, action: #selector(retry)), UIBarButtonItem(title: "Sửa", style: .plain, target: self, action: #selector(edit))]
+        var barItems = [UIBarButtonItem(title: "Tải lại", style: .plain, target: self, action: #selector(retry))]
+        // Sửa is for student contacts only; absences are toggled inline ("Vắng không phép").
+        if store.studentId != nil { barItems.append(UIBarButtonItem(title: "Sửa", style: .plain, target: self, action: #selector(edit))) }
+        navigationItem.rightBarButtonItems = barItems
         tableView.register(HomeroomStatTilesCell.self, forCellReuseIdentifier: HomeroomStatTilesCell.reuseIdentifier)
         tableView.register(HomeroomListCell.self, forCellReuseIdentifier: HomeroomListCell.reuseIdentifier)
         tableView.register(HomeroomBannerCell.self, forCellReuseIdentifier: HomeroomBannerCell.reuseIdentifier)
+        tableView.register(HomeroomAbsenceCell.self, forCellReuseIdentifier: HomeroomAbsenceCell.reuseIdentifier)
         dayNavigator.presenter = self
         dayNavigator.onChange = { [weak self] selected in self?.dateChanged(to: selected) }
         pane.selectedSegmentIndex = 0
@@ -97,6 +108,8 @@ import UIKit
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         task?.cancel()
+        toggleTask?.cancel()
+        busyDayId = nil
         store.clear()
     }
 
@@ -108,6 +121,7 @@ import UIKit
     }
 
     @objc private func retry() {
+        toggleStatus = nil
         task?.cancel()
         store.clear()
         task = Task { [weak self] in await self?.store.load() }
@@ -148,19 +162,7 @@ import UIKit
             let teacher = data.scoped.currentTeacherName.isEmpty ? "chưa phân công" : data.scoped.currentTeacherName
             rows.append(.info(klass.name.isEmpty ? "Lớp \(klass.code)" : klass.name, ([HomeroomPresentation.dayTitle(store.context.date), "GVCN \(teacher)"] + (klass.status == "archived" ? ["Lớp đã lưu trữ"] : [])).joined(separator: " · ")))
             if dailyPane {
-                let daily = data.daily
-                let showStatus = daily.published && daily.schoolDay.isSchoolDay && !daily.schoolDay.outsideYear
-                if daily.schoolDay.outsideYear { rows.append(.banner("Ngoài năm học", "Không cần điểm danh.", .info, "calendar.badge.exclamationmark")) }
-                else if !daily.schoolDay.isSchoolDay { rows.append(.banner("Không phải ngày học", daily.schoolDay.note ?? "Không cần điểm danh.", .info, "calendar.badge.minus")) }
-                else if !daily.published { rows.append(.banner("Chưa có dữ liệu điểm danh", "Dữ liệu sẽ hiện sau khi nhập từ camera.", .neutral, "hourglass")) }
-                else { rows.append(.stats(HomeroomPresentation.dailyStats(daily.rows.map { $0.day?.effectiveStatus ?? "no_data" }))) }
-                let visible = daily.rows.filter { matches($0.student.fullName, $0.student.studentCode) }
-                if visible.isEmpty { rows.append(.info((search.text ?? "").isEmpty ? "Lớp chưa có học sinh" : "Không tìm thấy học sinh", nil)) }
-                rows += visible.map { row in
-                    let record = row.day
-                    let chip = showStatus ? [HomeroomPresentation.studentChip(status: record?.effectiveStatus ?? "no_data", observedTime: record?.rawObservedAt.map(HomeroomPresentation.clock))] : []
-                    return .item(title: row.student.fullName, subtitle: record?.note, chips: chip, leading: row.enrollment.rosterNumber.map(String.init) ?? "—", studentId: row.student._id)
-                }
+                renderDaily(data.daily)
             } else {
                 let visible = data.roster.rows.filter { matches($0.student.fullName, $0.student.studentCode) }
                 rows.append(.info("\(visible.count) học sinh", nil))
@@ -190,7 +192,99 @@ import UIKit
         }
         if !store.loading { refreshControl?.endRefreshing() }
         tableView.reloadData()
-        navigationItem.rightBarButtonItems?.last?.isEnabled = store.studentData.map { $0.profile.showContacts && $0.profile.permissions.canEditContacts } ?? (dailyPane && store.classData?.daily.canCorrect == true && store.classData?.daily.archived == false)
+        if store.studentId != nil {
+            navigationItem.rightBarButtonItems?.last?.isEnabled = store.studentData.map { $0.profile.showContacts && $0.profile.permissions.canEditContacts } ?? false
+        }
+    }
+
+    /// GVCN class day (web AttendanceTab): absentees first and highlighted, then everybody present.
+    private func renderDaily(_ daily: ClassDaily) {
+        let today = VietnamDate.today()
+        if daily.schoolDay.outsideYear { rows.append(.banner("Ngoài năm học", "Không cần điểm danh.", .info, "calendar.badge.exclamationmark")) }
+        if daily.rows.isEmpty {
+            rows.append(.info("Lớp không có học sinh vào ngày này.", nil))
+            return
+        }
+        if HomeroomPresentation.classNotMarked(daily) {
+            let detail = daily.schoolDay.isSchoolDay
+                ? "Khi Giám thị lưu điểm danh, học sinh vắng sẽ hiện ở đầu danh sách để bạn đánh dấu vắng không phép."
+                : "Đây không phải ngày học."
+            rows.append(.banner(HomeroomPresentation.notMarkedMessage(date: store.context.date, today: today), detail, .neutral, "clock"))
+            return
+        }
+        if !daily.schoolDay.isSchoolDay, !daily.schoolDay.outsideYear {
+            rows.append(.banner("Không phải ngày học", daily.schoolDay.note ?? "Theo lịch, đây không phải ngày học.", .info, "calendar.badge.minus"))
+        }
+        rows.append(.stats(HomeroomPresentation.dailyStats(daily.rows.map { $0.day?.effectiveStatus ?? "no_data" })))
+        if let saved = daily.classSaved { rows.append(.info(HomeroomPresentation.savedByText(saved), nil)) }
+        if let toggleStatus { rows.append(.banner(toggleStatus, nil, .info, "info.circle")) }
+        let visible = daily.rows.filter { matches($0.student.fullName, $0.student.studentCode) }
+        let split = HomeroomPresentation.splitAttendance(visible)
+        let canCorrect = daily.canCorrect && !daily.archived
+        if !canCorrect, !daily.archived, !split.absent.isEmpty {
+            rows.append(.banner("Chỉ GVCN của lớp (hoặc quản trị viên) mới đánh dấu được vắng không phép.", nil, .neutral, "eye"))
+        }
+        if visible.isEmpty {
+            rows.append(.info("Không tìm thấy học sinh", nil))
+            return
+        }
+        rows.append(.heading("Vắng (\(split.absent.count))"))
+        if split.absent.isEmpty { rows.append(.info("Không có học sinh vắng.", nil)) }
+        rows += split.absent.map { .absence($0, canCorrect: canCorrect && $0.day != nil) }
+        rows.append(.heading("Có mặt (\(split.others.count))"))
+        rows += split.others.map { row in
+            let record = row.day
+            let chip = HomeroomPresentation.studentChip(status: record?.effectiveStatus ?? "no_data", observedTime: record?.rawObservedAt.map(HomeroomPresentation.clock))
+            return .item(title: row.student.fullName, subtitle: record?.note, chips: [chip], leading: row.enrollment.rosterNumber.map(String.init) ?? "—", studentId: row.student._id)
+        }
+    }
+
+    /// "Vắng không phép" switch → studentAttendance.setDisposition (unexcused ↔ excused), reason optional.
+    private func toggleUnexcused(_ row: DailyRow, unexcused: Bool) {
+        guard busyDayId == nil, let day = row.day, store.studentId == nil, !store.loading else { render(); return }
+        let context = store.context
+        let write: HomeroomWrite
+        do {
+            write = try HomeroomWritePayload.disposition(
+                AbsenceTarget(id: day._id, studentId: row.student._id, context: context),
+                next: HomeroomPresentation.nextDisposition(unexcused: unexcused),
+                reason: day.reasonCode ?? "",
+                note: day.note ?? ""
+            )
+        } catch {
+            presentToggleError(error.localizedDescription)
+            render()
+            return
+        }
+        busyDayId = day._id
+        busyUnexcused = unexcused
+        toggleStatus = nil
+        render()
+        let name = row.student.fullName
+        toggleTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await writes.submit(write, isCurrent: { [weak self] in
+                    self?.store.context == context && self?.store.studentId == nil && self?.store.error == nil
+                })
+                busyDayId = nil
+                toggleStatus = "\(name): \(unexcused ? "vắng không phép" : "vắng có phép")."
+                await store.load(keepingData: true)
+                UIAccessibility.post(notification: .announcement, argument: toggleStatus)
+            } catch is CancellationError {
+                busyDayId = nil
+            } catch {
+                busyDayId = nil
+                presentToggleError(error.localizedDescription)
+                await store.load(keepingData: true)
+            }
+        }
+    }
+
+    private func presentToggleError(_ message: String) {
+        let alert = UIAlertController(title: "Chưa lưu được", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Đóng", style: .cancel))
+        present(alert, animated: true)
     }
 
     @objc private func edit() {
@@ -201,16 +295,6 @@ import UIKit
             if data.profile.guardians.count < 6 { chooser.addAction(UIAlertAction(title: "Thêm người giám hộ", style: .default) { [weak self] _ in self?.showContact(context, profile: data.profile, guardian: nil, mode: "guardian") }) }
             for guardian in data.profile.guardians { chooser.addAction(UIAlertAction(title: "Sửa hoặc xóa · \(guardian.fullName)", style: .default) { [weak self] _ in self?.showContact(context, profile: data.profile, guardian: guardian, mode: "guardian") }) }
             chooser.addAction(UIAlertAction(title: "Hủy", style: .cancel)); chooser.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItems?.last; present(chooser, animated: true)
-        } else if let data = store.classData, dailyPane, data.daily.canCorrect, !data.daily.archived {
-            let rows = data.daily.rows.filter { $0.day?.rawObservation == "absent" }
-            let targets = rows.compactMap { row in row.day.map { AbsenceTarget(id: $0._id, studentId: row.student._id, context: context) } }
-            let selector = HomeroomAbsenceSelectionViewController(targets: targets, labels: rows.map { "\($0.student.fullName) · \($0.student.studentCode)" })
-            selector.onSelect = { [weak self, weak selector] chosen, batch in
-                guard let self, let selector else { return }
-                let form = HomeroomWriteFormViewController(repository: writes, context: context, targets: chosen, batch: batch, isCurrent: { [weak self] in self?.store.context == context && self?.store.studentId == nil && self?.store.error == nil }, onClear: { [weak self] in self?.store.clear() }, onRefresh: { [weak self] in await self?.store.load() })
-                selector.navigationController?.pushViewController(form, animated: true)
-            }
-            present(UINavigationController(rootViewController: selector), animated: true)
         }
     }
     private func showContact(_ context: DetailContext, profile: StudentProfile, guardian: StudentProfile.Guardian?, mode: String) {
@@ -256,11 +340,41 @@ import UIKit
             let cell = tableView.dequeueReusableCell(withIdentifier: HomeroomListCell.reuseIdentifier, for: indexPath) as! HomeroomListCell
             cell.configure(title: title, subtitle: subtitle, chips: chips, leading: leading, tappable: studentId != nil)
             return cell
+        case let .heading(text):
+            let cell = tableView.dequeueReusableCell(withIdentifier: "heading") ?? UITableViewCell(style: .default, reuseIdentifier: "heading")
+            var content = cell.defaultContentConfiguration()
+            content.text = text
+            content.textProperties.font = .preferredFont(forTextStyle: .title3)
+            content.textProperties.numberOfLines = 0
+            cell.contentConfiguration = content
+            cell.selectionStyle = .none
+            cell.accessibilityTraits = .header
+            return cell
+        case let .absence(row, canCorrect):
+            let cell = tableView.dequeueReusableCell(withIdentifier: HomeroomAbsenceCell.reuseIdentifier, for: indexPath) as! HomeroomAbsenceCell
+            let record = row.day
+            let note = [record?.reasonCode, record?.note].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ")
+            cell.configure(
+                number: row.enrollment.rosterNumber.map(String.init) ?? "—",
+                name: row.student.fullName,
+                detail: note.isEmpty ? row.student.studentCode : note,
+                chip: HomeroomPresentation.studentChip(status: record?.effectiveStatus ?? "no_data", observedTime: nil),
+                canToggle: canCorrect,
+                unexcused: record?._id != nil && record?._id == busyDayId ? busyUnexcused : HomeroomPresentation.isUnexcused(record),
+                busy: record?._id != nil && record?._id == busyDayId
+            )
+            cell.onToggle = { [weak self] on in self?.toggleUnexcused(row, unexcused: on) }
+            return cell
         }
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard case let .item(_, _, _, _, studentId?) = rows[indexPath.row] else { return }
+        let studentId: String
+        switch rows[indexPath.row] {
+        case let .item(_, _, _, _, id?): studentId = id
+        case let .absence(row, _): studentId = row.student._id
+        default: return
+        }
         navigationController?.pushViewController(HomeroomDetailViewController(repository: repository, context: store.context, studentId: studentId), animated: true)
     }
 }

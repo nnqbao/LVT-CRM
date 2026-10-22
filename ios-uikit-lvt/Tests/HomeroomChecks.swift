@@ -3,16 +3,31 @@ import Foundation
 @main
 struct HomeroomChecks {
     static func main() throws {
-        func session(_ access: Any? = nil, role: String = "user", status: String = "active", password: Bool = false) -> UserSession {
+        func session(_ access: Any? = nil, attendance: Any? = nil, work: Any? = "view", role: String = "user", status: String = "active", password: Bool = false) -> UserSession {
             UserSession(sessionContext: ["user": ["_id": "test-user", "role": role, "status": status, "mustChangePassword": password],
-                                         "menuAccess": ["homeroom": access ?? NSNull()]])!
+                                         "menuAccess": ["homeroom": access ?? NSNull(), "attendance": attendance ?? NSNull(), "work": work ?? NSNull()]])!
         }
         for access: Any in [NSNull(), "unknown", true, 1, ["bad": "view"]] {
             precondition(!session(access).canSeeHomeroom)
         }
         precondition(session("edit").homeroomAccess == .view)
-        precondition(session("view_all").canSeeHomeroom && !session("view_all").isHomeroomSupervisor)
-        precondition(session("supervisor").isHomeroomSupervisor)
+        precondition(session("view_all").canSeeHomeroom && !session("view_all").isAttendanceSupervisor)
+        // Giám thị lives only on the `attendance` menu now: homeroom=supervisor resolves to hidden.
+        precondition(session("supervisor").homeroomAccess == .hidden && !session("supervisor").canSeeHomeroom)
+        precondition(!session("supervisor").canSeeAttendance && !session("supervisor").isAttendanceSupervisor)
+        let supervisor = session(attendance: "supervisor")
+        precondition(supervisor.isAttendanceSupervisor && supervisor.canSeeAttendance && !supervisor.canSeeHomeroom)
+        // `attendance` accepts only hidden/supervisor; view/view_all/edit there resolve to hidden.
+        for level in ["view", "view_all", "edit", "unknown"] { precondition(!session(attendance: level).canSeeAttendance) }
+        precondition(session(attendance: "view").attendanceAccess == .hidden)
+        precondition(!session(attendance: "supervisor", status: "inactive").canSeeAttendance)
+        precondition(!session(attendance: "supervisor", password: true).canSeeAttendance)
+        precondition(session(role: "admin").canSeeAttendance && !session(role: "admin").isAttendanceSupervisor)
+        precondition(session(role: "moderator").canSeeAttendance)
+        precondition(session("view", attendance: "supervisor").canSeeHomeroom && session("view", attendance: "supervisor").canSeeAttendance)
+        // Work hub: ordinary users with work hidden see only "Việc của tôi"; managers always see work.
+        precondition(session(work: "hidden").isWorkMenuHidden && session(work: nil).isWorkMenuHidden && session(work: "supervisor").isWorkMenuHidden)
+        precondition(!session(work: "view").isWorkMenuHidden && !session(work: "hidden", role: "admin").isWorkMenuHidden)
         precondition(session(role: "admin").canSeeHomeroom)
         precondition(session(role: "moderator").canSeeHomeroom)
         precondition(!session(role: "admin", status: "inactive").canSeeHomeroom)
@@ -35,21 +50,13 @@ struct HomeroomChecks {
             "summary": ["counts": ["present": 0, "late": 0, "absent_excused": 0, "absent_unexcused": 0, "no_data": 3, "absent_pending": 2, "exempt": 0], "ratedRows": 2, "totalRows": 5]
         ])
         precondition(overview.counts.noData == 3 && overview.counts.absent == 2 && overview.classes.isEmpty)
-        let pending = try HomeroomRepository.decodePending([
-            "total": 501, "truncated": true,
-            "rows": (0..<500).map { ["_id": "test-row-\($0)", "canCorrect": false] as [String: Any] }
-        ])
-        precondition(pending.total == 501 && pending.truncated && pending.rows.count == 500 && !pending.rows[0].canCorrect)
         let years = try HomeroomRepository.decodeSchoolYears(["items": [[String: Any]]()])
-        let status = try HomeroomRepository.decodeImportStatus(["publishedClassCount": 0, "uploads": [[String: Any]]()])
-        precondition(years.isEmpty && status.uploads.isEmpty)
+        precondition(years.isEmpty)
         func rejects(_ decode: () throws -> Void) {
             do { try decode(); preconditionFailure("Malformed response accepted") } catch {}
         }
         rejects { _ = try HomeroomRepository.decodeOverview([:]) }
-        rejects { _ = try HomeroomRepository.decodePending([:]) }
         rejects { _ = try HomeroomRepository.decodeSchoolYears([:]) }
-        rejects { _ = try HomeroomRepository.decodeImportStatus([:]) }
-        print("PASS: actual UIKit source checks — role denial, Vietnam dates, no_data, empty, truncation, malformed payloads; no live requests")
+        print("PASS: actual UIKit source checks — role denial, Giám thị only on attendance, work-hidden hub, Vietnam dates, no_data, empty, malformed payloads; no live requests")
     }
 }

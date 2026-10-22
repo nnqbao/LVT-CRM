@@ -53,6 +53,12 @@ struct NotificationDestination: Equatable, Sendable, Hashable {
         }
     }
 
+    /// "Việc của tôi" reminder (push kind `todo`, bell/push sourceType `todo_reminder`): opens the to-do list
+    /// under Công việc, never the work-document focus path.
+    var opensTodos: Bool {
+        sourceType == PersonalTodos.notificationSourceType || kind == PersonalTodos.notificationKind
+    }
+
     /// Bell items for Trao đổi open the chat hub.
     var opensChat: Bool {
         sourceType == "duty_chat" || sourceType == "work_chat" || sourceType == "group_chat"

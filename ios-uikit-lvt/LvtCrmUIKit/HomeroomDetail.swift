@@ -85,9 +85,17 @@ struct ClassDaily: Decodable, Sendable {
         let note: String?
         let outsideYear: Bool
     }
+    /// Giám thị / admin saved this class on the Điểm danh menu (nil = not yet).
+    struct ClassSaved: Decodable, Sendable {
+        let savedAt: Double
+        let savedByName: String
+        let source: String
+        let absentCount: Int
+    }
     let date: String
     let rows: [DailyRow]
     let published: Bool
+    let classSaved: ClassSaved?
     let archived: Bool
     let canCorrect: Bool
     let schoolDay: CalendarDay
@@ -187,7 +195,7 @@ enum HomeroomDetailDecoder {
     static let statuses = ["present", "late", "absent_pending", "absent_excused", "absent_unexcused", "no_data", "exempt"]
     static let dispositions = ["none", "pending", "excused", "unexcused", "exempt"]
     static func statusText(_ status: String) -> String {
-        ["present": "Có mặt", "late": "Trễ", "absent_pending": "Vắng chờ xử lý", "absent_excused": "Vắng có phép", "absent_unexcused": "Vắng không phép", "no_data": "Chưa có dữ liệu", "exempt": "Miễn"][status] ?? "Trạng thái không hợp lệ"
+        HomeroomPresentation.statusLabels[status] ?? "Trạng thái không hợp lệ"
     }
     static func matchesStudent(name: String, code: String, search: String) -> Bool {
         func normalized(_ value: String) -> String {
@@ -240,6 +248,7 @@ enum HomeroomDetailDecoder {
                 try observation(day.rawObservation, day.disposition, day.effectiveStatus)
             }
         }
+        if let saved = result.classSaved { try require(saved.savedAt.isFinite && saved.savedAt >= 0 && saved.absentCount >= 0) }
         return result
     }
     static func profile(_ value: [String: Any]) throws -> StudentProfile {
@@ -329,12 +338,18 @@ enum HomeroomDetailDecoder {
         loading = false
         onChange?()
     }
-    func load() async {
-        clear()
+    /// `keepingData` refreshes in place (after an inline write) so the list does not collapse to a loading row.
+    func load(keepingData: Bool = false) async {
+        if keepingData {
+            generation += 1
+            error = nil
+        } else {
+            clear()
+        }
         let version = generation
         let requested = context
         let student = studentId
-        loading = true
+        loading = !keepingData
         onChange?()
         do {
             try requested.validate()

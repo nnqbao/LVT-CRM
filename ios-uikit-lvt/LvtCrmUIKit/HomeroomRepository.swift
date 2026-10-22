@@ -58,38 +58,6 @@ struct HomeroomOverview: Equatable, Sendable {
     let pendingTotal: Int
 }
 
-struct PendingAbsence: Equatable, Sendable, Identifiable {
-    let id: String
-    let attendanceDate: String
-    let classCode: String
-    let studentCode: String
-    let fullName: String
-    let note: String
-    let canCorrect: Bool
-    var classId: String = ""
-    var studentId: String = ""
-}
-
-struct PendingAbsences: Equatable, Sendable {
-    let total: Int
-    let truncated: Bool
-    let rows: [PendingAbsence]
-}
-
-struct ImportUpload: Equatable, Sendable, Identifiable {
-    let id: String
-    let fileName: String
-    let publishedAt: Int64
-    let uploadedByName: String
-    let rowCount: Int
-    let matchedCount: Int
-}
-
-struct HomeroomImportStatus: Equatable, Sendable {
-    let publishedClassCount: Int
-    let uploads: [ImportUpload]
-}
-
 final class HomeroomRepository: Sendable {
     private let convex: ConvexHttpClient
 
@@ -108,15 +76,12 @@ final class HomeroomRepository: Sendable {
     @MainActor func management(yearId: String, date: String, isCurrent: @escaping () -> Bool) -> HomeroomManagementStore {
         HomeroomManagementStore(yearId: yearId, date: date, query: { path, args in try await self.convex.query(path, args: args) }, write: { kind, path, args in try await self.convex.importCall(kind, path: path, args: args) }, binary: { url, bytes in try await self.uploadWorkbook(url, bytes) }, isCurrent: isCurrent, journal: HomeroomPendingJournal(directory: HomeroomPendingJournal.directory, lane: "management", year: yearId, date: date))
     }
-    @MainActor func cameraImport(yearId: String, date: String, isCurrent: @escaping () -> Bool) -> CameraImportStore {
-        CameraImportStore(yearId: yearId, date: date, query: { path, args in try await self.convex.query(path, args: args) }, write: { kind, path, args in try await self.convex.importCall(kind, path: path, args: args) }, binary: { url, bytes in try await self.uploadWorkbook(url, bytes) }, isCurrent: isCurrent, journal: HomeroomPendingJournal(directory: HomeroomPendingJournal.directory, lane: "camera", year: yearId, date: date))
-    }
     private func uploadWorkbook(_ url: String, _ bytes: Data) async throws -> String {
             guard let target = URL(string: url), target.scheme == "https", target.host?.isEmpty == false else { throw ConvexException(code: "INVALID_IMPORT_URL") }
             let configuration = URLSessionConfiguration.ephemeral
             configuration.timeoutIntervalForRequest = 45
             configuration.timeoutIntervalForResource = 60
-            let session = URLSession(configuration: configuration, delegate: CameraUploadRedirectGuard(), delegateQueue: nil)
+            let session = URLSession(configuration: configuration, delegate: UploadRedirectGuard(), delegateQueue: nil)
             defer { session.invalidateAndCancel() }
             var request = URLRequest(url: target)
             request.httpMethod = "POST"
@@ -135,20 +100,6 @@ final class HomeroomRepository: Sendable {
         try Self.decodeOverview(await convex.query(
             "homeroomReports:overview",
             args: ["schoolYearId": schoolYearId, "date": date]
-        ))
-    }
-
-    func pendingAbsences(schoolYearId: String) async throws -> PendingAbsences {
-        try Self.decodePending(await convex.query(
-            "homeroomReports:pendingAbsences",
-            args: ["schoolYearId": schoolYearId]
-        ))
-    }
-
-    func importStatus(schoolYearId: String, date: String) async throws -> HomeroomImportStatus {
-        try Self.decodeImportStatus(await convex.query(
-            "attendanceImport:uploadsForDate",
-            args: ["schoolYearId": schoolYearId, "attendanceDate": date]
         ))
     }
 
@@ -218,48 +169,6 @@ final class HomeroomRepository: Sendable {
             missingUploadCutoffTime: missing.string("cutoffTime"),
             missingClassCodes: (missing["missingClasses"] as? [[String: Any]] ?? []).map { $0.string("code") },
             pendingTotal: value.int("pendingTotal")
-        )
-    }
-
-    static func decodePending(_ value: [String: Any]) throws -> PendingAbsences {
-        guard value["total"] is NSNumber, value["truncated"] is Bool, value["rows"] is [[String: Any]] else {
-            throw ConvexException(code: "INVALID_RESPONSE", message: "Phản hồi vắng chờ xử lý không hợp lệ.")
-        }
-        return PendingAbsences(
-            total: value.int("total"),
-            truncated: value.bool("truncated"),
-            rows: (value["rows"] as? [[String: Any]] ?? []).map { row in
-                PendingAbsence(
-                    id: row.string("_id"),
-                    attendanceDate: row.string("attendanceDate"),
-                    classCode: row.string("classCode"),
-                    studentCode: row.string("studentCode"),
-                    fullName: row.string("fullName"),
-                    note: row.string("note"),
-                    canCorrect: row.bool("canCorrect"),
-                    classId: row.string("classId"),
-                    studentId: row.string("studentId")
-                )
-            }
-        )
-    }
-
-    static func decodeImportStatus(_ value: [String: Any]) throws -> HomeroomImportStatus {
-        guard value["publishedClassCount"] is NSNumber, value["uploads"] is [[String: Any]] else {
-            throw invalidResponse()
-        }
-        return HomeroomImportStatus(
-            publishedClassCount: value.int("publishedClassCount"),
-            uploads: (value["uploads"] as? [[String: Any]] ?? []).map { row in
-                ImportUpload(
-                    id: row.string("_id"),
-                    fileName: row.string("fileName"),
-                    publishedAt: Int64(row.int("publishedAt")),
-                    uploadedByName: row.string("uploadedByName"),
-                    rowCount: row.int("rowCount"),
-                    matchedCount: row.int("matchedCount")
-                )
-            }
         )
     }
 

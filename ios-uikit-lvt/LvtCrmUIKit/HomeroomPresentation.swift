@@ -88,26 +88,69 @@ enum HomeroomPresentation {
         return VietnamDate.string(from: shifted)
     }
 
+    /// Web `STATUS_LABELS` (src/homeroom/homeroomLabels.js). Đi trễ / Vắng chờ xử lý are legacy (camera era) but still render.
+    static let statusLabels: [String: String] = [
+        "present": "Có mặt", "late": "Đi trễ", "absent_excused": "Vắng có phép", "absent_unexcused": "Vắng không phép",
+        "absent_pending": "Vắng chờ xử lý", "no_data": "Chưa có dữ liệu", "exempt": "Miễn điểm danh",
+    ]
+
+    /// One chip per student with the full status wording (never colour only). Tones follow the --hr-* palette:
+    /// excused = blue (info), unexcused = coral (danger), legacy pending/late = gold (warning).
     static func studentChip(status: String, observedTime: String?) -> HomeroomChip {
         switch status {
         case "present": return HomeroomChip(text: "Có mặt", tone: .success)
-        case "late": return HomeroomChip(text: observedTime.map { "Trễ \($0)" } ?? "Trễ", tone: .warning)
+        case "late": return HomeroomChip(text: observedTime.map { "Đi trễ \($0)" } ?? "Đi trễ", tone: .warning)
+        case "absent_excused": return HomeroomChip(text: "Vắng có phép", tone: .info)
+        case "absent_unexcused": return HomeroomChip(text: "Vắng không phép", tone: .danger)
+        case "absent_pending": return HomeroomChip(text: "Vắng chờ xử lý", tone: .warning)
         case "exempt": return HomeroomChip(text: "Miễn", tone: .info)
-        default:
-            return absentStatuses.contains(status) ? HomeroomChip(text: "Vắng", tone: .danger) : HomeroomChip(text: "Chưa có", tone: .neutral)
+        default: return HomeroomChip(text: "Chưa có", tone: .neutral)
         }
     }
 
-    /// Có mặt / Trễ / Vắng tiles for a class day; adds Chưa có only when some rows have no data.
+    /// Có mặt (incl. legacy Đi trễ) / Vắng có phép / Vắng không phép tiles; legacy Vắng chờ xử lý and Chưa có
+    /// only appear when some rows have them (web `hr-att-summary`).
     static func dailyStats(_ statuses: [String]) -> [HomeroomStat] {
-        let noData = statuses.filter { $0 == "no_data" }.count
+        func count(_ keys: Set<String>) -> Int { statuses.filter { keys.contains($0) }.count }
         var tiles = [
-            HomeroomStat(value: number(statuses.filter { $0 == "present" }.count), label: "Có mặt", tone: .success),
-            HomeroomStat(value: number(statuses.filter { $0 == "late" }.count), label: "Trễ", tone: .warning),
-            HomeroomStat(value: number(statuses.filter { absentStatuses.contains($0) }.count), label: "Vắng", tone: .danger),
+            HomeroomStat(value: number(count(["present", "late"])), label: "Có mặt", tone: .success),
+            HomeroomStat(value: number(count(["absent_excused"])), label: "Vắng có phép", tone: .info),
+            HomeroomStat(value: number(count(["absent_unexcused"])), label: "Vắng không phép", tone: .danger),
         ]
+        let pending = count(["absent_pending"])
+        if pending > 0 { tiles.append(HomeroomStat(value: number(pending), label: "Vắng chờ xử lý", tone: .warning)) }
+        let noData = count(["no_data"])
         if noData > 0 { tiles.append(HomeroomStat(value: number(noData), label: "Chưa có", tone: .neutral)) }
         return tiles
+    }
+
+    /// Web `isAbsentRow`: raw absent, or any absent effective status (legacy rows included).
+    static func isAbsent(_ day: AttendanceRecord?) -> Bool {
+        guard let day else { return false }
+        return day.rawObservation == "absent" || absentStatuses.contains(day.effectiveStatus)
+    }
+
+    /// Absent students first (roster order kept), then everybody else.
+    static func splitAttendance(_ rows: [DailyRow]) -> (absent: [DailyRow], others: [DailyRow]) {
+        (rows.filter { isAbsent($0.day) }, rows.filter { !isAbsent($0.day) })
+    }
+
+    /// "Vắng không phép" toggle: on = unexcused; off = excused (legacy pending reads as off).
+    static func isUnexcused(_ day: AttendanceRecord?) -> Bool { day?.disposition == "unexcused" }
+    static func nextDisposition(unexcused: Bool) -> String { unexcused ? "unexcused" : "excused" }
+
+    /// Neither a Giám thị save marker nor any day row: the class has not been marked yet.
+    static func classNotMarked(_ daily: ClassDaily) -> Bool { daily.classSaved == nil && !daily.published }
+
+    static func notMarkedMessage(date: String, today: String) -> String {
+        date == today
+            ? "Giám thị chưa điểm danh lớp này hôm nay."
+            : "Giám thị chưa điểm danh lớp này ngày \(VietnamDate.display(date))."
+    }
+
+    /// "Giám thị lưu lúc 07:42 · Nguyễn Văn A".
+    static func savedByText(_ saved: ClassDaily.ClassSaved) -> String {
+        "Giám thị lưu lúc \(clock(saved.savedAt))" + (saved.savedByName.isEmpty ? "" : " · \(saved.savedByName)")
     }
 
     static func clock(_ milliseconds: Double) -> String {
