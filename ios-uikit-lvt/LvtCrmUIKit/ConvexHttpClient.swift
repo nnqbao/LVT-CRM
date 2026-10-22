@@ -215,7 +215,7 @@ actor ConvexHttpClient {
         }
     }
     static func extractCode(_ message: String) -> String {
-        let known = schoolFeedbackCodes + [
+        let known = workCodes + schoolFeedbackCodes + [
             "INVALID_PHONE", "INVALID_NAME", "INVALID_TEXT", "INVALID_DISPOSITION_NOTE", "INVALID_DISPOSITION", "CORRECTION_REASON_REQUIRED", "GUARDIAN_LIMIT", "ATTENDANCE_DAY_NOT_FOUND", "CLASS_NOT_FOUND", "STUDENT_NOT_FOUND", "GUARDIAN_NOT_FOUND", "CLASS_ARCHIVED", "DISPOSITION_NOT_ABSENT",
             "INVALID_CREDENTIALS", "InvalidAccountId", "InvalidSecret", "Invalid credentials", "USER_NOT_ACTIVE",
             "ACCOUNT_LOCKED", "PASSWORD_TOO_SHORT", "PASSWORD_CHANGE_FAILED", "PASSWORD_CHANGED_SYNC_PENDING",
@@ -238,6 +238,61 @@ actor ConvexHttpClient {
             "AVATAR_UPLOAD_FAILED",
         ]
         return known.first { message.localizedCaseInsensitiveContains($0) } ?? message
+    }
+
+    /// Công việc codes (web `appErrorMessage.js`). Longer codes first: matching is by substring.
+    static let workCodes = [
+        "WORK_ASSIGNEE_BGH_FORBIDDEN", "WORK_ASSIGNEE_OPS_FORBIDDEN", "WORK_ASSIGNEE_NOT_SUBORDINATE",
+        "WORK_APPROVER_REQUIRED", "WORK_APPROVERS_REQUIRED", "INVALID_WORK_APPROVER", "WORK_APPROVER_FORBIDDEN",
+        "WORK_DOCUMENT_ALREADY_DECIDED", "WORK_RETURN_REASON_INVALID", "WORK_DOCUMENT_IMMUTABLE",
+        "WORK_DOCUMENT_NOT_FOUND", "WORK_UPDATE_FORBIDDEN", "WORK_DEPARTMENT_FORBIDDEN", "WORK_DEPARTMENT_DUPLICATE",
+        "WORK_NOT_APPROVED", "ADMIN_USE_MANAGEMENT", "MODERATOR_DEPARTMENT_SCOPE", "WORK_ASSIGNEES_REQUIRED",
+        "WORK_ASSIGNMENTS_REQUIRED", "INVALID_WORK_ASSIGNEE", "INVALID_WORK_TITLE", "INVALID_WORK_CONTENT",
+        "INVALID_WORK_DEADLINE", "INVALID_WORK_FILE", "WORK_FILE_TOO_LARGE", "WORK_EVIDENCE_REQUIRED",
+        "WORK_COMPLETION_REVIEWER_REQUIRED", "WORK_COMPLETION_NOT_PENDING", "INVALID_REJECTION_REASON",
+    ]
+
+    static func workMessage(_ code: String) -> String? {
+        switch code {
+        case "WORK_ASSIGNEE_BGH_FORBIDDEN": return "Văn thư không thể giao công việc cho Ban giám hiệu."
+        case "WORK_ASSIGNEE_OPS_FORBIDDEN":
+            return "Chỉ được giao công việc cho Quản trị viên/Văn thư khác cùng phòng ban."
+        case "WORK_ASSIGNEE_NOT_SUBORDINATE":
+            return "Chỉ được giao cho người có cấp thấp hơn bạn. Tổ trưởng/tổ phó chỉ giao trong phòng ban của mình."
+        case "WORK_APPROVER_REQUIRED":
+            return "Công việc do Văn thư/Quản trị tạo cần chọn ít nhất một người duyệt thuộc Ban giám hiệu."
+        case "WORK_APPROVERS_REQUIRED": return "Vui lòng chọn ít nhất một người duyệt."
+        case "INVALID_WORK_APPROVER":
+            return "Người duyệt phải là thành viên Ban giám hiệu (cấp 4 hoặc 5 sao) đang hoạt động, không phải Administrator/Moderator."
+        case "WORK_APPROVER_FORBIDDEN": return "Bạn không nằm trong danh sách duyệt công việc này."
+        case "WORK_DOCUMENT_ALREADY_DECIDED":
+            return "Công việc này đã được duyệt hoặc trả lại, không thể đổi quyết định."
+        case "WORK_RETURN_REASON_INVALID": return "Vui lòng nhập lý do trả lại (tối đa 500 ký tự)."
+        case "WORK_DOCUMENT_IMMUTABLE":
+            return "Công việc đã có người duyệt hoặc người nộp nên không thể sửa hoặc xóa."
+        case "WORK_DOCUMENT_NOT_FOUND": return "Không tìm thấy công việc hoặc công việc đã bị xóa."
+        case "WORK_UPDATE_FORBIDDEN": return "Chỉ người tạo mới được sửa hoặc xóa công việc này."
+        case "WORK_DEPARTMENT_FORBIDDEN": return "Chỉ Văn thư và Ban giám hiệu được giao việc cho cả phòng ban."
+        case "WORK_DEPARTMENT_DUPLICATE": return "Mỗi phòng ban chỉ được nhận một đầu việc trong cùng công văn."
+        case "WORK_NOT_APPROVED": return "Công việc chưa được Ban giám hiệu duyệt đủ."
+        case "ADMIN_USE_MANAGEMENT":
+            return "Administrator/Moderator quản lý công việc, không duyệt thay Ban giám hiệu."
+        case "MODERATOR_DEPARTMENT_SCOPE": return "Moderator chỉ được thao tác trong phòng ban được gán."
+        case "WORK_ASSIGNEES_REQUIRED": return "Vui lòng chọn người thực hiện."
+        case "WORK_ASSIGNMENTS_REQUIRED": return "Vui lòng thêm ít nhất một phân công."
+        case "INVALID_WORK_ASSIGNEE": return "Người thực hiện phải cùng phòng ban và có cấp sao thấp hơn bạn."
+        case "INVALID_WORK_TITLE": return "Vui lòng nhập tên công việc (tối đa 200 ký tự)."
+        case "INVALID_WORK_CONTENT": return "Nội dung công việc bắt buộc và tối đa 2.000 ký tự."
+        case "INVALID_WORK_DEADLINE": return "Hạn chót công việc không hợp lệ."
+        case "INVALID_WORK_FILE": return "Tệp công văn không đúng định dạng được hỗ trợ."
+        case "WORK_FILE_TOO_LARGE": return "Tệp công văn không được vượt quá 20MB."
+        case "WORK_EVIDENCE_REQUIRED": return "Khi nộp việc phải đính kèm file bằng chứng hoàn thành."
+        case "WORK_COMPLETION_REVIEWER_REQUIRED":
+            return "Chỉ người tạo công việc mới được đánh dấu hoàn thành hoặc trả về."
+        case "WORK_COMPLETION_NOT_PENDING": return "Task không còn ở trạng thái chờ duyệt hoàn thành."
+        case "INVALID_REJECTION_REASON": return "Vui lòng nhập lý do chưa duyệt (tối đa 500 ký tự)."
+        default: return nil
+        }
     }
 
     /// Duty and weekly-approval codes; checked before the generic "Invalid…" login wording.
@@ -304,6 +359,7 @@ actor ConvexHttpClient {
 
     static func humanize(_ message: String) -> String {
         let code = extractCode(message)
+        if let work = workMessage(code) { return work }
         if let duty = dutyMessage(code) { return duty }
         if let school = schoolFeedbackMessage(code) { return school }
         switch true {

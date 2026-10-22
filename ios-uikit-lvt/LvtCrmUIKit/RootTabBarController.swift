@@ -98,6 +98,9 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             onOpenWork: { [weak self] filter in self?.openWork(filter: filter) }
         )
         overviewViewController.navigationItem.rightBarButtonItem = makeAccountHeaderItem()
+        overviewViewController.installHelpButton(.overview)
+        notificationsViewController.installHelpButton(.notifications)
+        profileViewController.installHelpButton(.profile)
         let overview = navigationController(
             title: "Tổng quan",
             systemImage: "rectangle.grid.2x2",
@@ -110,6 +113,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         )
         dutiesHubViewController.navigationItem.rightBarButtonItem = makeAccountHeaderItem()
         dutiesHubViewController.dutiesListController.trailingAccessoryBarButtonItems = [makeAccountHeaderItem()]
+        dutiesHubViewController.installHelpButton(.duties)
+        dutiesHubViewController.dutiesListController.installHelpButton(.duties)
         let duties = navigationController(
             title: "Lịch CT",
             systemImage: "briefcase",
@@ -135,6 +140,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             workRoot = hub
         }
         self.personalTodosViewController = todosViewController
+        workRoot.installHelpButton(.work)
         let work = navigationController(
             title: "Công việc",
             systemImage: "checkmark.seal",
@@ -152,6 +158,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             viewController: chatHubViewController
         )
         chatHubViewController.installAccountHeader(makeAccountHeaderItem())
+        chatHubViewController.installHelpButton(.chat)
         tabControllers = [
             .overview: overview,
             .chat: chat,
@@ -187,9 +194,13 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private func makeStudentTabs() -> [UINavigationController] {
         let homeroom = session.canSeeHomeroom ? HomeroomViewController(repository: homeroomRepository, session: session) : nil
         let attendance = session.canSeeAttendance ? AttendanceViewController(repository: attendanceRepository, session: session) : nil
+        homeroom?.installHelpButton(.homeroom)
+        attendance?.installHelpButton(.attendance)
         switch (homeroom, attendance) {
         case let (homeroom?, attendance?):
-            return [navigationController(title: "Học sinh", systemImage: "graduationcap", viewController: StudentsHubViewController(homeroom: homeroom, attendance: attendance))]
+            let hub = StudentsHubViewController(homeroom: homeroom, attendance: attendance)
+            hub.installHelpButton(.homeroom)
+            return [navigationController(title: "Học sinh", systemImage: "graduationcap", viewController: hub)]
         case let (homeroom?, nil):
             return [navigationController(title: "Lớp chủ nhiệm", systemImage: "person.3", viewController: homeroom)]
         case let (nil, attendance?):
@@ -617,10 +628,12 @@ private final class DashboardViewController: UIViewController {
                     secondaryTitle: "Đang diễn ra",
                     secondaryValue: String(dutiesSnapshot.duties.filter(\.isOngoing).count)
                 )
+                // Web badge: work waiting for my approval (Ban giám hiệu) + completions waiting for my review.
                 let pendingApproval = workSnapshot.completionReviews.count
+                    + workSnapshot.approvalQueue.filter(\.awaitingMyDecision).count
                 let pendingExecution = workSnapshot.tasks.filter { WorkHelpers.needsCompletion($0.status) }.count
                 workCard.setValues(
-                    primaryTitle: "Chờ duyệt nộp",
+                    primaryTitle: "Chờ duyệt",
                     primaryValue: String(pendingApproval),
                     secondaryTitle: "Cần thực hiện",
                     secondaryValue: String(pendingExecution)

@@ -12,6 +12,9 @@
         200000000000000000000047 /* PersonalTodos.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000047 /* PersonalTodos.swift */; };
         200000000000000000000048 /* PersonalTodosViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000048 /* PersonalTodosViewController.swift */; };
         200000000000000000000049 /* WorkHubViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000049 /* WorkHubViewController.swift */; };
+        200000000000000000000050 /* WorkApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000050 /* WorkApproval.swift */; };
+        200000000000000000000051 /* HelpGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000051 /* HelpGuide.swift */; };
+        200000000000000000000052 /* HelpButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000052 /* HelpButton.swift */; };
         200000000000000000000040 = {isa = PBXBuildFile; fileRef = 300000000000000000000040; };
         200000000000000000000041 = {isa = PBXBuildFile; fileRef = 300000000000000000000041; };
         200000000000000000000042 = {isa = PBXBuildFile; fileRef = 300000000000000000000042; };
@@ -83,6 +86,9 @@
         300000000000000000000047 /* PersonalTodos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalTodos.swift; sourceTree = "<group>"; };
         300000000000000000000048 /* PersonalTodosViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalTodosViewController.swift; sourceTree = "<group>"; };
         300000000000000000000049 /* WorkHubViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkHubViewController.swift; sourceTree = "<group>"; };
+        300000000000000000000050 /* WorkApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkApproval.swift; sourceTree = "<group>"; };
+        300000000000000000000051 /* HelpGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpGuide.swift; sourceTree = "<group>"; };
+        300000000000000000000052 /* HelpButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpButton.swift; sourceTree = "<group>"; };
         300000000000000000000040 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomPendingJournal.swift; sourceTree = "<group>"; };
         300000000000000000000041 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomPresentation.swift; sourceTree = "<group>"; };
         300000000000000000000042 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeroomCells.swift; sourceTree = "<group>"; };
@@ -180,6 +186,9 @@
                 300000000000000000000047 /* PersonalTodos.swift */,
                 300000000000000000000048 /* PersonalTodosViewController.swift */,
                 300000000000000000000049 /* WorkHubViewController.swift */,
+                300000000000000000000050 /* WorkApproval.swift */,
+                300000000000000000000051 /* HelpGuide.swift */,
+                300000000000000000000052 /* HelpButton.swift */,
                 300000000000000000000040,
                 300000000000000000000041,
                 300000000000000000000042,
@@ -328,6 +337,9 @@
                 200000000000000000000047 /* PersonalTodos.swift in Sources */,
                 200000000000000000000048 /* PersonalTodosViewController.swift in Sources */,
                 200000000000000000000049 /* WorkHubViewController.swift in Sources */,
+                200000000000000000000050 /* WorkApproval.swift in Sources */,
+                200000000000000000000051 /* HelpGuide.swift in Sources */,
+                200000000000000000000052 /* HelpButton.swift in Sources */,
                 200000000000000000000040,
                 200000000000000000000041,
                 200000000000000000000042,
