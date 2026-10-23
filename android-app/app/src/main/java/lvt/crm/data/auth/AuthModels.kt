@@ -66,12 +66,13 @@ data class UserSession(
     val reportsAccess: MenuAccess
         get() = (menuAccess["reports"] ?: MenuAccess.Hidden).takeIf { it != MenuAccess.Supervisor } ?: MenuAccess.Hidden
 
-    /**
-     * Bán trú has no permission-matrix key: like the web menu it follows the Báo cáo level
-     * (participant list); convex/boarding.ts re-checks every call.
-     */
+    /** Bán trú level; the server fills `boarding` from Báo cáo for groups saved before the row existed. */
+    val boardingAccess: MenuAccess
+        get() = (menuAccess["boarding"] ?: MenuAccess.Hidden).takeIf { it != MenuAccess.Supervisor } ?: MenuAccess.Hidden
+
+    /** Bán trú follows its own menu row (`menuAccess.boarding`); convex/boarding.ts re-checks every call. */
     val canSeeBoarding: Boolean
-        get() = canUseApp && (isOperationalManager || reportsAccess != MenuAccess.Hidden)
+        get() = canUseApp && (isOperationalManager || boardingAccess != MenuAccess.Hidden)
 
     /** Kỳ bán trú management (`boarding:write`) is for operational managers only. */
     val canManageBoarding: Boolean

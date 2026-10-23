@@ -73,7 +73,9 @@ import lvt.crm.ui.duties.SharedWeekPresentation
 import lvt.crm.ui.home.DashboardScreen
 import lvt.crm.ui.home.DashboardViewModel
 import lvt.crm.ui.home.PlaceholderScreen
-import lvt.crm.ui.homeroom.HomeroomScreen
+import lvt.crm.ui.teaching.ClassesHubScreen
+import lvt.crm.ui.teaching.GradebookViewModel
+import lvt.crm.ui.teaching.TeachingViewModel
 import lvt.crm.ui.homeroom.HomeroomViewModel
 import lvt.crm.ui.attendance.AttendanceScreen
 import lvt.crm.ui.boarding.BoardingScreen
@@ -117,7 +119,7 @@ fun LvtRoot(
         AuthState.Loading -> PlaceholderScreen(title = "CRM Lê Văn Tám", body = "Đang tải…")
         AuthState.SignedOut -> {
             val loginVm: LoginViewModel = viewModel(
-                factory = LoginViewModel.factory(container.authRepository),
+                factory = LoginViewModel.factory(container.authRepository, container.deviceAuthRepository),
             )
             LoginScreen(viewModel = loginVm)
         }
@@ -221,7 +223,7 @@ private fun MainShell(
     val tabs = buildList {
         add(Triple(Routes.Overview, R.string.nav_overview, Icons.Outlined.Dashboard))
         if (canSeeHomeroom) add(Triple(Routes.Homeroom, R.string.nav_homeroom, Icons.Outlined.Groups))
-        // Giám thị without Lớp chủ nhiệm gets Điểm danh as a tab; otherwise it opens from Lớp chủ nhiệm
+        // Giám thị without Lớp học gets Điểm danh as a tab; otherwise it opens from Lớp học › Lớp chủ nhiệm
         // so the bottom bar keeps at most five items.
         if (attendanceIsTab) add(Triple(Routes.Attendance, R.string.nav_attendance, Icons.AutoMirrored.Outlined.FactCheck))
         add(Triple(Routes.Chat, R.string.nav_chat, Icons.Outlined.Forum))
@@ -447,14 +449,26 @@ private fun MainShell(
                         key = "homeroom-$sessionUserId-$role",
                         factory = HomeroomViewModel.factory(container.homeroomRepository),
                     )
-                    HomeroomScreen(
-                        vm,
+                    val teachingVm: TeachingViewModel = viewModel(
+                        key = "teaching-$sessionUserId",
+                        factory = TeachingViewModel.factory(container.teachingRepository),
+                    )
+                    val gradebookVm: GradebookViewModel = viewModel(
+                        key = "gradebook-$sessionUserId",
+                        factory = GradebookViewModel.factory(container.teachingRepository),
+                    )
+                    // Lớp học: Tổng quan, Lớp chủ nhiệm (existing homeroom), Lớp giảng dạy, Lịch dạy, Học bạ.
+                    ClassesHubScreen(
+                        homeroomViewModel = vm,
+                        teachingViewModel = teachingVm,
+                        gradebookViewModel = gradebookVm,
                         canManage = role == "admin" || role == "moderator",
                         onOpenAttendance = if (canSeeAttendance) {
                             { navController.navigate(Routes.Attendance) { launchSingleTop = true } }
                         } else {
                             null
                         },
+                        classLogsLoader = { classId, from, to -> container.teachingRepository.classLogs(classId, from, to) },
                     )
                 }
             }
@@ -569,6 +583,8 @@ private fun MainShell(
                     appearanceStore = container.appearanceStore,
                     onSignOut = onSignOut,
                     onBack = { navController.popBackStack() },
+                    userId = sessionUserId,
+                    deviceAuthRepository = container.deviceAuthRepository,
                 )
             }
         }

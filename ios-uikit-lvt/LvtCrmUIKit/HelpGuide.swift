@@ -29,7 +29,7 @@ enum HelpGuide {
             case .chat: return "Trao đổi"
             case .duties: return "Lịch công tác"
             case .work: return "Công việc"
-            case .homeroom: return "Lớp chủ nhiệm"
+            case .homeroom: return "Lớp học"
             case .attendance: return "Điểm danh"
             case .boarding: return "Bán trú"
             case .profile: return "Tài khoản cá nhân"

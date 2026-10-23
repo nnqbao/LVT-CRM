@@ -215,7 +215,7 @@ actor ConvexHttpClient {
         }
     }
     static func extractCode(_ message: String) -> String {
-        let known = workCodes + boardingCodes + schoolFeedbackCodes + [
+        let known = workCodes + boardingCodes + schoolFeedbackCodes + teachingAuthCodes + [
             "INVALID_PHONE", "INVALID_NAME", "INVALID_TEXT", "INVALID_DISPOSITION_NOTE", "INVALID_DISPOSITION", "CORRECTION_REASON_REQUIRED", "GUARDIAN_LIMIT", "ATTENDANCE_DAY_NOT_FOUND", "CLASS_NOT_FOUND", "STUDENT_NOT_FOUND", "GUARDIAN_NOT_FOUND", "CLASS_ARCHIVED", "DISPOSITION_NOT_ABSENT",
             "INVALID_CREDENTIALS", "InvalidAccountId", "InvalidSecret", "Invalid credentials", "USER_NOT_ACTIVE",
             "ACCOUNT_LOCKED", "PASSWORD_TOO_SHORT", "PASSWORD_CHANGE_FAILED", "PASSWORD_CHANGED_SYNC_PENDING",
@@ -377,8 +377,50 @@ actor ConvexHttpClient {
         }
     }
 
+    /// Lớp học (Sổ đầu bài, Học bạ) and quick sign-in (Face ID / Touch ID, passkey) codes. Matched before the
+    /// generic codes so INVALID_SCORE / DEVICE_CREDENTIAL_INVALID never fall into the "Invalid…" login wording, and
+    /// after the feature lists so longer codes such as ATTENDANCE_STUDENT_NOT_IN_CLASS still win.
+    static let teachingAuthCodes = [
+        "DEVICE_CREDENTIAL_INVALID", "DEVICE_SIGNATURE_INVALID", "DEVICE_CREDENTIAL_LIMIT", "DEVICE_CREDENTIAL_NOT_FOUND",
+        "PASSKEY_VERIFICATION_FAILED", "CHALLENGE_INVALID", "INVALID_PUBLIC_KEY", "INVALID_PLATFORM",
+        "LESSON_NOT_SCHEDULED", "LESSON_IN_FUTURE", "INVALID_LESSON_COMMENT", "INVALID_RATING", "INVALID_SCORE",
+        "GRADE_SUBJECT_FORBIDDEN", "GRADEBOOK_FORBIDDEN", "GRADE_NOT_FOUND", "STUDENT_NOT_IN_CLASS",
+        "SCHOOL_YEAR_LOCKED", "TEST_TYPE_NOT_FOUND", "SUBJECT_NOT_FOUND", "TEACHER_SCHEDULE_FORBIDDEN",
+        "REPORT_RANGE_TOO_LONG", "HOMEROOM_SCOPE_FORBIDDEN", "HOMEROOM_MENU_HIDDEN",
+    ]
+
+    static func teachingAuthMessage(_ code: String) -> String? {
+        switch code {
+        case "CHALLENGE_INVALID": return "Phiên xác thực đã hết hạn. Vui lòng thử lại."
+        case "DEVICE_CREDENTIAL_INVALID":
+            return "Vân tay / Face ID hoặc passkey trên máy này không còn hiệu lực. Đăng nhập bằng mật khẩu rồi bật lại."
+        case "DEVICE_SIGNATURE_INVALID", "INVALID_PUBLIC_KEY", "INVALID_PLATFORM": return "Không xác thực được thiết bị."
+        case "PASSKEY_VERIFICATION_FAILED": return "Không xác thực được passkey."
+        case "DEVICE_CREDENTIAL_LIMIT": return "Tài khoản đã có tối đa 10 thiết bị đăng nhập nhanh."
+        case "DEVICE_CREDENTIAL_NOT_FOUND": return "Không tìm thấy thiết bị đăng nhập nhanh này."
+        case "LESSON_NOT_SCHEDULED": return "Bạn không có tiết này ở lớp vào ngày đã chọn."
+        case "LESSON_IN_FUTURE": return "Chưa thể ghi Sổ đầu bài cho tiết chưa diễn ra."
+        case "INVALID_LESSON_COMMENT": return "Nhận xét tiết học tối đa 1000 ký tự."
+        case "INVALID_RATING": return "Chọn từ 1 đến 5 sao."
+        case "INVALID_SCORE": return "Điểm từ 0 đến 10, tối đa 2 chữ số thập phân."
+        case "GRADE_SUBJECT_FORBIDDEN": return "Bạn chỉ nhập điểm môn mình dạy ở lớp này."
+        case "GRADEBOOK_FORBIDDEN": return "Bạn không phụ trách lớp của học sinh này."
+        case "GRADE_NOT_FOUND": return "Điểm này không còn tồn tại."
+        case "STUDENT_NOT_IN_CLASS": return "Học sinh không thuộc lớp này trong năm học."
+        case "SCHOOL_YEAR_LOCKED": return "Năm học đã khóa."
+        case "TEST_TYPE_NOT_FOUND": return "Loại kiểm tra không còn."
+        case "SUBJECT_NOT_FOUND": return "Môn học không còn."
+        case "TEACHER_SCHEDULE_FORBIDDEN": return "Bạn chỉ xem được lịch dạy của mình."
+        case "REPORT_RANGE_TOO_LONG": return "Khoảng ngày quá dài. Chọn tối đa 3 tháng."
+        case "HOMEROOM_SCOPE_FORBIDDEN": return "Bạn không phụ trách lớp này."
+        case "HOMEROOM_MENU_HIDDEN": return "Bạn không có quyền dùng Lớp học."
+        default: return nil
+        }
+    }
+
     static func humanize(_ message: String) -> String {
         let code = extractCode(message)
+        if let teaching = teachingAuthMessage(code) { return teaching }
         if let work = workMessage(code) { return work }
         if let boarding = boardingMessage(code) { return boarding }
         if let duty = dutyMessage(code) { return duty }

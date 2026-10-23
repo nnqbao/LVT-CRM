@@ -6,7 +6,13 @@
 sh ios-uikit-lvt/Tests/run-checks.sh
 ```
 
-Compiles every `Tests/*Checks.swift` together with the actual Foundation sources (`AuthModels`, `CredentialStore`, `ConvexHttpClient`, `HomeroomRepository`, `HomeroomDetail`, `HomeroomWrites`, `HomeroomUploadSupport`, `HomeroomManagement`, `HomeroomPendingJournal`, `HomeroomPresentation`, `DutyWeekPresentation`, `SupervisorAttendance`, `PersonalTodos`, `ConvexConfig`, `WorkCreate`, `WorkApproval`, `HelpGuide`) in a disposable scratch directory and runs each one; it ends with `ALL UIKIT SOURCE CHECKS PASSED` or prints the failing check. No app launch, credentials or network. The per-area commands below remain valid for running one check by hand.
+Compiles every `Tests/*Checks.swift` together with the actual Foundation sources (`AuthModels`, `CredentialStore`, `ConvexHttpClient`, `Teaching`, `QuickSignIn`, `HomeroomRepository`, `HomeroomDetail`, `HomeroomWrites`, `HomeroomUploadSupport`, `HomeroomManagement`, `HomeroomPendingJournal`, `HomeroomPresentation`, `DutyWeekPresentation`, `SupervisorAttendance`, `PersonalTodos`, `ConvexConfig`, `WorkCreate`, `WorkApproval`, `HelpGuide`) in a disposable scratch directory and runs each one; it ends with `ALL UIKIT SOURCE CHECKS PASSED` or prints the failing check. No app launch, credentials or network. The per-area commands below remain valid for running one check by hand.
+
+## Lớp học and đăng nhập nhanh (3.1.0)
+
+- `TeachingChecks.swift`: timetable expansion mirrored from `src/lib/teachingSchedule.js` (Thứ 2–6 only, school-year clipping, holidays, inclusive `effectiveFrom`/`effectiveTo` slot coverage, time ordering), next lesson per class (a lesson of today counts until its 45-minute period ends, then the next day within 35 days), Lớp giảng dạy ordering, Sổ đầu bài defaults (latest started lesson, Ngày dạy ≤ today inside the year), Học kỳ default from `semester2StartDate`, score parsing (0–10, ≤ 2 decimals, comma or dot) and vi-VN formatting, ĐTB (example (8 + 7,5 + 9 + 2 × 8) / 5 = 8,1; Cả năm = (HK I + 2 × HK II) / 3), Lịch dạy week/month ranges, Học bạ grouping by khối, decoders, `lessonLogs:save` / `gradebook:*` payloads and the Vietnamese wording of the new error codes.
+- `QuickSignInChecks.swift`: base64url, the exact `lvt-crm:device_login|device_register:{challengeId}:{challenge}` messages, the Keychain record bound to one account (no password), Face ID / Touch ID labels, silent cancellation, and the passkey WebAuthn JSON (creation/request options from simplewebauthn 9, RegistrationResponseJSON, AuthenticationResponseJSON).
+- Secure Enclave, Face ID prompts, `ASAuthorizationController` and associated domains need a physical device (the simulator has no Secure Enclave, so the Profile switch is disabled there with an explanation).
 
 ## Công việc duyệt bởi Ban giám hiệu and "?" help (2.1.0)
 
@@ -48,6 +54,7 @@ swiftc -module-cache-path "$scratch/cache" \
   ios-uikit-lvt/LvtCrmUIKit/CredentialStore.swift \
   ios-uikit-lvt/LvtCrmUIKit/ConvexHttpClient.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomRepository.swift \
+  ios-uikit-lvt/LvtCrmUIKit/Teaching.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomDetail.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomWrites.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomUploadSupport.swift \
@@ -70,6 +77,7 @@ swiftc -module-cache-path "$scratch/cache" \
   ios-uikit-lvt/LvtCrmUIKit/CredentialStore.swift \
   ios-uikit-lvt/LvtCrmUIKit/ConvexHttpClient.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomRepository.swift \
+  ios-uikit-lvt/LvtCrmUIKit/Teaching.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomDetail.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomWrites.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomUploadSupport.swift \
@@ -157,6 +165,7 @@ swiftc -module-cache-path "$scratch/cache" \
   ios-uikit-lvt/LvtCrmUIKit/CredentialStore.swift \
   ios-uikit-lvt/LvtCrmUIKit/ConvexHttpClient.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomRepository.swift \
+  ios-uikit-lvt/LvtCrmUIKit/Teaching.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomDetail.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomWrites.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomUploadSupport.swift \
@@ -179,6 +188,7 @@ swiftc -module-cache-path "$scratch/cache" \
   ios-uikit-lvt/LvtCrmUIKit/CredentialStore.swift \
   ios-uikit-lvt/LvtCrmUIKit/ConvexHttpClient.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomRepository.swift \
+  ios-uikit-lvt/LvtCrmUIKit/Teaching.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomDetail.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomWrites.swift \
   ios-uikit-lvt/LvtCrmUIKit/HomeroomUploadSupport.swift \

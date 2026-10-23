@@ -68,6 +68,33 @@ class HomeroomViewModel(
         _uiState.update { it.copy(overview = null) }
     }
 
+    private var pendingClassId: String? = null
+
+    /**
+     * Opens a class detail from Lớp học › Tổng quan: switches to [yearId]/[date] if needed and opens
+     * [classId] once that overview is loaded (only if the class is in the caller's scope).
+     */
+    fun focusClass(yearId: String, date: String, classId: String) {
+        if (!isVietnamDate(date) || classId.isBlank()) return
+        detail.value?.close()
+        detail.value = null
+        pendingClassId = classId
+        val current = _uiState.value
+        if (current.selectedYearId == yearId && current.date == date && current.overview != null && !current.loading) {
+            openPendingClass(current.overview)
+            return
+        }
+        managementStores.values.forEach { it.invalidate() }
+        _uiState.update { it.copy(selectedYearId = yearId, date = date, overview = null) }
+        load(initial = true, reloadYears = current.years.isEmpty())
+    }
+
+    private fun openPendingClass(overview: HomeroomOverview) {
+        val id = pendingClassId ?: return
+        pendingClassId = null
+        if (overview.classes.any { it.id == id }) openClass(id)
+    }
+
     fun closeDetail() {
         val date = detail.value?.uiState?.value?.context?.date
         detail.value?.close()
@@ -84,6 +111,7 @@ class HomeroomViewModel(
 
     fun selectYear(id: String) {
         if (_uiState.value.years.none { it.id == id }) return
+        pendingClassId = null
         if (_uiState.value.selectedYearId == id) return
         managementStores.values.forEach { it.invalidate() }
         _uiState.update { it.copy(selectedYearId = id, overview = null) }
@@ -92,6 +120,7 @@ class HomeroomViewModel(
 
     fun selectDate(date: String) {
         if (!isVietnamDate(date)) return
+        pendingClassId = null
         if (_uiState.value.date == date) return
         managementStores.values.forEach { it.invalidate() }
         _uiState.update { it.copy(date = date, overview = null) }
@@ -131,6 +160,7 @@ class HomeroomViewModel(
                         overview = overview,
                     )
                 }
+                openPendingClass(overview)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

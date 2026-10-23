@@ -10,6 +10,8 @@ import androidx.compose.material.icons.outlined.PersonOff
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -32,9 +34,15 @@ import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.components.GuideAnchors
 
 @Composable
-fun HomeroomDetailScreen(viewModel: HomeroomDetailViewModel, onClose: () -> Unit) {
+fun HomeroomDetailScreen(
+    viewModel: HomeroomDetailViewModel,
+    onClose: () -> Unit,
+    classLogsLoader: lvt.crm.ui.teaching.ClassLogsLoader? = null,
+) {
     val state by viewModel.uiState.collectAsState()
-    var daily by remember { mutableStateOf(true) }
+    var tab by remember { mutableStateOf(DetailTab.Daily) }
+    val daily = tab == DetailTab.Daily
+    val logs = rememberClassLessonLogs(state.context.classId, tab == DetailTab.LessonLogs, classLogsLoader)
     var search by remember { mutableStateOf("") }
     var contactForm by remember(state.context, state.studentId) { mutableStateOf<HomeroomForm?>(null) }
     contactForm?.let { draft -> viewModel.writeOperations?.let { writes -> HomeroomWriteForm(draft, writes, { viewModel.uiState.value.context == draft.context && viewModel.uiState.value.studentId == draft.studentId && viewModel.uiState.value.error == null }, viewModel::clearWriteData, viewModel::refresh) { contactForm = null } } }
@@ -49,11 +57,14 @@ fun HomeroomDetailScreen(viewModel: HomeroomDetailViewModel, onClose: () -> Unit
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         DayNavigator(date = state.context.date, onDate = viewModel::selectDate)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected = daily, onClick = { daily = true }, label = { Text("Điểm danh") }, modifier = Modifier.weight(1f).heightIn(min = 48.dp))
-                            FilterChip(selected = !daily, onClick = { daily = false }, label = { Text("Danh sách lớp") }, modifier = Modifier.weight(1f).heightIn(min = 48.dp))
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DetailTab.entries.filter { it != DetailTab.LessonLogs || classLogsLoader != null }.forEach { option ->
+                                FilterChip(selected = tab == option, onClick = { tab = option }, label = { Text(option.label, maxLines = 1) }, modifier = Modifier.heightIn(min = 48.dp))
+                            }
                         }
-                        OutlinedTextField(value = search, onValueChange = { search = it }, label = { Text("Tìm học sinh") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        if (tab != DetailTab.LessonLogs) {
+                            OutlinedTextField(value = search, onValueChange = { search = it }, label = { Text("Tìm học sinh") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        }
                     }
                 }
             } else {
@@ -81,7 +92,9 @@ fun HomeroomDetailScreen(viewModel: HomeroomDetailViewModel, onClose: () -> Unit
                             )
                         }
                     }
-                    if (daily) {
+                    if (tab == DetailTab.LessonLogs) {
+                        classLessonLogItems(logs)
+                    } else if (daily) {
                         dailyAttendanceItems(state, data, canWrite = viewModel.writeOperations != null, search = search, onOpenStudent = viewModel::openStudent, onToggle = viewModel::setUnexcused)
                     } else {
                         val rows = data.roster.rows.filter { matchesStudent(it.student, search) }
@@ -141,6 +154,9 @@ fun HomeroomDetailScreen(viewModel: HomeroomDetailViewModel, onClose: () -> Unit
         }
     }
 }
+
+/** Tabs of the class detail; "Sổ đầu bài" lists lesson ratings written by subject teachers. */
+internal enum class DetailTab(val label: String) { Daily("Điểm danh"), Roster("Danh sách lớp"), LessonLogs("Sổ đầu bài") }
 
 @Composable private fun DetailCard(title: String, text: String) {
     Card(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {

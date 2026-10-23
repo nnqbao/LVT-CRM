@@ -15,6 +15,8 @@ final class AppContainer {
     let attendanceRepository: SupervisorAttendanceRepository
     let personalTodoRepository: PersonalTodoRepository
     let boardingRepository: BoardingRepository
+    let teachingRepository: TeachingRepository
+    let quickSignIn: QuickSignInService
     let notificationSync: NotificationSyncService
     let apnsRegistrar: APNsTokenRegistrar
 
@@ -44,6 +46,7 @@ final class AppContainer {
         attendanceRepository = SupervisorAttendanceRepository(convex: convex)
         personalTodoRepository = PersonalTodoRepository(convex: convex)
         boardingRepository = BoardingRepository(convex: convex)
+        teachingRepository = TeachingRepository(convex: convex)
         notificationSync = NotificationSyncService(
             tokenStore: tokenStore,
             repository: notificationsRepository
@@ -57,5 +60,6 @@ final class AppContainer {
                 await apnsRegistrar.unregister(accessToken: accessToken)
             }
         )
+        quickSignIn = QuickSignInService(convex: convex, authRepository: authRepository)
     }
 }

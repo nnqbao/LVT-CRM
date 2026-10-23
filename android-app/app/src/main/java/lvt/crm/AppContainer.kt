@@ -7,6 +7,7 @@ import lvt.crm.data.chat.ChatRepository
 import lvt.crm.data.auth.AvatarRepository
 import lvt.crm.data.auth.SessionsRepository
 import lvt.crm.data.auth.TokenStore
+import lvt.crm.data.auth.asDeviceAuthApi
 import lvt.crm.data.convex.ConvexConfig
 import lvt.crm.data.convex.ConvexHttpClient
 import lvt.crm.data.duties.DutiesRepository
@@ -39,6 +40,16 @@ class AppContainer(context: Context) {
         beforeSignOut = { accessToken -> fcmTokenRegistrar.unregister(accessToken) },
         afterAuthenticated = { sessionsRepository.registerCurrentDevice() },
     )
+    val deviceAuthRepository = lvt.crm.data.auth.DeviceAuthRepository(
+        api = convex.asDeviceAuthApi(),
+        auth = authRepository,
+        store = lvt.crm.data.auth.EncryptedDeviceCredentialStore(appContext),
+        keys = lvt.crm.data.auth.AndroidDeviceKeys(),
+        deviceName = listOf(android.os.Build.MANUFACTURER, android.os.Build.MODEL)
+            .filter { !it.isNullOrBlank() }
+            .joinToString(" ")
+            .ifBlank { "Android" },
+    )
     val dutiesRepository = DutiesRepository(
         convex,
         tokenProvider = { tokenStore.accessToken },
@@ -46,6 +57,7 @@ class AppContainer(context: Context) {
     )
     val notificationsRepository = NotificationsRepository(convex)
     val homeroomRepository = HomeroomRepository(convex, java.io.File(appContext.noBackupFilesDir, "homeroom-pending"))
+    val teachingRepository = lvt.crm.data.teaching.TeachingRepository(convex, homeroomRepository)
     val attendanceRepository = AttendanceRepository(convex)
     val boardingRepository = lvt.crm.data.boarding.BoardingRepository(convex)
     val personalTodosRepository = PersonalTodosRepository(convex)

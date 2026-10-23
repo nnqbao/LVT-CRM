@@ -33,6 +33,11 @@ import androidx.compose.material.icons.outlined.LockReset
 import androidx.compose.material.icons.outlined.Brightness6
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Switch
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,6 +70,14 @@ import androidx.compose.ui.unit.dp
 import lvt.crm.R
 import lvt.crm.data.auth.AuthRepository
 import lvt.crm.data.auth.AvatarRepository
+import lvt.crm.data.auth.DeviceAuthRepository
+import lvt.crm.data.auth.QuickAuthCancelledException
+import lvt.crm.ui.auth.BiometricAvailability
+import lvt.crm.ui.auth.biometricAvailability
+import lvt.crm.ui.auth.createPasskeyResponse
+import lvt.crm.ui.auth.findFragmentActivity
+import lvt.crm.ui.auth.passkeysSupported
+import lvt.crm.ui.auth.unlockSignature
 import lvt.crm.data.auth.SessionsRepository
 import lvt.crm.data.auth.decodeAvatarBitmapForCrop
 import lvt.crm.data.auth.prepareAvatarWebP
@@ -92,6 +105,8 @@ fun ProfileScreen(
     appearanceStore: AppearanceStore,
     onSignOut: () -> Unit,
     onBack: (() -> Unit)? = null,
+    userId: String = "",
+    deviceAuthRepository: DeviceAuthRepository? = null,
 ) {
     var changingPassword by rememberSaveable { mutableStateOf(false) }
     var showingDevices by rememberSaveable { mutableStateOf(false) }
@@ -107,6 +122,60 @@ fun ProfileScreen(
     val appVersion = currentAppVersion(LocalContext.current)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var fingerprintOn by remember(userId, deviceAuthRepository) {
+        mutableStateOf(deviceAuthRepository?.isEnabledFor(userId) == true)
+    }
+    var securityBusy by remember { mutableStateOf(false) }
+    var securityMessage by remember { mutableStateOf<String?>(null) }
+    var securityError by remember { mutableStateOf<String?>(null) }
+    val biometrics = biometricAvailability(context)
+
+    fun setFingerprint(enabled: Boolean) {
+        val repository = deviceAuthRepository ?: return
+        val activity = context.findFragmentActivity() ?: return
+        if (securityBusy || userId.isBlank()) return
+        securityBusy = true
+        securityMessage = null
+        securityError = null
+        scope.launch {
+            val result = if (enabled) {
+                repository.enable(userId, email, name) { signature ->
+                    activity.unlockSignature(signature, title = "Bật đăng nhập bằng vân tay", subtitle = email)
+                }
+            } else {
+                repository.disable()
+            }
+            fingerprintOn = repository.isEnabledFor(userId)
+            securityBusy = false
+            result.exceptionOrNull()?.takeIf { it !is QuickAuthCancelledException }?.let { failure ->
+                securityError = failure.message ?: "Không bật được đăng nhập bằng vân tay."
+            }
+            if (result.isSuccess) {
+                securityMessage = if (enabled) {
+                    "Đã bật. Lần sau bấm Đăng nhập bằng vân tay ở màn hình đăng nhập."
+                } else {
+                    "Đã tắt đăng nhập bằng vân tay trên máy này."
+                }
+            }
+        }
+    }
+
+    fun createPasskey() {
+        val repository = deviceAuthRepository ?: return
+        val activity = context.findFragmentActivity() ?: return
+        if (securityBusy) return
+        securityBusy = true
+        securityMessage = null
+        securityError = null
+        scope.launch {
+            val result = repository.createPasskey { request -> activity.createPasskeyResponse(request) }
+            securityBusy = false
+            result.exceptionOrNull()?.takeIf { it !is QuickAuthCancelledException }?.let { failure ->
+                securityError = failure.message ?: "Không tạo được passkey."
+            }
+            if (result.isSuccess) securityMessage = "Đã tạo passkey. Lần sau bấm Đăng nhập bằng passkey ở màn hình đăng nhập."
+        }
+    }
 
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -340,6 +409,48 @@ fun ProfileScreen(
                 leadingContent = { Icon(Icons.Outlined.LockReset, contentDescription = null) },
                 modifier = Modifier.clickable { changingPassword = true },
             )
+            if (deviceAuthRepository != null) {
+                HorizontalDivider()
+                val canToggle = !securityBusy && (fingerprintOn || biometrics == BiometricAvailability.Available)
+                ListItem(
+                    headlineContent = { Text("Đăng nhập bằng vân tay") },
+                    supportingContent = {
+                        Text(
+                            when {
+                                fingerprintOn -> "Đang bật trên máy này"
+                                biometrics.message != null -> biometrics.message
+                                else -> "Lần sau đăng nhập không cần nhập mật khẩu"
+                            },
+                        )
+                    },
+                    leadingContent = { Icon(Icons.Outlined.Fingerprint, contentDescription = null) },
+                    trailingContent = {
+                        Switch(
+                            checked = fingerprintOn,
+                            onCheckedChange = null,
+                            enabled = canToggle,
+                        )
+                    },
+                    modifier = Modifier.toggleable(
+                        value = fingerprintOn,
+                        enabled = canToggle,
+                        role = Role.Switch,
+                        onValueChange = { setFingerprint(it) },
+                    ),
+                )
+                if (passkeysSupported) {
+                    HorizontalDivider()
+                    ListItem(
+                        headlineContent = { Text("Tạo passkey") },
+                        supportingContent = { Text("Đăng nhập bằng khóa màn hình của máy, không cần mật khẩu") },
+                        leadingContent = { Icon(Icons.Outlined.Key, contentDescription = null) },
+                        trailingContent = {
+                            if (securityBusy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        },
+                        modifier = Modifier.clickable(enabled = !securityBusy) { createPasskey() },
+                    )
+                }
+            }
             HorizontalDivider()
             ListItem(
                 headlineContent = { Text(stringResource(R.string.appearance)) },
@@ -353,6 +464,22 @@ fun ProfileScreen(
                 supportingContent = { Text("Xem từng phiên bản đã thêm gì") },
                 leadingContent = { Icon(Icons.Outlined.History, contentDescription = null) },
                 modifier = Modifier.clickable { showingChangelog = true },
+            )
+        }
+        securityError?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 8.dp, start = 4.dp),
+            )
+        }
+        securityMessage?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp, start = 4.dp),
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
