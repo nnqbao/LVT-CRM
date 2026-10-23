@@ -14,6 +14,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private let attendanceRepository: SupervisorAttendanceRepository
     private let personalTodoRepository: PersonalTodoRepository
     private let boardingRepository: BoardingRepository
+    private let teachingRepository: TeachingRepository
+    private let quickSignIn: QuickSignInService
     private let notificationsViewModel: NotificationsViewModel
     private var tabControllers: [AppTab: UINavigationController] = [:]
     private var headerClusters: [AccountHeaderClusterView] = []
@@ -41,7 +43,9 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         homeroomRepository: HomeroomRepository,
         attendanceRepository: SupervisorAttendanceRepository,
         personalTodoRepository: PersonalTodoRepository,
-        boardingRepository: BoardingRepository
+        boardingRepository: BoardingRepository,
+        teachingRepository: TeachingRepository,
+        quickSignIn: QuickSignInService
     ) {
         self.session = session
         self.authRepository = authRepository
@@ -55,6 +59,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         self.attendanceRepository = attendanceRepository
         self.personalTodoRepository = personalTodoRepository
         self.boardingRepository = boardingRepository
+        self.teachingRepository = teachingRepository
+        self.quickSignIn = quickSignIn
         self.notificationsViewModel = NotificationsViewModel(repository: notificationsRepository)
         super.init(nibName: nil, bundle: nil)
     }
@@ -90,7 +96,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             session: session,
             authRepository: authRepository,
             sessionsRepository: sessionsRepository,
-            avatarRepository: avatarRepository
+            avatarRepository: avatarRepository,
+            quickSignIn: quickSignIn
         )
         self.notificationsViewController = notificationsViewController
         self.profileViewController = profileViewController
@@ -99,7 +106,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             workRepository: workRepository,
             onOpenDuties: { [weak self] tab in self?.openDuties(tab: tab) },
             onOpenWork: { [weak self] filter in self?.openWork(filter: filter) },
-            // Báo cáo › Bán trú (web): Báo cáo not hidden, or admin/mod. No extra tab, so the bar stays ≤ 5.
+            // Báo cáo › Bán trú (web): Bán trú menu not hidden, or admin/mod. No extra tab, so the bar stays ≤ 5.
             boardingEntry: Boarding.canSeeParticipants(session)
                 ? (Boarding.canManagePeriods(session)
                     ? "Danh sách giáo viên tham gia và Kỳ bán trú"
@@ -199,10 +206,13 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         Task { await reloadAvatar() }
     }
 
-    /// Lớp chủ nhiệm (GVCN / view / admin-mod) and Điểm danh (Giám thị = menu `attendance` supervisor, or
-    /// admin/mod). Giám thị no longer gets Lớp chủ nhiệm. Both together share one "Học sinh" tab (max 5 tabs).
+    /// Lớp học (menu `homeroom`: Tổng quan, Lớp chủ nhiệm, Lớp giảng dạy, Lịch dạy, Học bạ — GVCN / view / admin-mod)
+    /// and Điểm danh (Giám thị = menu `attendance` supervisor, or admin/mod). Giám thị no longer gets Lớp học.
+    /// Both together share one "Học sinh" tab (max 5 tabs).
     private func makeStudentTabs() -> [UINavigationController] {
-        let homeroom = session.canSeeHomeroom ? HomeroomViewController(repository: homeroomRepository, session: session) : nil
+        let homeroom = session.canSeeHomeroom
+            ? ClassesHubViewController(session: session, homeroomRepository: homeroomRepository, teachingRepository: teachingRepository)
+            : nil
         let attendance = session.canSeeAttendance ? AttendanceViewController(repository: attendanceRepository, session: session) : nil
         homeroom?.installHelpButton(.homeroom)
         attendance?.installHelpButton(.attendance)
@@ -212,7 +222,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             hub.installHelpButton(.homeroom)
             return [navigationController(title: "Học sinh", systemImage: "graduationcap", viewController: hub)]
         case let (homeroom?, nil):
-            return [navigationController(title: "Lớp chủ nhiệm", systemImage: "person.3", viewController: homeroom)]
+            return [navigationController(title: "Lớp học", systemImage: "person.3", viewController: homeroom)]
         case let (nil, attendance?):
             return [navigationController(title: "Điểm danh", systemImage: "checklist", viewController: attendance)]
         case (nil, nil):

@@ -92,6 +92,11 @@ final class HomeroomRepository: Sendable {
             return id
     }
 
+    /// Sổ đầu bài of a class (GVCN tab), at most 93 days per request.
+    func lessonLogs(classId: String, from: String, to: String) async throws -> [ClassLessonLog] {
+        try TeachingDecoder.classLogs(await convex.query("lessonLogs:listForClass", args: ["classId": classId, "from": from, "to": to]))
+    }
+
     func listSchoolYears() async throws -> [SchoolYear] {
         try Self.decodeSchoolYears(await convex.query("schoolYears:list"))
     }

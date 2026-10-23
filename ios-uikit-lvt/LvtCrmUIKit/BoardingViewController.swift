@@ -1,7 +1,7 @@
 import UIKit
 
 /// Báo cáo › Bán trú (web `BoardingPage` / `BoardingReportsView` / `BoardingManagement`).
-/// Everyone whose Báo cáo menu is not hidden reads "Danh sách tham gia" (own department, or the whole school
+/// Everyone whose Bán trú menu is not hidden reads "Danh sách tham gia" (own department, or the whole school
 /// with `view_all`); admin/mod also get "Kỳ bán trú" management. The server enforces both.
 @MainActor
 final class BoardingViewController: UITableViewController {

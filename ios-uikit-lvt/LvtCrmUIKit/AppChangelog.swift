@@ -8,6 +8,17 @@ struct AppChangelogEntry: Equatable {
 enum AppChangelog {
     static let entries: [AppChangelogEntry] = [
         AppChangelogEntry(
+            version: "3.1.0",
+            highlights: [
+                "Menu Lớp chủ nhiệm đổi tên thành Lớp học, gồm Tổng quan, Chủ nhiệm, Giảng dạy, Lịch dạy và Học bạ. Tổng quan hiện tiết dạy hôm nay (Đã ghi sổ / Chưa ghi sổ) và học sinh vắng của lớp chủ nhiệm.",
+                "Lớp giảng dạy xếp theo tiết sắp dạy gần nhất; bấm lớp để ghi Sổ đầu bài (ngày dạy, tiết, 1–5 sao, nhận xét). Trang lớp chủ nhiệm có thêm tab Sổ đầu bài theo tuần.",
+                "Lịch dạy xem dạng Danh sách, Tuần (Thứ 2–6 × 10 tiết) và Tháng. Học bạ: chọn lớp theo khối, học sinh, xem điểm từng môn, ĐTB học kỳ và cả năm; thêm, sửa, xóa điểm môn mình dạy.",
+                "Đăng nhập bằng Face ID / Touch ID: bật tại Cá nhân › Bảo mật, lần sau bấm nút trên màn hình đăng nhập. Ứng dụng không lưu mật khẩu.",
+                "Tạo passkey tại Cá nhân › Bảo mật và “Đăng nhập bằng passkey” trên màn hình đăng nhập.",
+                "Báo cáo › Bán trú hiện theo quyền Bán trú của nhóm quyền.",
+            ]
+        ),
+        AppChangelogEntry(
             version: "3.0.0",
             highlights: [
                 "Công việc do Văn thư/Quản trị giao cho người khác cần Ban giám hiệu duyệt: chọn người duyệt rồi bấm “Gửi duyệt”. Người tạo thấy Chờ duyệt x/y, Đã duyệt hoặc Bị trả lại kèm lý do, sửa rồi “Lưu và gửi duyệt lại”.",

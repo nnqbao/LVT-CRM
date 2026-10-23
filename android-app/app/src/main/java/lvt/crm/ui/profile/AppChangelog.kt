@@ -8,6 +8,17 @@ data class AppChangelogEntry(
 object AppChangelog {
     val entries: List<AppChangelogEntry> = listOf(
         AppChangelogEntry(
+            "2.1.0",
+            listOf(
+                "Menu Lớp chủ nhiệm đổi thành Lớp học, gồm Tổng quan, Lớp chủ nhiệm, Lớp giảng dạy, Lịch dạy và Học bạ.",
+                "Tổng quan: tiết dạy hôm nay (đã/chưa ghi sổ) và học sinh vắng hôm nay của lớp chủ nhiệm.",
+                "Lớp giảng dạy: lớp sắp tới giờ dạy ở trên cùng; bấm lớp để ghi Sổ đầu bài (chọn ngày, tiết, 1–5 sao và nhận xét). GVCN xem Sổ đầu bài theo tuần trong trang lớp.",
+                "Lịch dạy của bạn theo Danh sách, Tuần và Tháng. Học bạ: xem điểm theo khối, ĐTB học kỳ và cả năm; thêm, sửa, xóa điểm môn mình dạy.",
+                "Đăng nhập bằng vân tay: bật trong Cá nhân, lần sau đăng nhập không cần nhập mật khẩu.",
+                "Passkey: tạo passkey trong Cá nhân rồi bấm Đăng nhập bằng passkey ở màn hình đăng nhập.",
+            ),
+        ),
+        AppChangelogEntry(
             "2.0.0",
             listOf(
                 "Công việc do Văn thư/Quản trị tạo phải chọn Người duyệt (Ban giám hiệu) và bấm Gửi duyệt. Người nhận chỉ thấy việc sau khi đủ người duyệt.",

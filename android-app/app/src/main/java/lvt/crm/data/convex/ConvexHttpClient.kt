@@ -118,9 +118,12 @@ class ConvexHttpClient(
                 }
             }
 
-            val errorMessage = (if (noRetry) json.opt("errorData") as? String else null)?.takeIf { it.isNotBlank() } ?: json.optString("errorMessage").ifBlank {
+            val baseErrorMessage = (if (noRetry) json.opt("errorData") as? String else null)?.takeIf { it.isNotBlank() } ?: json.optString("errorMessage").ifBlank {
                 json.optString("error").ifBlank { "CONVEX_ERROR" }
             }
+            // ConvexError(code) (e.g. the device-key / passkey sign-in providers) carries the code in errorData.
+            val errorData = (json.opt("errorData") as? String)?.takeIf { it.isNotBlank() && !baseErrorMessage.contains(it) }
+            val errorMessage = if (errorData != null) "$baseErrorMessage $errorData" else baseErrorMessage
             val unauthorized = response.code == 401 ||
                 errorMessage.contains("Unauthenticated", ignoreCase = true) ||
                 errorMessage.contains("Authentication", ignoreCase = true)
@@ -216,6 +219,7 @@ class ConvexHttpClient(
         }
         fun extractCode(message: String): String {
             WorkErrorMessages.codeIn(message)?.let { return it }
+            TeachingAuthErrorMessages.codeIn(message)?.let { return it }
             lvt.crm.data.boarding.BoardingErrorMessages.codeIn(message)?.let { return it }
             val known = listOf(
                 "ATTENDANCE_CAMERA_IMPORT_RETIRED", "ATTENDANCE_DATE_TODAY_ONLY", "ATTENDANCE_DATE_IN_FUTURE", "ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_STUDENT_NOT_IN_CLASS", "ATTENDANCE_TOO_MANY_ABSENT", "SUPERVISOR_REQUIRED", "DISPOSITION_FORBIDDEN", "SCHOOL_YEAR_NOT_FOUND",
@@ -282,6 +286,7 @@ class ConvexHttpClient(
 
         fun humanize(message: String): String {
             WorkErrorMessages.messageFor(message)?.let { return it }
+            TeachingAuthErrorMessages.messageFor(message)?.let { return it }
             lvt.crm.data.boarding.BoardingErrorMessages.messageFor(message)?.let { return it }
             val code = extractCode(message)
             return when {

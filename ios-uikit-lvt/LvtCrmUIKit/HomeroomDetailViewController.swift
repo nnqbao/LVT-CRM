@@ -4,8 +4,15 @@ import UIKit
     private let repository: HomeroomRepository
     private let store: HomeroomDetailStore
     private lazy var dayNavigator = HomeroomDayNavigator(date: store.context.date)
-    private let pane = UISegmentedControl(items: ["Điểm danh", "Danh sách lớp"])
+    private let pane = UISegmentedControl(items: ["Điểm danh", "Danh sách lớp", "Sổ đầu bài"])
     private var dailyPane: Bool { pane.selectedSegmentIndex == 0 }
+    /// "Sổ đầu bài": lesson ratings by subject teachers, one week at a time (lessonLogs:listForClass).
+    private var logsPane: Bool { pane.selectedSegmentIndex == 2 }
+    private let logStepper = TeachingStepper(previousLabel: "Tuần trước", nextLabel: "Tuần sau")
+    private var logsFrom = TeachingSchedule.weekStart(TeachingSchedule.vietnamNow().date)
+    private var logs: [ClassLessonLog]?
+    private var logsError: String?
+    private var logsTask: Task<Void, Never>?
     private let search = UISearchBar()
     private let historyFrom = UIDatePicker()
     private let historyTo = UIDatePicker()
@@ -17,6 +24,7 @@ import UIKit
         case item(title: String, subtitle: String?, chips: [HomeroomChip], leading: String?, studentId: String?)
         case heading(String)
         case absence(DailyRow, canCorrect: Bool)
+        case lessonLog(ClassLessonLog)
     }
     private var rows: [Row] = []
     private lazy var writes = repository.writeOperations
@@ -37,7 +45,7 @@ import UIKit
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    deinit { task?.cancel(); toggleTask?.cancel() }
+    deinit { task?.cancel(); toggleTask?.cancel(); logsTask?.cancel() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -53,6 +61,7 @@ import UIKit
         tableView.register(HomeroomListCell.self, forCellReuseIdentifier: HomeroomListCell.reuseIdentifier)
         tableView.register(HomeroomBannerCell.self, forCellReuseIdentifier: HomeroomBannerCell.reuseIdentifier)
         tableView.register(HomeroomAbsenceCell.self, forCellReuseIdentifier: HomeroomAbsenceCell.reuseIdentifier)
+        tableView.register(TeachingCell.self, forCellReuseIdentifier: TeachingCell.reuseIdentifier)
         dayNavigator.presenter = self
         dayNavigator.onChange = { [weak self] selected in self?.dateChanged(to: selected) }
         pane.selectedSegmentIndex = 0
@@ -90,7 +99,9 @@ import UIKit
         historyTo.minimumDate = historyFrom.date
         historyFrom.accessibilityLabel = "Lịch sử từ ngày"
         historyTo.accessibilityLabel = "Lịch sử đến ngày"
-        let controls: [UIView] = store.studentId == nil ? [dayNavigator, pane, search] : [fromLabel, historyFrom, toLabel, historyTo]
+        logStepper.isHidden = true
+        logStepper.onStep = { [weak self] step in self?.shiftLogWeek(step) }
+        let controls: [UIView] = store.studentId == nil ? [dayNavigator, logStepper, pane, search] : [fromLabel, historyFrom, toLabel, historyTo]
         let stack = UIStackView(arrangedSubviews: controls)
         stack.axis = .vertical
         stack.spacing = 12
@@ -121,6 +132,7 @@ import UIKit
     }
 
     @objc private func retry() {
+        if logsPane { loadLogs() }
         toggleStatus = nil
         task?.cancel()
         store.clear()
@@ -133,7 +145,68 @@ import UIKit
         onClassDateChanged?(date)
         retry()
     }
-    @objc private func paneChanged() { render() }
+    @objc private func paneChanged() {
+        dayNavigator.isHidden = logsPane
+        search.isHidden = logsPane
+        logStepper.isHidden = !logsPane
+        updateLogStepper()
+        if logsPane, logs == nil, logsTask == nil { loadLogs() }
+        render()
+        view.setNeedsLayout()
+    }
+
+    private var logsTo: String { TeachingSchedule.addDays(logsFrom, 6) }
+
+    private func updateLogStepper() {
+        logStepper.update(
+            title: "\(TeachingSchedule.displayDate(logsFrom)) – \(TeachingSchedule.displayDate(logsTo))",
+            canPrevious: true,
+            canNext: logsTo < TeachingSchedule.vietnamNow().date
+        )
+    }
+
+    private func shiftLogWeek(_ step: Int) {
+        logsFrom = TeachingSchedule.addDays(logsFrom, 7 * step)
+        updateLogStepper()
+        loadLogs()
+    }
+
+    private func loadLogs() {
+        logsTask?.cancel()
+        logs = nil
+        logsError = nil
+        let classId = store.context.classId, from = logsFrom, to = logsTo
+        let repository = self.repository
+        render()
+        logsTask = Task { [weak self] in
+            do {
+                let rows = try await repository.lessonLogs(classId: classId, from: from, to: to)
+                guard let self, !Task.isCancelled, self.logsFrom == from else { return }
+                logs = rows
+            } catch {
+                guard let self, !Task.isCancelled, self.logsFrom == from else { return }
+                logsError = TeachingText.message(error)
+            }
+            guard let self, self.logsFrom == from else { return }
+            logsTask = nil
+            render()
+        }
+    }
+
+    private func renderLogs() {
+        if let logsError {
+            rows.append(.banner("Chưa tải được Sổ đầu bài", "\(logsError)\nKéo xuống để thử lại.", .danger, "exclamationmark.triangle"))
+            return
+        }
+        guard let logs else {
+            rows.append(.info("Đang tải Sổ đầu bài…", nil))
+            return
+        }
+        let average = LessonLogSummary.averageRating(logs.map(\.rating))
+        rows.append(.info("Sổ đầu bài", "Đánh giá lớp qua từng tiết học do giáo viên bộ môn ghi." + (average.map { " Trung bình tuần: \($0)/5 sao." } ?? "")))
+        if logs.isEmpty { rows.append(.info("Chưa có đánh giá tiết học trong tuần này.", nil)) }
+        rows += logs.map { .lessonLog($0) }
+    }
     @objc private func historyChanged() {
         let current = store.context
         let from = VietnamDate.string(from: historyFrom.date)
@@ -161,7 +234,9 @@ import UIKit
             title = klass.name.isEmpty ? klass.code : klass.name
             let teacher = data.scoped.currentTeacherName.isEmpty ? "chưa phân công" : data.scoped.currentTeacherName
             rows.append(.info(klass.name.isEmpty ? "Lớp \(klass.code)" : klass.name, ([HomeroomPresentation.dayTitle(store.context.date), "GVCN \(teacher)"] + (klass.status == "archived" ? ["Lớp đã lưu trữ"] : [])).joined(separator: " · ")))
-            if dailyPane {
+            if logsPane {
+                renderLogs()
+            } else if dailyPane {
                 renderDaily(data.daily)
             } else {
                 let visible = data.roster.rows.filter { matches($0.student.fullName, $0.student.studentCode) }
@@ -349,6 +424,19 @@ import UIKit
             cell.contentConfiguration = content
             cell.selectionStyle = .none
             cell.accessibilityTraits = .header
+            return cell
+        case let .lessonLog(log):
+            let cell = tableView.dequeueReusableCell(withIdentifier: TeachingCell.reuseIdentifier, for: indexPath) as! TeachingCell
+            let when = "\(TeachingSchedule.weekdayLabel(log.date)), \(TeachingSchedule.displayDate(log.date)) · \(TeachingSchedule.periodLabel(session: log.session, period: log.period))"
+            let who = [log.subjectName, log.teacherName].filter { !$0.isEmpty }.joined(separator: " · ")
+            cell.configure(
+                title: when,
+                subtitle: who,
+                detail: log.comment.isEmpty ? "—" : log.comment,
+                chips: [HomeroomChip(text: "\(TeachingSchedule.stars(log.rating)) \(log.rating)/5", tone: log.rating >= 4 ? .success : log.rating >= 3 ? .info : .warning)],
+                tappable: false,
+                accessibilityLabel: "\(when), \(who), \(log.rating) trên 5 sao, nhận xét: \(log.comment.isEmpty ? "không có" : log.comment), ghi lúc \(LessonLogViewController.timestamp(log.updatedAt))"
+            )
             return cell
         case let .absence(row, canCorrect):
             let cell = tableView.dequeueReusableCell(withIdentifier: HomeroomAbsenceCell.reuseIdentifier, for: indexPath) as! HomeroomAbsenceCell

@@ -620,8 +620,8 @@ final class StudentsHubViewController: UIViewController {
             systemImage: "checklist"
         ) { [weak self] in self?.open(self?.attendance) }
         let homeroomButton = hubButton(
-            title: "Lớp chủ nhiệm",
-            subtitle: "Tổng quan lớp, học sinh vắng và hồ sơ học sinh",
+            title: "Lớp học",
+            subtitle: "Tổng quan, lớp chủ nhiệm, lớp giảng dạy, lịch dạy và học bạ",
             systemImage: "person.3"
         ) { [weak self] in self?.open(self?.homeroom) }
         let stack = UIStackView(arrangedSubviews: [attendanceButton, homeroomButton])

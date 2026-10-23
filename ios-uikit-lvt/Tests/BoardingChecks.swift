@@ -83,21 +83,26 @@ struct BoardingChecks {
         } catch { check(false, "Admin decodes") }
         rejects({ _ = try Boarding.decodeAdmin(["users": [], "periods": [["_id": "p1", "semester": 1, "schoolYear": "2026-2027"]]]) }, "Missing participant ids")
 
-        // Visibility: Báo cáo level (view / view_all) or admin/mod; management only admin/mod.
-        func session(role: String = "user", reports: MenuAccess? = nil, status: String = "active", mustChange: Bool = false) -> UserSession {
-            UserSession(
+        // Visibility: Bán trú menu (`boarding`; the server fills it from Báo cáo for older groups) or admin/mod;
+        // management only admin/mod.
+        func session(role: String = "user", boarding: MenuAccess? = nil, reports: MenuAccess? = nil, status: String = "active", mustChange: Bool = false) -> UserSession {
+            var access: [String: MenuAccess] = [:]
+            access["boarding"] = boarding
+            access["reports"] = reports
+            return UserSession(
                 userId: "u", email: "u@x", name: "U", role: role, status: status, mustChangePassword: mustChange,
                 departmentName: nil, positionName: nil, positionLevel: 1, hasAvatar: false, avatarVersion: nil,
-                menuAccess: reports.map { ["reports": $0] } ?? [:]
+                menuAccess: access
             )
         }
-        check(Boarding.canSeeParticipants(session(reports: .view)) && Boarding.canSeeParticipants(session(reports: .viewAll)), "Báo cáo view / view_all")
-        check(!Boarding.canSeeParticipants(session(reports: .hidden)) && !Boarding.canSeeParticipants(session()), "Báo cáo hidden")
+        check(Boarding.canSeeParticipants(session(boarding: .view)) && Boarding.canSeeParticipants(session(boarding: .viewAll)), "Bán trú view / view_all")
+        check(!Boarding.canSeeParticipants(session(boarding: .hidden)) && !Boarding.canSeeParticipants(session()), "Bán trú hidden")
+        check(!Boarding.canSeeParticipants(session(boarding: .hidden, reports: .viewAll)), "Báo cáo alone no longer opens Bán trú")
         check(Boarding.canSeeParticipants(session(role: "moderator")) && Boarding.canManagePeriods(session(role: "admin")), "Admin/mod")
-        check(!Boarding.canManagePeriods(session(reports: .viewAll)), "Users never manage")
-        check(!Boarding.canSeeParticipants(session(reports: .view, mustChange: true)) && !Boarding.canSeeParticipants(session(role: "admin", status: "disabled")), "Inactive or password change")
-        let decoded = UserSession(sessionContext: ["user": ["_id": "u", "role": "user", "status": "active"], "menuAccess": ["reports": "supervisor"]])
-        check(decoded.map { !Boarding.canSeeParticipants($0) } == true, "Supervisor is not valid on reports")
+        check(!Boarding.canManagePeriods(session(boarding: .viewAll)), "Users never manage")
+        check(!Boarding.canSeeParticipants(session(boarding: .view, mustChange: true)) && !Boarding.canSeeParticipants(session(role: "admin", status: "disabled")), "Inactive or password change")
+        let decoded = UserSession(sessionContext: ["user": ["_id": "u", "role": "user", "status": "active"], "menuAccess": ["boarding": "supervisor"]])
+        check(decoded.map { !Boarding.canSeeParticipants($0) } == true, "Supervisor is not valid on boarding")
 
         // School years (Vietnam time: July starts a new year).
         var calendar = Calendar(identifier: .gregorian)

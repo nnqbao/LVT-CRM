@@ -96,10 +96,17 @@ class BoardingRulesTest {
     }
 
     @Test
-    fun visibilityFollowsReportsMenu() {
-        fun session(role: String, reports: MenuAccess?) = UserSession(
+    fun visibilityFollowsBoardingMenu() {
+        fun session(role: String, boarding: MenuAccess?) = UserSession(
             userId = "u", email = "u@x.vn", name = "U", role = role, status = "active",
-            menuAccess = reports?.let { mapOf("reports" to it) } ?: emptyMap(),
+            menuAccess = boarding?.let { mapOf("boarding" to it) } ?: emptyMap(),
+        )
+        // Báo cáo alone no longer opens Bán trú: the server already resolved `boarding`.
+        assertFalse(
+            UserSession(
+                userId = "u", email = "u@x.vn", name = "U", role = "user", status = "active",
+                menuAccess = mapOf("reports" to MenuAccess.View, "boarding" to MenuAccess.Hidden),
+            ).canSeeBoarding,
         )
         assertTrue(session("admin", null).canSeeBoarding)
         assertTrue(session("moderator", null).canManageBoarding)

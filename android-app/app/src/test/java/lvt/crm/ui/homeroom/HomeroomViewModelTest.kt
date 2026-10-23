@@ -50,6 +50,17 @@ class HomeroomViewModelTest {
         assertNull(forbiddenModel.uiState.value.overview)
     }
 
+    @Test fun `focusing a class from Lớp học overview switches to that day`() = runTest(dispatcher) {
+        val repository = RecordingHomeroomOperations()
+        val viewModel = HomeroomViewModel(repository)
+        advanceUntilIdle()
+        viewModel.focusClass("test-year", "2026-10-07", "class-not-in-scope")
+        advanceUntilIdle()
+        assertEquals("2026-10-07", viewModel.uiState.value.date)
+        assertEquals("2026-10-07", viewModel.uiState.value.overview?.date)
+        assertNull("out-of-scope class does not open", viewModel.detailState.value)
+    }
+
     @Test fun `cancelled older request cannot overwrite newer date`() = runTest(dispatcher) {
         val repository = RecordingHomeroomOperations(blockFirst = true)
         val viewModel = HomeroomViewModel(repository)

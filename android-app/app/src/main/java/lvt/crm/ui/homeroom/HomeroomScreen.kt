@@ -41,11 +41,16 @@ import lvt.crm.ui.components.StatePanel
 import lvt.crm.ui.components.GuideAnchors
 
 /**
- * Lớp chủ nhiệm. [onOpenAttendance] (admin/mod, or a GVCN who is also Giám thị) opens the
+ * Lớp học › Lớp chủ nhiệm. [onOpenAttendance] (admin/mod, or a GVCN who is also Giám thị) opens the
  * Điểm danh screen; Giám thị alone gets Điểm danh as its own tab instead.
  */
 @Composable
-fun HomeroomScreen(viewModel: HomeroomViewModel, canManage: Boolean = false, onOpenAttendance: (() -> Unit)? = null) {
+fun HomeroomScreen(
+    viewModel: HomeroomViewModel,
+    canManage: Boolean = false,
+    onOpenAttendance: (() -> Unit)? = null,
+    classLogsLoader: lvt.crm.ui.teaching.ClassLogsLoader? = null,
+) {
     val state by viewModel.uiState.collectAsState()
     var management by remember(viewModel) { mutableStateOf<lvt.crm.data.homeroom.HomeroomManagementStore?>(null) }
     if (management != null) {
@@ -59,11 +64,11 @@ fun HomeroomScreen(viewModel: HomeroomViewModel, canManage: Boolean = false, onO
             if (!selectedDetail.uiState.value.loading) selectedDetail.refresh()
             onDispose { selectedDetail.close() }
         }
-        HomeroomDetailScreen(selectedDetail, viewModel::closeDetail)
+        HomeroomDetailScreen(selectedDetail, viewModel::closeDetail, classLogsLoader)
         return
     }
     LvtScreen(
-        title = "Lớp chủ nhiệm",
+        title = "Lớp học",
         helpAnchor = GuideAnchors.HOMEROOM,
         refreshing = state.refreshing,
         onRefresh = viewModel::refresh,

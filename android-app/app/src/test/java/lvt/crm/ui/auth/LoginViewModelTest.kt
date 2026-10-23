@@ -7,11 +7,17 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import lvt.crm.data.auth.BiometricUnlock
+import lvt.crm.data.auth.PasskeyCeremony
+import lvt.crm.data.auth.QuickAuthCancelledException
+import lvt.crm.data.auth.QuickSignInGateway
 import lvt.crm.data.auth.SignInGateway
+import lvt.crm.data.convex.ConvexException
 import lvt.crm.data.auth.UserSession
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -128,6 +134,44 @@ class LoginViewModelTest {
             "Không thể đăng nhập. Hãy kiểm tra email, mật khẩu rồi thử lại.",
             viewModel.uiState.value.error,
         )
+    }
+
+    @Test
+    fun quickSignInCancellationIsSilentAndErrorsAreShown() = runTest(dispatcher) {
+        var next: Result<UserSession> = Result.failure(QuickAuthCancelledException())
+        var savedEmail: String? = "gv@lvt.vn"
+        val quick = object : QuickSignInGateway {
+            override fun savedDeviceEmail(): String? = savedEmail
+            override suspend fun signInWithDeviceKey(unlock: BiometricUnlock): Result<UserSession> = next
+            override suspend fun signInWithPasskey(ceremony: PasskeyCeremony): Result<UserSession> = next
+        }
+        val viewModel = LoginViewModel(
+            object : SignInGateway {
+                override suspend fun signIn(email: String, password: String): Result<UserSession> =
+                    Result.failure(IllegalStateException("unused"))
+
+                override suspend fun requestPasswordReset(email: String): Result<Unit> = Result.success(Unit)
+            },
+            quick,
+        )
+        assertEquals("gv@lvt.vn", viewModel.uiState.value.deviceLoginEmail)
+
+        viewModel.signInWithDeviceKey { it }
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.loading)
+        assertNull(viewModel.uiState.value.error)
+
+        next = Result.failure(ConvexException("DEVICE_CREDENTIAL_INVALID", "Vân tay không còn hiệu lực."))
+        savedEmail = null
+        viewModel.signInWithDeviceKey { it }
+        advanceUntilIdle()
+        assertEquals("Vân tay không còn hiệu lực.", viewModel.uiState.value.error)
+        assertNull("button hidden once the credential is forgotten", viewModel.uiState.value.deviceLoginEmail)
+
+        next = Result.success(session())
+        viewModel.signInWithPasskey { it }
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.error)
     }
 
     private fun session() = UserSession(

@@ -76,9 +76,10 @@ enum Boarding {
 
     // MARK: Visibility (UX only; the server re-checks)
 
-    /// Danh sách tham gia: Báo cáo menu not hidden, or admin/mod (web `isPrimaryMenuVisible('boarding')`).
+    /// Danh sách tham gia: Bán trú menu (`boarding`, filled from Báo cáo for older groups by the server) not
+    /// hidden, or admin/mod (web `isPrimaryMenuVisible('boarding')`).
     static func canSeeParticipants(_ session: UserSession) -> Bool {
-        session.canWork && (session.isOperationalManager || (session.menuAccess["reports"] ?? .hidden) != .hidden)
+        session.canWork && (session.isOperationalManager || (session.menuAccess["boarding"] ?? .hidden) != .hidden)
     }
 
     /// Kỳ bán trú management: operational managers only (`boarding:write`).
