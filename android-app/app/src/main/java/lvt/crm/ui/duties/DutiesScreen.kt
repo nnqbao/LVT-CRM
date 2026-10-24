@@ -2,8 +2,6 @@ package lvt.crm.ui.duties
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,13 +24,14 @@ import androidx.compose.material.icons.outlined.EventBusy
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.PeopleOutline
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.TextButton
@@ -49,12 +48,15 @@ import androidx.compose.runtime.setValue
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import lvt.crm.data.chat.ChatKind
 import lvt.crm.data.chat.ChatRepository
 import lvt.crm.data.chat.ChatTarget
 import lvt.crm.data.duties.DutyItem
 import lvt.crm.ui.chat.ChatDialog
+import lvt.crm.ui.components.IconTabBar
+import lvt.crm.ui.components.IconTabItem
 import lvt.crm.ui.components.ListSearchBar
 import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.components.StatePanel
@@ -310,20 +312,20 @@ private fun DutyListSectionHeader(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge)
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            DutyListTab.entries.forEach { value ->
-                FilterChip(
-                    selected = tab == value,
-                    onClick = { onTab(value) },
-                    label = { Text(value.title) },
-                )
-            }
-        }
+        IconTabBar(
+            items = DutyListTab.entries.map { IconTabItem(it.title, it.icon) },
+            selectedIndex = tab.ordinal,
+            onSelect = { index -> onTab(DutyListTab.entries[index]) },
+        )
     }
 }
+
+private val DutyListTab.icon: ImageVector
+    get() = when (this) {
+        DutyListTab.Upcoming -> Icons.Outlined.Schedule
+        DutyListTab.Ongoing -> Icons.Outlined.PlayCircle
+        DutyListTab.Past -> Icons.Outlined.CheckCircle
+    }
 
 @Composable
 private fun DutyListEmpty(tab: DutyListTab, created: Boolean, filtered: Boolean = false) {

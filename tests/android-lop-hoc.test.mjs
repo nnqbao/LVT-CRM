@@ -9,7 +9,7 @@ test('Android: Lớp học menu replaces Lớp chủ nhiệm with five sections'
   const strings = read('src/main/res/values/strings.xml');
   assert.match(strings, /<string name="nav_homeroom">Lớp học<\/string>/);
   const hub = src('ui/teaching/ClassesHubScreen.kt');
-  for (const label of ['Tổng quan', 'Lớp chủ nhiệm', 'Lớp giảng dạy', 'Lịch dạy', 'Học bạ']) {
+  for (const label of ['Tổng quan', 'Chủ nhiệm', 'Giảng dạy', 'Lịch dạy', 'Học bạ']) {
     assert.match(hub, new RegExp(`"${label}"`));
   }
   assert.match(src('ui/homeroom/HomeroomScreen.kt'), /title = "Lớp học"/);
@@ -59,12 +59,12 @@ test('Android: fingerprint and passkey sign-in reuse the password sign-in path',
   assert.match(src('ui/auth/LoginScreen.kt'), /Đăng nhập bằng passkey/);
 });
 
-test('Android: 2.1.0 (51) version bump with changelog entry', () => {
+test('Android: 2.1.0 changelog entry for Lớp học and quick sign-in', () => {
   const gradle = read('build.gradle.kts');
-  assert.match(gradle, /val lvtVersionCode = 51/);
-  assert.match(gradle, /val lvtVersionName = "2\.1\.0"/);
+  assert.match(gradle, /val lvtVersionCode = \d+/);
+  assert.match(gradle, /val lvtVersionName = "\d+\.\d+\.\d+"/);
   const changelog = src('ui/profile/AppChangelog.kt');
-  assert.match(changelog, /entries: List<AppChangelogEntry> = listOf\(\s*AppChangelogEntry\(\s*"2\.1\.0"/, '2.1.0 is the newest entry');
+  assert.match(changelog, /AppChangelogEntry\(\s*"2\.1\.0"/, '2.1.0 entry is kept');
   assert.match(changelog, /Lớp học/);
   assert.match(changelog, /vân tay/);
   assert.match(changelog, /Passkey/);

@@ -17,6 +17,7 @@
         200000000000000000000055 /* Teaching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000055 /* Teaching.swift */; };
         200000000000000000000056 /* QuickSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000056 /* QuickSignIn.swift */; };
         200000000000000000000057 /* QuickSignInService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000057 /* QuickSignInService.swift */; };
+        200000000000000000000062 /* IconTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000062 /* IconTabBar.swift */; };
         200000000000000000000058 /* ClassesHubViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000058 /* ClassesHubViewController.swift */; };
         200000000000000000000059 /* TeachingViewControllers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000059 /* TeachingViewControllers.swift */; };
         200000000000000000000060 /* TeachingScheduleViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000060 /* TeachingScheduleViewController.swift */; };
@@ -100,6 +101,7 @@
         300000000000000000000055 /* Teaching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Teaching.swift; sourceTree = "<group>"; };
         300000000000000000000056 /* QuickSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSignIn.swift; sourceTree = "<group>"; };
         300000000000000000000057 /* QuickSignInService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSignInService.swift; sourceTree = "<group>"; };
+        300000000000000000000062 /* IconTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconTabBar.swift; sourceTree = "<group>"; };
         300000000000000000000058 /* ClassesHubViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassesHubViewController.swift; sourceTree = "<group>"; };
         300000000000000000000059 /* TeachingViewControllers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeachingViewControllers.swift; sourceTree = "<group>"; };
         300000000000000000000060 /* TeachingScheduleViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeachingScheduleViewController.swift; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
                 300000000000000000000055 /* Teaching.swift */,
                 300000000000000000000056 /* QuickSignIn.swift */,
                 300000000000000000000057 /* QuickSignInService.swift */,
+                300000000000000000000062 /* IconTabBar.swift */,
                 300000000000000000000058 /* ClassesHubViewController.swift */,
                 300000000000000000000059 /* TeachingViewControllers.swift */,
                 300000000000000000000060 /* TeachingScheduleViewController.swift */,
@@ -369,6 +372,7 @@
                 200000000000000000000055 /* Teaching.swift in Sources */,
                 200000000000000000000056 /* QuickSignIn.swift in Sources */,
                 200000000000000000000057 /* QuickSignInService.swift in Sources */,
+                200000000000000000000062 /* IconTabBar.swift in Sources */,
                 200000000000000000000058 /* ClassesHubViewController.swift in Sources */,
                 200000000000000000000059 /* TeachingViewControllers.swift in Sources */,
                 200000000000000000000060 /* TeachingScheduleViewController.swift in Sources */,
@@ -486,7 +490,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LvtCrmUIKit/LvtCrmUIKit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 39;
+				CURRENT_PROJECT_VERSION = 40;
 				DEVELOPMENT_TEAM = 42ZDDJ2B8M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LvtCrmUIKit/Info.plist;
@@ -494,7 +498,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.1.0;
+				MARKETING_VERSION = 3.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = vn.lvt.crm.uikit;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -511,7 +515,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LvtCrmUIKit/LvtCrmUIKitRelease.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 39;
+				CURRENT_PROJECT_VERSION = 40;
 				DEVELOPMENT_TEAM = 42ZDDJ2B8M;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LvtCrmUIKit/Info.plist;
@@ -519,7 +523,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.1.0;
+				MARKETING_VERSION = 3.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = vn.lvt.crm.uikit;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

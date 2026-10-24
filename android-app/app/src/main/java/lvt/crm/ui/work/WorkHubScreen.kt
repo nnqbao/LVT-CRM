@@ -1,9 +1,9 @@
 package lvt.crm.ui.work
 
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -11,6 +11,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import lvt.crm.ui.components.IconTabBar
+import lvt.crm.ui.components.IconTabItem
 import lvt.crm.ui.components.LocalScreenTabs
 import lvt.crm.ui.todos.PersonalTodosScreen
 import lvt.crm.ui.todos.PersonalTodosViewModel
@@ -31,7 +35,6 @@ object WorkHubRules {
  * (every active account). [focusToken] changes when a notification targets this hub; [todoFocusId] is
  * set when it is a todo reminder.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkHubScreen(
     canSeeWork: Boolean,
@@ -51,18 +54,15 @@ fun WorkHubScreen(
     val tab = WorkHubRules.visibleTab(selected, canSeeWork)
     val tabs: (@Composable () -> Unit)? = if (!canSeeWork) null else {
         {
-            PrimaryTabRow(selectedTabIndex = tab.ordinal) {
-                Tab(
-                    selected = tab == WorkHubTab.Work,
-                    onClick = { selected = WorkHubTab.Work },
-                    text = { Text("Công việc") },
-                )
-                Tab(
-                    selected = tab == WorkHubTab.Todos,
-                    onClick = { selected = WorkHubTab.Todos },
-                    text = { Text("Việc của tôi") },
-                )
-            }
+            IconTabBar(
+                items = listOf(
+                    IconTabItem("Công việc", Icons.Outlined.TaskAlt),
+                    IconTabItem("Việc của tôi", Icons.Outlined.Checklist),
+                ),
+                selectedIndex = tab.ordinal,
+                onSelect = { index -> selected = WorkHubTab.entries[index] },
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            )
         }
     }
     CompositionLocalProvider(LocalScreenTabs provides tabs) {

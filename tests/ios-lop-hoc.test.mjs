@@ -87,8 +87,12 @@ test('entitlements, Face ID usage text, version and changelog', () => {
     assert.match(plist, /webcredentials:lvt\.vscgroup\.io\.vn/);
   }
   assert.match(infoPlist, /NSFaceIDUsageDescription/);
-  assert.equal(pbx.match(/MARKETING_VERSION = 3\.1\.0;/g)?.length, 2);
-  assert.equal(pbx.match(/CURRENT_PROJECT_VERSION = 39;/g)?.length, 2);
+  // Lớp học / Face ID / passkey shipped in 3.1.0 (39); later builds must stay at or above it.
+  const versions = [...pbx.matchAll(/MARKETING_VERSION = (\d+)\.(\d+)\.(\d+);/g)].map((m) => m.slice(1).map(Number));
+  assert.equal(versions.length, 2);
+  for (const [major, minor] of versions) assert.ok(major > 3 || (major === 3 && minor >= 1));
+  const builds = [...pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map((m) => Number(m[1]));
+  assert.ok(builds.length === 2 && builds.every((build) => build >= 39));
   for (const file of [
     'Teaching.swift',
     'QuickSignIn.swift',
@@ -100,8 +104,7 @@ test('entitlements, Face ID usage text, version and changelog', () => {
   ]) {
     assert.equal(pbx.match(new RegExp(`/\\* ${file.replace('.', '\\.')} in Sources \\*/`, 'g'))?.length, 2, file);
   }
-  const first = changelog.indexOf('version: "');
-  assert.equal(changelog.slice(first, first + 16), 'version: "3.1.0"');
+  assert.match(changelog, /version: "3\.1\.0"/);
   assert.match(changelog, /Face ID \/ Touch ID/);
   assert.match(changelog, /passkey/);
 });

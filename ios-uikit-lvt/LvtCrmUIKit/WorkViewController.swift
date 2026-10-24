@@ -1816,7 +1816,7 @@ extension WorkViewController: UIImagePickerControllerDelegate, UINavigationContr
 
 private final class WorkTabsHeaderView: UIView {
     private let titleLabel = UILabel()
-    private let control = UISegmentedControl(items: WorkListTab.allCases.map(\.title))
+    private let control = IconTabBar(items: WorkListTab.allCases.map { IconTabBar.Item(title: $0.title, systemImage: $0.systemImage) })
     private var onChange: ((WorkListTab) -> Void)?
 
     override init(frame: CGRect) {
@@ -1825,14 +1825,11 @@ private final class WorkTabsHeaderView: UIView {
         titleLabel.font = .preferredFont(forTextStyle: .title3)
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.textColor = UIColor(red: 20 / 255, green: 53 / 255, blue: 95 / 255, alpha: 1)
+        control.accessibilityLabel = "Danh sách công việc"
         control.addAction(UIAction { [weak self] _ in
             guard let self else { return }
-            self.onChange?(WorkListTab(rawValue: self.control.selectedSegmentIndex) ?? .todo)
+            self.onChange?(WorkListTab(rawValue: self.control.selectedIndex) ?? .todo)
         }, for: .valueChanged)
-        let tabFont = UIFont.systemFont(ofSize: 10, weight: .semibold)
-        let tabFontSelected = UIFont.systemFont(ofSize: 10, weight: .bold)
-        control.setTitleTextAttributes([.font: tabFont], for: .normal)
-        control.setTitleTextAttributes([.font: tabFontSelected], for: .selected)
         let stack = UIStackView(arrangedSubviews: [titleLabel, control])
         stack.axis = .vertical
         stack.spacing = 8
@@ -1849,16 +1846,13 @@ private final class WorkTabsHeaderView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// Counts sit on each tab's icon (badge) instead of inside the title (was 10 pt text).
     func configure(title: String, tab: WorkListTab, counts: [WorkListTab: Int], onChange: @escaping (WorkListTab) -> Void) {
         titleLabel.text = title
-        control.selectedSegmentIndex = tab.rawValue
+        control.selectedIndex = tab.rawValue
         self.onChange = onChange
         for (index, item) in WorkListTab.allCases.enumerated() {
-            let count = counts[item] ?? 0
-            let badge = count > 99 ? "99+" : "\(count)"
-            let label = count > 0 ? "\(item.title) \(badge)" : item.title
-            control.setTitle(label, forSegmentAt: index)
-            control.setEnabled(true, forSegmentAt: index)
+            control.setBadge(counts[item] ?? 0, at: index)
         }
     }
 }

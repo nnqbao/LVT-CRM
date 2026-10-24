@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -22,9 +24,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import lvt.crm.data.teaching.ClassLessonLog
 import lvt.crm.ui.components.GuideAnchors
+import lvt.crm.ui.components.IconTabBar
+import lvt.crm.ui.components.IconTabItem
 import lvt.crm.ui.components.LocalScreenTabs
 import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.components.StatePanel
@@ -32,12 +37,12 @@ import lvt.crm.ui.homeroom.HomeroomScreen
 import lvt.crm.ui.homeroom.HomeroomViewModel
 
 /** The five sections of Lớp học (docs/native-teaching-auth-contract.md §1). */
-enum class ClassesSection(val label: String) {
-    Overview("Tổng quan"),
-    Homeroom("Lớp chủ nhiệm"),
-    Teaching("Lớp giảng dạy"),
-    Schedule("Lịch dạy"),
-    Gradebook("Học bạ"),
+enum class ClassesSection(val label: String, val icon: ImageVector) {
+    Overview("Tổng quan", Icons.Outlined.Home),
+    Homeroom("Chủ nhiệm", Icons.Outlined.Groups),
+    Teaching("Giảng dạy", Icons.Outlined.EditNote),
+    Schedule("Lịch dạy", Icons.Outlined.CalendarMonth),
+    Gradebook("Học bạ", Icons.Outlined.School),
 }
 
 /** Loads Sổ đầu bài of a class (`lessonLogs:listForClass`) for the class detail tab. */
@@ -69,18 +74,15 @@ fun ClassesHubScreen(
     }
 
     val tabs: @Composable () -> Unit = {
-        ScrollableTabRow(selectedTabIndex = section.ordinal, edgePadding = 8.dp) {
-            ClassesSection.entries.forEach { option ->
-                Tab(
-                    selected = section == option,
-                    onClick = {
-                        section = option
-                        teachingViewModel.clearMessage()
-                    },
-                    text = { Text(option.label) },
-                )
-            }
-        }
+        IconTabBar(
+            items = ClassesSection.entries.map { IconTabItem(it.label, it.icon) },
+            selectedIndex = section.ordinal,
+            onSelect = { index ->
+                section = ClassesSection.entries[index]
+                teachingViewModel.clearMessage()
+            },
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
     }
 
     CompositionLocalProvider(LocalScreenTabs provides tabs) {

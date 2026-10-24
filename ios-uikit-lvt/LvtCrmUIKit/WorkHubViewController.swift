@@ -8,7 +8,10 @@ final class WorkHubViewController: UIViewController {
 
     let workViewController: WorkViewController
     let todosViewController: PersonalTodosViewController
-    private let control = UISegmentedControl(items: ["Công việc", "Việc của tôi"])
+    private let control = IconTabBar(items: [
+        IconTabBar.Item(title: "Công việc", systemImage: "checkmark.seal"),
+        IconTabBar.Item(title: "Việc của tôi", systemImage: "checklist"),
+    ])
     private let container = UIView()
     private(set) var pane: Pane = .work
 
@@ -26,10 +29,10 @@ final class WorkHubViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .always
-        control.selectedSegmentIndex = pane.rawValue
+        control.selectedIndex = pane.rawValue
         control.accessibilityLabel = "Chọn danh sách"
         control.addAction(UIAction { [weak self] _ in
-            guard let self, let pane = Pane(rawValue: control.selectedSegmentIndex) else { return }
+            guard let self, let pane = Pane(rawValue: control.selectedIndex) else { return }
             show(pane)
         }, for: .valueChanged)
         control.translatesAutoresizingMaskIntoConstraints = false
@@ -54,7 +57,7 @@ final class WorkHubViewController: UIViewController {
     /// Switch to a pane (also used by notification routing).
     func show(_ next: Pane) {
         loadViewIfNeeded()
-        control.selectedSegmentIndex = next.rawValue
+        control.selectedIndex = next.rawValue
         guard next != pane || children.isEmpty else { syncBarItems(); return }
         pane = next
         embed(next)

@@ -8,6 +8,13 @@ struct AppChangelogEntry: Equatable {
 enum AppChangelog {
     static let entries: [AppChangelogEntry] = [
         AppChangelogEntry(
+            version: "3.1.1",
+            highlights: [
+                "Thanh tab có biểu tượng kèm chữ ở Lớp học, Trao đổi, Lịch công tác và Công việc; các ô chia đều nên không còn tab bị che hay phải vuốt ngang.",
+                "Số việc của từng tab Công việc hiện thành chấm số trên biểu tượng.",
+            ]
+        ),
+        AppChangelogEntry(
             version: "3.1.0",
             highlights: [
                 "Menu Lớp chủ nhiệm đổi tên thành Lớp học, gồm Tổng quan, Chủ nhiệm, Giảng dạy, Lịch dạy và Học bạ. Tổng quan hiện tiết dạy hôm nay (Đã ghi sổ / Chưa ghi sổ) và học sinh vắng của lớp chủ nhiệm.",

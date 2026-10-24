@@ -10,7 +10,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -45,7 +44,10 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PendingActions
 import androidx.compose.material.icons.outlined.Search
@@ -79,11 +81,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -98,6 +98,8 @@ import lvt.crm.ui.chat.ChatDialog
 import lvt.crm.data.work.WorkCompletionReviewItem
 import lvt.crm.data.work.WorkDocumentAssignment
 import lvt.crm.data.work.needsCompletion
+import lvt.crm.ui.components.IconTabBar
+import lvt.crm.ui.components.IconTabItem
 import lvt.crm.ui.components.ListSearchBar
 import lvt.crm.ui.components.ListSearchState
 import lvt.crm.ui.components.LvtScreen
@@ -1128,50 +1130,21 @@ private fun WorkListSectionHeader(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge)
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            WorkListTab.entries.forEach { value ->
-                val count = counts[value] ?: 0
-                FilterChip(
-                    selected = tab == value,
-                    onClick = { onTab(value) },
-                    label = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(value.title)
-                            if (count > 0) {
-                                WorkIncompleteBadge(count)
-                            }
-                        }
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun WorkIncompleteBadge(count: Int) {
-    Box(
-        modifier = Modifier
-            .sizeIn(minWidth = 20.dp, minHeight = 20.dp)
-            .background(Color(0xFFE36D55), CircleShape)
-            .padding(horizontal = 5.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            if (count > 99) "99+" else count.toString(),
-            color = Color.White,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Black,
-            lineHeight = 9.sp,
+        IconTabBar(
+            items = WorkListTab.entries.map { IconTabItem(it.title, it.icon, counts[it] ?: 0) },
+            selectedIndex = tab.ordinal,
+            onSelect = { index -> onTab(WorkListTab.entries[index]) },
         )
     }
 }
+
+private val WorkListTab.icon: ImageVector
+    get() = when (this) {
+        WorkListTab.Todo -> Icons.Outlined.Inbox
+        WorkListTab.PendingReview -> Icons.Outlined.HourglassTop
+        WorkListTab.Overdue -> Icons.Outlined.ErrorOutline
+        WorkListTab.Completed -> Icons.Outlined.CheckCircle
+    }
 
 @Composable
 private fun WorkListEmpty(

@@ -7,7 +7,7 @@ import UIKit
 
 /// Lớp học (menu `homeroom`): Tổng quan · Chủ nhiệm · Giảng dạy · Lịch dạy · Học bạ (web HomeroomRouter).
 /// "Chủ nhiệm" hosts the existing homeroom screen with its own year/day pickers; the other sections share the
-/// school-year menu below the segmented control. Settings (giáo viên, lịch dạy, môn học, loại kiểm tra) stay web-only.
+/// school-year menu below the icon tab bar. Settings (giáo viên, lịch dạy, môn học, loại kiểm tra) stay web-only.
 @MainActor
 final class ClassesHubViewController: UIViewController {
     enum Section: Int, CaseIterable {
@@ -23,13 +23,22 @@ final class ClassesHubViewController: UIViewController {
             }
         }
 
+        var systemImage: String {
+            switch self {
+            case .overview: return "house"
+            case .homeroom: return "person.3"
+            case .teaching: return "pencil.and.list.clipboard"
+            case .schedule: return "calendar"
+            case .gradebook: return "graduationcap"
+            }
+        }
+
     }
 
     private let session: UserSession
     private let homeroomRepository: HomeroomRepository
     private let teachingRepository: TeachingRepository
-    private let segmented = UISegmentedControl(items: Section.allCases.map(\.title))
-    private let segmentScroll = UIScrollView()
+    private let segmented = IconTabBar(items: Section.allCases.map { IconTabBar.Item(title: $0.title, systemImage: $0.systemImage) })
     private let yearButton = UIButton(type: .system)
     private let yearStatus = UILabel()
     private let header = UIStackView()
@@ -60,18 +69,9 @@ final class ClassesHubViewController: UIViewController {
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .never
 
-        segmented.selectedSegmentIndex = current.rawValue
-        segmented.apportionsSegmentWidthsByContent = true
+        segmented.selectedIndex = current.rawValue
         segmented.addTarget(self, action: #selector(sectionChanged), for: .valueChanged)
         segmented.accessibilityLabel = "Mục Lớp học"
-        applySegmentFont()
-        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (self: Self, _: UITraitCollection) in
-            self.applySegmentFont()
-        }
-        segmentScroll.showsHorizontalScrollIndicator = false
-        segmentScroll.translatesAutoresizingMaskIntoConstraints = false
-        segmented.translatesAutoresizingMaskIntoConstraints = false
-        segmentScroll.addSubview(segmented)
 
         yearButton.showsMenuAsPrimaryAction = true
         yearButton.contentHorizontalAlignment = .leading
@@ -89,7 +89,7 @@ final class ClassesHubViewController: UIViewController {
         header.spacing = 4
         header.isLayoutMarginsRelativeArrangement = true
         header.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16)
-        header.addArrangedSubview(segmentScroll)
+        header.addArrangedSubview(segmented)
         header.addArrangedSubview(yearButton)
         header.addArrangedSubview(yearStatus)
         header.translatesAutoresizingMaskIntoConstraints = false
@@ -100,13 +100,6 @@ final class ClassesHubViewController: UIViewController {
             header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             header.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             header.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            segmented.topAnchor.constraint(equalTo: segmentScroll.contentLayoutGuide.topAnchor),
-            segmented.bottomAnchor.constraint(equalTo: segmentScroll.contentLayoutGuide.bottomAnchor),
-            segmented.leadingAnchor.constraint(equalTo: segmentScroll.contentLayoutGuide.leadingAnchor),
-            segmented.trailingAnchor.constraint(equalTo: segmentScroll.contentLayoutGuide.trailingAnchor),
-            segmented.widthAnchor.constraint(greaterThanOrEqualTo: segmentScroll.frameLayoutGuide.widthAnchor),
-            segmented.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
-            segmentScroll.heightAnchor.constraint(equalTo: segmented.heightAnchor),
             container.topAnchor.constraint(equalTo: header.bottomAnchor),
             container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -123,14 +116,8 @@ final class ClassesHubViewController: UIViewController {
         if years.isEmpty, yearTask == nil { loadYears() }
     }
 
-    private func applySegmentFont() {
-        let font = UIFont.preferredFont(forTextStyle: .subheadline)
-        segmented.setTitleTextAttributes([.font: font], for: .normal)
-        segmented.setTitleTextAttributes([.font: UIFont.preferredFont(forTextStyle: .headline)], for: .selected)
-    }
-
     @objc private func sectionChanged() {
-        guard let section = Section(rawValue: segmented.selectedSegmentIndex) else { return }
+        guard let section = Section(rawValue: segmented.selectedIndex) else { return }
         show(section)
     }
 
@@ -158,7 +145,7 @@ final class ClassesHubViewController: UIViewController {
     }
 
     func select(_ section: Section) {
-        segmented.selectedSegmentIndex = section.rawValue
+        segmented.selectedIndex = section.rawValue
         show(section)
     }
 

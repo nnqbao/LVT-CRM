@@ -8,6 +8,12 @@ data class AppChangelogEntry(
 object AppChangelog {
     val entries: List<AppChangelogEntry> = listOf(
         AppChangelogEntry(
+            "2.1.1",
+            listOf(
+                "Thanh tab có biểu tượng kèm chữ ở Lớp học, Trao đổi, Lịch công tác, Công việc; không còn tab bị che.",
+            ),
+        ),
+        AppChangelogEntry(
             "2.1.0",
             listOf(
                 "Menu Lớp chủ nhiệm đổi thành Lớp học, gồm Tổng quan, Lớp chủ nhiệm, Lớp giảng dạy, Lịch dạy và Học bạ.",
