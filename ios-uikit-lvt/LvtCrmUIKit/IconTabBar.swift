@@ -3,6 +3,8 @@ import UIKit
 /// In-screen section switcher: N equal-width items, SF Symbol on top + short label below
 /// (owner-approved style "E", 2026-10-24). Replaces UISegmentedControl where the labels did not
 /// fit: widths never depend on the words, so no item is pushed off screen. Sends `.valueChanged`.
+/// Items are plain Auto Layout views (not UIButton configurations) so a label that wraps onto
+/// two or three lines at large Dynamic Type sizes always makes the bar taller instead of clipping.
 final class IconTabBar: UIControl {
     struct Item {
         let title: String
@@ -11,8 +13,7 @@ final class IconTabBar: UIControl {
 
     private(set) var items: [Item]
     private let stack = UIStackView()
-    private var buttons: [UIButton] = []
-    private var badgeLabels: [UILabel] = []
+    private var itemViews: [IconTabItemView] = []
     private var badges: [Int]
 
     var selectedIndex: Int {
@@ -31,6 +32,7 @@ final class IconTabBar: UIControl {
         layer.cornerCurve = .continuous
         stack.axis = .horizontal
         stack.distribution = .fillEqually
+        stack.alignment = .fill
         stack.spacing = 2
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
@@ -41,31 +43,11 @@ final class IconTabBar: UIControl {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -3),
             heightAnchor.constraint(greaterThanOrEqualToConstant: 56),
         ])
-        for (index, _) in items.enumerated() {
-            let button = UIButton(configuration: .plain())
-            button.tag = index
-            button.addAction(UIAction { [weak self] _ in self?.tap(index) }, for: .touchUpInside)
-            button.configurationUpdateHandler = { [weak self] button in self?.style(button) }
-            let badge = UILabel()
-            badge.font = .monospacedDigitSystemFont(ofSize: 11, weight: .bold)
-            badge.textColor = .white
-            badge.backgroundColor = .systemRed
-            badge.textAlignment = .center
-            badge.layer.cornerRadius = 8
-            badge.layer.masksToBounds = true
-            badge.isHidden = true
-            badge.isAccessibilityElement = false
-            badge.translatesAutoresizingMaskIntoConstraints = false
-            button.addSubview(badge)
-            NSLayoutConstraint.activate([
-                badge.heightAnchor.constraint(equalToConstant: 16),
-                badge.widthAnchor.constraint(greaterThanOrEqualToConstant: 16),
-                badge.topAnchor.constraint(equalTo: button.topAnchor, constant: 3),
-                badge.leadingAnchor.constraint(equalTo: button.centerXAnchor, constant: 6),
-            ])
-            buttons.append(button)
-            badgeLabels.append(badge)
-            stack.addArrangedSubview(button)
+        for (index, item) in items.enumerated() {
+            let view = IconTabItemView(item: item)
+            view.addAction(UIAction { [weak self] _ in self?.tap(index) }, for: .touchUpInside)
+            itemViews.append(view)
+            stack.addArrangedSubview(view)
         }
         isAccessibilityElement = false
         accessibilityTraits = .tabBar
@@ -97,43 +79,93 @@ final class IconTabBar: UIControl {
     }
 
     private func refresh() {
-        for (index, button) in buttons.enumerated() {
-            let count = badges[index]
-            badgeLabels[index].isHidden = count == 0
-            badgeLabels[index].text = count == 0 ? nil : " \(Self.badgeText(count)) "
-            button.isSelected = index == selectedIndex
-            button.accessibilityLabel = count > 0 ? "\(items[index].title), \(Self.badgeText(count))" : items[index].title
-            button.accessibilityTraits = index == selectedIndex ? [.button, .selected] : .button
-            button.setNeedsUpdateConfiguration()
+        for (index, view) in itemViews.enumerated() {
+            view.apply(selected: index == selectedIndex, badge: badges[index])
         }
     }
+}
 
-    private func style(_ button: UIButton) {
-        let index = button.tag
-        guard items.indices.contains(index) else { return }
-        let selected = index == selectedIndex
-        var config = UIButton.Configuration.plain()
+/// One tab: rounded highlight, icon, wrapping label, optional badge on the icon.
+private final class IconTabItemView: UIControl {
+    private let item: IconTabBar.Item
+    private let highlight = UIView()
+    private let imageView = UIImageView()
+    private let label = UILabel()
+    private let badge = UILabel()
+
+    init(item: IconTabBar.Item) {
+        self.item = item
+        super.init(frame: .zero)
+        highlight.isUserInteractionEnabled = false
+        highlight.layer.cornerRadius = 19
+        highlight.layer.cornerCurve = .continuous
+        highlight.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(highlight)
+
+        imageView.contentMode = .scaleAspectFit
+        imageView.setContentHuggingPriority(.required, for: .vertical)
+        imageView.setContentCompressionResistancePriority(.required, for: .vertical)
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.lineBreakMode = .byWordWrapping
+        label.setContentCompressionResistancePriority(.required, for: .vertical)
+
+        let column = UIStackView(arrangedSubviews: [imageView, label])
+        column.axis = .vertical
+        column.alignment = .center
+        column.spacing = 3
+        column.isUserInteractionEnabled = false
+        column.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(column)
+
+        badge.font = .monospacedDigitSystemFont(ofSize: 11, weight: .bold)
+        badge.textColor = .white
+        badge.backgroundColor = .systemRed
+        badge.textAlignment = .center
+        badge.layer.cornerRadius = 8
+        badge.layer.masksToBounds = true
+        badge.isHidden = true
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(badge)
+
+        NSLayoutConstraint.activate([
+            highlight.topAnchor.constraint(equalTo: topAnchor),
+            highlight.bottomAnchor.constraint(equalTo: bottomAnchor),
+            highlight.leadingAnchor.constraint(equalTo: leadingAnchor),
+            highlight.trailingAnchor.constraint(equalTo: trailingAnchor),
+            column.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            column.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+            column.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            column.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+            label.widthAnchor.constraint(lessThanOrEqualTo: column.widthAnchor),
+            badge.heightAnchor.constraint(equalToConstant: 16),
+            badge.widthAnchor.constraint(greaterThanOrEqualToConstant: 16),
+            badge.topAnchor.constraint(equalTo: topAnchor, constant: 3),
+            badge.leadingAnchor.constraint(equalTo: centerXAnchor, constant: 6),
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 50),
+        ])
+        isAccessibilityElement = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func apply(selected: Bool, badge count: Int) {
         // Icon and label grow with Dynamic Type but are capped so five items still fit one row.
-        config.image = UIImage(
-            systemName: items[index].systemImage,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: min(UIFont.preferredFont(forTextStyle: .body).pointSize, 22))
-        )
-        config.imagePlacement = .top
-        config.imagePadding = 3
-        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 2, bottom: 6, trailing: 2)
-        config.titleAlignment = .center
-        // Wrap by word onto a second line ("Đã duyệt / hoàn thành") instead of an ellipsis.
-        config.titleLineBreakMode = .byWordWrapping
-        let font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
+        let iconSize = min(UIFont.preferredFont(forTextStyle: .body).pointSize, 22)
+        imageView.image = UIImage(systemName: item.systemImage, withConfiguration: UIImage.SymbolConfiguration(pointSize: iconSize))
+        label.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
             for: .systemFont(ofSize: 12, weight: selected ? .semibold : .regular),
             maximumPointSize: 15
         )
-        config.attributedTitle = AttributedString(items[index].title, attributes: AttributeContainer([.font: font]))
-        config.baseForegroundColor = selected ? .label : .secondaryLabel
-        config.background.backgroundColor = selected ? .systemBackground : .clear
-        config.background.cornerRadius = 19
-        button.configuration = config
-        button.titleLabel?.numberOfLines = 2
-        button.titleLabel?.textAlignment = .center
+        label.text = item.title
+        let color: UIColor = selected ? .label : .secondaryLabel
+        label.textColor = color
+        imageView.tintColor = color
+        highlight.backgroundColor = selected ? .systemBackground : .clear
+        badge.isHidden = count == 0
+        badge.text = count == 0 ? nil : " \(IconTabBar.badgeText(count)) "
+        accessibilityLabel = count > 0 ? "\(item.title), \(IconTabBar.badgeText(count))" : item.title
+        accessibilityTraits = selected ? [.button, .selected] : .button
     }
 }

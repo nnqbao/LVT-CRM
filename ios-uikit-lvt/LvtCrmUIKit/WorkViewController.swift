@@ -132,9 +132,14 @@ final class WorkViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        // Self-sizing (was a fixed 96 pt): the icon tab bar grows with Dynamic Type and two-line labels.
+        UITableView.automaticDimension
+    }
+
+    override func tableView(_ tableView: UITableView, estimatedHeightForHeaderInSection section: Int) -> CGFloat {
         switch sectionKinds[section] {
-        case .tasks, .approvals: return 96
-        default: return UITableView.automaticDimension
+        case .tasks, .approvals: return 132
+        default: return 28
         }
     }
 
