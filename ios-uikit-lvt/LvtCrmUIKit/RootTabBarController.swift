@@ -10,6 +10,12 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private let workRepository: WorkRepository
     private let chatRepository: ChatRepository
     private let avatarRepository: AvatarRepository
+    private let homeroomRepository: HomeroomRepository
+    private let attendanceRepository: SupervisorAttendanceRepository
+    private let personalTodoRepository: PersonalTodoRepository
+    private let boardingRepository: BoardingRepository
+    private let teachingRepository: TeachingRepository
+    private let quickSignIn: QuickSignInService
     private let notificationsViewModel: NotificationsViewModel
     private var tabControllers: [AppTab: UINavigationController] = [:]
     private var headerClusters: [AccountHeaderClusterView] = []
@@ -17,6 +23,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private var profileViewController: ProfileViewController?
     private weak var dutiesHubViewController: DutiesHubViewController?
     private weak var workViewController: WorkViewController?
+    private weak var workHubViewController: WorkHubViewController?
+    private weak var personalTodosViewController: PersonalTodosViewController?
     private weak var chatHubViewController: ChatHubViewController?
     private var unreadTask: Task<Void, Never>?
     private var pushObserver: NSObjectProtocol?
@@ -31,7 +39,13 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         dutiesRepository: DutiesRepository,
         workRepository: WorkRepository,
         chatRepository: ChatRepository,
-        avatarRepository: AvatarRepository
+        avatarRepository: AvatarRepository,
+        homeroomRepository: HomeroomRepository,
+        attendanceRepository: SupervisorAttendanceRepository,
+        personalTodoRepository: PersonalTodoRepository,
+        boardingRepository: BoardingRepository,
+        teachingRepository: TeachingRepository,
+        quickSignIn: QuickSignInService
     ) {
         self.session = session
         self.authRepository = authRepository
@@ -41,6 +55,12 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         self.workRepository = workRepository
         self.chatRepository = chatRepository
         self.avatarRepository = avatarRepository
+        self.homeroomRepository = homeroomRepository
+        self.attendanceRepository = attendanceRepository
+        self.personalTodoRepository = personalTodoRepository
+        self.boardingRepository = boardingRepository
+        self.teachingRepository = teachingRepository
+        self.quickSignIn = quickSignIn
         self.notificationsViewModel = NotificationsViewModel(repository: notificationsRepository)
         super.init(nibName: nil, bundle: nil)
     }
@@ -76,7 +96,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             session: session,
             authRepository: authRepository,
             sessionsRepository: sessionsRepository,
-            avatarRepository: avatarRepository
+            avatarRepository: avatarRepository,
+            quickSignIn: quickSignIn
         )
         self.notificationsViewController = notificationsViewController
         self.profileViewController = profileViewController
@@ -84,9 +105,19 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             dutiesRepository: dutiesRepository,
             workRepository: workRepository,
             onOpenDuties: { [weak self] tab in self?.openDuties(tab: tab) },
-            onOpenWork: { [weak self] filter in self?.openWork(filter: filter) }
+            onOpenWork: { [weak self] filter in self?.openWork(filter: filter) },
+            // Báo cáo › Bán trú (web): Bán trú menu not hidden, or admin/mod. No extra tab, so the bar stays ≤ 5.
+            boardingEntry: Boarding.canSeeParticipants(session)
+                ? (Boarding.canManagePeriods(session)
+                    ? "Danh sách giáo viên tham gia và Kỳ bán trú"
+                    : "Danh sách giáo viên tham gia bán trú")
+                : nil,
+            onOpenBoarding: { [weak self] in self?.openBoarding() }
         )
         overviewViewController.navigationItem.rightBarButtonItem = makeAccountHeaderItem()
+        overviewViewController.installHelpButton(.overview)
+        notificationsViewController.installHelpButton(.notifications)
+        profileViewController.installHelpButton(.profile)
         let overview = navigationController(
             title: "Tổng quan",
             systemImage: "rectangle.grid.2x2",
@@ -99,22 +130,38 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         )
         dutiesHubViewController.navigationItem.rightBarButtonItem = makeAccountHeaderItem()
         dutiesHubViewController.dutiesListController.trailingAccessoryBarButtonItems = [makeAccountHeaderItem()]
+        dutiesHubViewController.installHelpButton(.duties)
+        dutiesHubViewController.dutiesListController.installHelpButton(.duties)
         let duties = navigationController(
             title: "Lịch CT",
             systemImage: "briefcase",
             viewController: dutiesHubViewController
         )
-        let repository = workRepository
-        let workViewController = WorkViewController(
-            viewModel: WorkViewModel(repository: repository),
-            chatRepository: chatRepository,
-            downloadDocument: { document in try await repository.downloadDocument(document) }
-        )
-        workViewController.trailingAccessoryBarButtonItems = [makeAccountHeaderItem()]
+        // "Việc của tôi" is open to every active account; work documents only when the work menu is visible.
+        let todosViewController = PersonalTodosViewController(repository: personalTodoRepository)
+        todosViewController.trailingAccessoryBarButtonItems = [makeAccountHeaderItem()]
+        let workRoot: UIViewController
+        if session.isWorkMenuHidden {
+            workRoot = todosViewController
+        } else {
+            let repository = workRepository
+            let workViewController = WorkViewController(
+                viewModel: WorkViewModel(repository: repository),
+                chatRepository: chatRepository,
+                downloadDocument: { document in try await repository.downloadDocument(document) }
+            )
+            workViewController.trailingAccessoryBarButtonItems = [makeAccountHeaderItem()]
+            let hub = WorkHubViewController(work: workViewController, todos: todosViewController)
+            self.workViewController = workViewController
+            self.workHubViewController = hub
+            workRoot = hub
+        }
+        self.personalTodosViewController = todosViewController
+        workRoot.installHelpButton(.work)
         let work = navigationController(
             title: "Công việc",
             systemImage: "checkmark.seal",
-            viewController: workViewController
+            viewController: workRoot
         )
         let chatHubViewController = ChatHubViewController(
             repository: chatRepository,
@@ -128,6 +175,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             viewController: chatHubViewController
         )
         chatHubViewController.installAccountHeader(makeAccountHeaderItem())
+        chatHubViewController.installHelpButton(.chat)
         tabControllers = [
             .overview: overview,
             .chat: chat,
@@ -135,9 +183,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             .work: work,
         ]
         self.dutiesHubViewController = dutiesHubViewController
-        self.workViewController = workViewController
         self.chatHubViewController = chatHubViewController
-        viewControllers = [overview, chat, duties, work]
+        viewControllers = [overview] + makeStudentTabs() + [chat, duties, work]
         startUnreadPolling()
         pushObserver = NotificationCenter.default.addObserver(
             forName: .pushReceived,
@@ -159,6 +206,30 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         Task { await reloadAvatar() }
     }
 
+    /// Lớp học (menu `homeroom`: Tổng quan, Lớp chủ nhiệm, Lớp giảng dạy, Lịch dạy, Học bạ — GVCN / view / admin-mod)
+    /// and Điểm danh (Giám thị = menu `attendance` supervisor, or admin/mod). Giám thị no longer gets Lớp học.
+    /// Both together share one "Học sinh" tab (max 5 tabs).
+    private func makeStudentTabs() -> [UINavigationController] {
+        let homeroom = session.canSeeHomeroom
+            ? ClassesHubViewController(session: session, homeroomRepository: homeroomRepository, teachingRepository: teachingRepository)
+            : nil
+        let attendance = session.canSeeAttendance ? AttendanceViewController(repository: attendanceRepository, session: session) : nil
+        homeroom?.installHelpButton(.homeroom)
+        attendance?.installHelpButton(.attendance)
+        switch (homeroom, attendance) {
+        case let (homeroom?, attendance?):
+            let hub = StudentsHubViewController(homeroom: homeroom, attendance: attendance)
+            hub.installHelpButton(.homeroom)
+            return [navigationController(title: "Học sinh", systemImage: "graduationcap", viewController: hub)]
+        case let (homeroom?, nil):
+            return [navigationController(title: "Lớp học", systemImage: "person.3", viewController: homeroom)]
+        case let (nil, attendance?):
+            return [navigationController(title: "Điểm danh", systemImage: "checklist", viewController: attendance)]
+        case (nil, nil):
+            return []
+        }
+    }
+
     private func selectTab(_ tab: AppTab) {
         selectedViewController = tabControllers[tab]
     }
@@ -175,7 +246,23 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private func openWork(filter: WorkDashboardFilter?) {
         selectTab(.work)
         tabControllers[.work]?.popToRootViewController(animated: false)
+        workHubViewController?.show(.work)
         workViewController?.applyDashboardFilter(filter)
+    }
+
+    private func openBoarding() {
+        guard Boarding.canSeeParticipants(session), let navigationController = tabControllers[.overview] else { return }
+        selectTab(.overview)
+        detachAuxiliary(from: navigationController)
+        if let existing = navigationController.viewControllers.first(where: { $0 is BoardingViewController }) {
+            navigationController.popToViewController(existing, animated: !UIAccessibility.isReduceMotionEnabled)
+            return
+        }
+        let controller = BoardingViewController(
+            repository: boardingRepository,
+            canManage: Boarding.canManagePeriods(session)
+        )
+        navigationController.pushViewController(controller, animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
     private func openDutyFromChat(_ dutyId: String) {
@@ -190,6 +277,7 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     private func openWorkFromChat(_ documentId: String) {
         selectTab(.work)
         tabControllers[.work]?.popToRootViewController(animated: false)
+        workHubViewController?.show(.work)
         workViewController?.focus(itemId: documentId, openChat: false)
     }
 
@@ -229,6 +317,8 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
         if destination.opensChat {
             navigationController.popToRootViewController(animated: false)
             chatHubViewController?.openThread(kind: destination.chatKind, entityId: destination.sourceId)
+        } else if tab == .duties, DutyWeekPresentation.isWeekNotification(destination.sourceType) {
+            dutiesHubViewController?.openShared(weekStart: destination.sourceId, animated: false)
         } else if tab == .duties {
             dutiesHubViewController?.openPersonal(animated: false)
             dutiesHubViewController?.dutiesListController.focus(
@@ -237,7 +327,11 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
             )
         } else {
             navigationController.popToRootViewController(animated: false)
-            if tab == .work {
+            if tab == .work, destination.opensTodos {
+                workHubViewController?.show(.todos)
+                personalTodosViewController?.focus(todoId: destination.sourceId)
+            } else if tab == .work {
+                workHubViewController?.show(.work)
                 workViewController?.focus(itemId: destination.sourceId, openChat: destination.opensChat)
             }
         }
@@ -339,6 +433,9 @@ private final class DashboardViewController: UIViewController {
     private let workRepository: WorkRepository
     private let onOpenDuties: (DutyListTab) -> Void
     private let onOpenWork: (WorkDashboardFilter?) -> Void
+    private let boardingEntry: String?
+    private let onOpenBoarding: () -> Void
+    private let boardingButton = UIButton(type: .system)
     private let dutiesCard = DashboardCard(
         title: "Công tác",
         subtitle: "Lịch điều phối",
@@ -362,12 +459,16 @@ private final class DashboardViewController: UIViewController {
         dutiesRepository: DutiesRepository,
         workRepository: WorkRepository,
         onOpenDuties: @escaping (DutyListTab) -> Void,
-        onOpenWork: @escaping (WorkDashboardFilter?) -> Void
+        onOpenWork: @escaping (WorkDashboardFilter?) -> Void,
+        boardingEntry: String?,
+        onOpenBoarding: @escaping () -> Void
     ) {
         self.dutiesRepository = dutiesRepository
         self.workRepository = workRepository
         self.onOpenDuties = onOpenDuties
         self.onOpenWork = onOpenWork
+        self.boardingEntry = boardingEntry
+        self.onOpenBoarding = onOpenBoarding
         super.init(nibName: nil, bundle: nil)
         title = "Tổng quan"
     }
@@ -473,7 +574,38 @@ private final class DashboardViewController: UIViewController {
         stack.setCustomSpacing(28, after: headerRow)
         stack.addArrangedSubview(dutiesCard)
         stack.addArrangedSubview(workCard)
-        stack.setCustomSpacing(24, after: workCard)
+        if let boardingEntry {
+            var configuration = UIButton.Configuration.filled()
+            configuration.cornerStyle = .large
+            configuration.baseBackgroundColor = DashboardPalette.dutiesAccent.withAlphaComponent(0.14)
+            configuration.baseForegroundColor = DashboardPalette.dutiesAccent
+            configuration.image = UIImage(systemName: "fork.knife")
+            configuration.imagePadding = 12
+            configuration.imagePlacement = .leading
+            configuration.title = "Báo cáo › Bán trú"
+            configuration.subtitle = boardingEntry
+            configuration.titleAlignment = .leading
+            configuration.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18)
+            configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = .preferredFont(forTextStyle: .headline)
+                return outgoing
+            }
+            configuration.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = .preferredFont(forTextStyle: .footnote)
+                return outgoing
+            }
+            boardingButton.configuration = configuration
+            boardingButton.contentHorizontalAlignment = .leading
+            boardingButton.accessibilityLabel = "Bán trú"
+            boardingButton.accessibilityHint = "Mở \(boardingEntry.lowercased())"
+            boardingButton.addAction(UIAction { [weak self] _ in self?.onOpenBoarding() }, for: .touchUpInside)
+            stack.addArrangedSubview(boardingButton)
+            stack.setCustomSpacing(24, after: boardingButton)
+        } else {
+            stack.setCustomSpacing(24, after: workCard)
+        }
         stack.addArrangedSubview(synchronizationView)
         scrollView.addSubview(stack)
         view.addSubview(scrollView)
@@ -569,10 +701,12 @@ private final class DashboardViewController: UIViewController {
                     secondaryTitle: "Đang diễn ra",
                     secondaryValue: String(dutiesSnapshot.duties.filter(\.isOngoing).count)
                 )
+                // Web badge: work waiting for my approval (Ban giám hiệu) + completions waiting for my review.
                 let pendingApproval = workSnapshot.completionReviews.count
+                    + workSnapshot.approvalQueue.filter(\.awaitingMyDecision).count
                 let pendingExecution = workSnapshot.tasks.filter { WorkHelpers.needsCompletion($0.status) }.count
                 workCard.setValues(
-                    primaryTitle: "Chờ duyệt nộp",
+                    primaryTitle: "Chờ duyệt",
                     primaryValue: String(pendingApproval),
                     secondaryTitle: "Cần thực hiện",
                     secondaryValue: String(pendingExecution)

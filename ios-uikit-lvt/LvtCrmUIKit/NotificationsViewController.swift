@@ -276,6 +276,10 @@ final class NotificationsViewController: UITableViewController {
             .joined(separator: ". ")
         cell.accessibilityHint = item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat"
             ? "Mở trao đổi"
+            : item.sourceType == PersonalTodos.notificationSourceType || item.kind == PersonalTodos.notificationKind
+            ? "Mở Việc của tôi"
+            : WorkApprovalRules.isDocumentNotification(sourceType: item.sourceType) && item.kind != "duty"
+            ? "Mở công việc"
             : "Mở \(item.kind == "duty" ? "tab Lịch CT" : "tab Công việc")"
         cell.accessibilityTraits = .button
     }
@@ -288,18 +292,18 @@ final class NotificationsViewController: UITableViewController {
 
     private func kindLabel(_ item: NotificationItem) -> String {
         if item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" { return "Trao đổi" }
+        if item.sourceType == PersonalTodos.notificationSourceType || item.kind == PersonalTodos.notificationKind { return "Nhắc việc" }
         if item.sourceType == "completion_rejected" { return "Từ chối hoàn thành" }
         if item.kind == "duty" { return "Công tác" }
-        if item.sourceType == "document" || item.sourceType == "approval" {
-            return "Công văn cần duyệt"
-        }
+        if let label = WorkApprovalRules.notificationLabel(sourceType: item.sourceType) { return label }
         return "Công việc"
     }
 
     private func dueText(_ item: NotificationItem) -> String {
         guard item.dueAt > 0 else { return "" }
         let when = Self.dueFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(item.dueAt) / 1000))
-        if item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" { return "Lúc \(when)" }
+        if item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat"
+            || DutyWeekPresentation.isWeekNotification(item.sourceType) { return "Lúc \(when)" }
         return when
     }
 

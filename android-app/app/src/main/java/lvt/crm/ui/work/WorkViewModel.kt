@@ -16,6 +16,7 @@ import lvt.crm.data.convex.ConvexHttpClient
 import lvt.crm.data.work.WorkRepository
 import lvt.crm.data.work.WorkOperations
 import lvt.crm.data.work.WorkApprovalItem
+import lvt.crm.data.work.WorkApprovalPolicy
 import lvt.crm.data.work.WorkCompletionReviewItem
 import lvt.crm.data.work.WorkTaskItem
 import lvt.crm.data.work.WorkCreateAssignment
@@ -53,7 +54,14 @@ data class WorkUiState(
     val createdTab: WorkListTab = WorkListTab.Todo,
     val needsExecutionOnly: Boolean = false,
     val search: ListSearchState = ListSearchState(),
+    /** Ban giám hiệu "Chờ tôi duyệt" queue (awaiting first, then 30-day history). */
+    val approvalQueue: List<WorkApprovalItem> = emptyList(),
+    val currentUserId: String = "",
 ) {
+    val awaitingApprovals: List<WorkApprovalItem>
+        get() = approvalQueue.filter { it.awaitingMyDecision }
+    val decidedApprovals: List<WorkApprovalItem>
+        get() = approvalQueue.filterNot { it.awaitingMyDecision }
     val tabMine: List<WorkTaskItem>
         get() = filterTasksByTab(tasks, mineTab)
     val tabCreated: List<WorkApprovalItem>
@@ -117,10 +125,14 @@ class WorkViewModel(
         fileName: String? = null,
         mimeType: String? = null,
         documentTypeId: String = "",
+        approverIds: List<String> = emptyList(),
         onSuccess: () -> Unit,
     ) {
         val hasFile = fileBytes != null && fileName != null && mimeType != null
+        val requiresApproval = _uiState.value.formOptions?.requiresApproval == true
+        val needsApproval = WorkApprovalPolicy.approverRequired(requiresApproval, assignments, _uiState.value.currentUserId)
         val validationError = WorkCreatePolicy.validate(title, assignments, hasFile, documentTypeId)
+            ?: WorkApprovalPolicy.validateApprovers(requiresApproval, assignments, _uiState.value.currentUserId, approverIds)
         if (validationError != null) {
             _uiState.update { it.copy(actionError = validationError) }
             return
@@ -134,15 +146,21 @@ class WorkViewModel(
                     } else {
                         null
                     }
-                    repository.createDocument(title, assignments, evidence, documentTypeId.takeIf { it.isNotBlank() })
+                    repository.createDocument(
+                        title,
+                        assignments,
+                        evidence,
+                        documentTypeId.takeIf { it.isNotBlank() },
+                        approverIds.takeIf { requiresApproval && it.isNotEmpty() },
+                    )
                     reloadAfterCommittedMutation()
+                    _uiState.update {
+                        it.copy(notice = WorkApprovalPolicy.savedNotice(editing = false, needsApproval = needsApproval))
+                    }
                     onSuccess()
                 } catch (e: Exception) {
                     _uiState.update {
-                        it.copy(
-                            actionError = (e as? ConvexException)?.message
-                                ?: ConvexHttpClient.humanize(e.message ?: "CREATE_FAILED"),
-                        )
+                        it.copy(actionError = documentActionError(e, deleting = false, fallbackCode = "CREATE_FAILED"))
                     }
                 } finally {
                     _uiState.update { it.copy(creating = false) }
@@ -160,8 +178,22 @@ class WorkViewModel(
         fileName: String? = null,
         mimeType: String? = null,
         documentTypeId: String = "",
+        requiresApproval: Boolean = false,
+        approverIds: List<String> = emptyList(),
+        reapproval: Boolean = false,
         onSuccess: () -> Unit,
     ) {
+        val needsApproval = WorkApprovalPolicy.needsApproval(
+            requiresApproval,
+            reapproval,
+            assignments,
+            _uiState.value.currentUserId,
+        )
+        val approverError = if (needsApproval && approverIds.none { it.isNotBlank() }) {
+            WorkApprovalPolicy.APPROVER_REQUIRED_MESSAGE
+        } else {
+            null
+        }
         saveDocument(
             deleting = false,
             title = title,
@@ -170,6 +202,7 @@ class WorkViewModel(
             fileName = fileName,
             mimeType = mimeType,
             documentTypeId = documentTypeId,
+            extraValidationError = approverError,
             onSuccess = onSuccess,
         ) { evidence ->
             repository.updateDocument(
@@ -178,8 +211,9 @@ class WorkViewModel(
                 assignments,
                 evidence,
                 documentTypeId.takeIf { it.isNotBlank() },
+                approverIds.takeIf { (requiresApproval || reapproval) && it.isNotEmpty() },
             )
-            "Đã cập nhật công việc."
+            WorkApprovalPolicy.savedNotice(editing = true, needsApproval = needsApproval)
         }
     }
 
@@ -190,7 +224,7 @@ class WorkViewModel(
                 try {
                     repository.deleteDocument(documentId)
                     reloadAfterCommittedMutation()
-                    _uiState.update { it.copy(notice = "Đã xóa công văn chưa duyệt.") }
+                    _uiState.update { it.copy(notice = "Đã xóa công việc.") }
                     onSuccess()
                 } catch (e: Exception) {
                     _uiState.update {
@@ -212,11 +246,13 @@ class WorkViewModel(
         fileName: String?,
         mimeType: String?,
         documentTypeId: String,
+        extraValidationError: String? = null,
         onSuccess: () -> Unit,
         persist: suspend (lvt.crm.data.work.WorkUploadedEvidence?) -> String,
     ) {
         val hasFile = fileBytes != null && fileName != null && mimeType != null
         val validationError = WorkCreatePolicy.validate(title, assignments, hasFile, documentTypeId)
+            ?: extraValidationError
         if (validationError != null) {
             _uiState.update { it.copy(actionError = validationError) }
             return
@@ -246,13 +282,15 @@ class WorkViewModel(
         }
     }
 
-    private fun documentActionError(error: Exception, deleting: Boolean): String {
+    private fun documentActionError(error: Exception, deleting: Boolean, fallbackCode: String? = null): String {
         val raw = when (error) {
             is ConvexException -> "${error.code} ${error.message.orEmpty()}"
             else -> error.message.orEmpty()
         }
         val fallback = (error as? ConvexException)?.message
-            ?: ConvexHttpClient.humanize(error.message ?: if (deleting) "DELETE_FAILED" else "UPDATE_FAILED")
+            ?: ConvexHttpClient.humanize(
+                error.message ?: fallbackCode ?: if (deleting) "DELETE_FAILED" else "UPDATE_FAILED",
+            )
         return WorkDocumentActions.errorMessage(raw, deleting, fallback)
     }
 
@@ -280,6 +318,8 @@ class WorkViewModel(
                         approvals = snap.approvals,
                         completionReviews = snap.completionReviews,
                         documentTypes = snap.documentTypes,
+                        approvalQueue = WorkApprovalPolicy.orderedQueue(snap.approvalQueue),
+                        currentUserId = snap.currentUserId,
                     )
                 }
             } catch (e: Exception) {
@@ -370,21 +410,36 @@ class WorkViewModel(
         )
     }
 
-    fun decideApproval(approval: WorkApprovalItem, approve: Boolean) {
-        _uiState.update { it.copy(busyApprovalId = approval.id, actionError = null) }
+    /**
+     * Ban giám hiệu decision: approve (irreversible; the first approval locks edit/delete) or
+     * return with a required reason. Returns false when the reason is invalid (nothing is sent).
+     */
+    fun decideApproval(approval: WorkApprovalItem, approve: Boolean, reason: String? = null): Boolean {
+        if (!approve) {
+            WorkApprovalPolicy.validateReturnReason(reason.orEmpty())?.let { message ->
+                _uiState.update { it.copy(actionError = message) }
+                return false
+            }
+        }
+        _uiState.update { it.copy(busyApprovalId = approval.id, actionError = null, notice = null) }
         viewModelScope.launch {
             operationMutex.withLock {
                 try {
-                    repository.decideApproval(approval.id, approve)
+                    repository.decideApproval(approval.id, approve, reason?.trim())
                     _uiState.update { state ->
                         state.copy(
-                            approvals = state.approvals.map { item ->
+                            approvalQueue = state.approvalQueue.map { item ->
                                 if (item.id == approval.id) {
-                                    item.copy(myDecision = if (approve) "approved" else "rejected")
+                                    item.copy(
+                                        myDecision = if (approve) "approved" else "rejected",
+                                        awaitingMyDecision = false,
+                                        canReject = false,
+                                    )
                                 } else {
                                     item
                                 }
                             },
+                            notice = if (approve) "Bạn đã duyệt công việc." else "Đã trả lại công việc cho người tạo.",
                         )
                     }
                     reloadAfterCommittedMutation()
@@ -403,6 +458,7 @@ class WorkViewModel(
             }
             runPendingRefresh()
         }
+        return true
     }
 
     fun onQualityInput(value: String) {
@@ -520,6 +576,8 @@ class WorkViewModel(
                     approvals = snap.approvals,
                     completionReviews = snap.completionReviews,
                     documentTypes = snap.documentTypes,
+                    approvalQueue = WorkApprovalPolicy.orderedQueue(snap.approvalQueue),
+                    currentUserId = snap.currentUserId,
                 )
             }
         } catch (_: Exception) {

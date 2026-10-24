@@ -64,13 +64,7 @@ object NotificationCenter {
             destinationIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val title = when {
-            item.sourceType == "completion_rejected" -> "Hoàn thành bị từ chối"
-            item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" ->
-                "Trao đổi · ${item.milestoneLabel.ifBlank { "Tin nhắn mới" }}"
-            item.kind == "duty" -> "Công tác · ${item.milestoneLabel}"
-            else -> "Công việc · ${item.milestoneLabel}"
-        }
+        val title = NotificationPresentation.systemTitle(item.kind, item.sourceType, item.milestoneLabel)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)

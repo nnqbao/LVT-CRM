@@ -1,3 +1,49 @@
+.duty-workspace-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 50px 0 18px;
+}
+
+.duty-workspace-head.has-actions {
+  justify-content: space-between;
+  margin-top: 24px;
+}
+
+.duty-workspace-head .duty-workspace-tabs {
+  margin: 0;
+}
+
+.duty-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.duty-workspace-actions button {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.duty-workspace-actions .work-ghost-button {
+  color: var(--lvt-navy);
+}
+
+.duty-workspace-actions .work-primary-button {
+  color: white;
+  background: var(--lvt-navy);
+}
+
 .duty-workspace-tabs {
   display: flex;
   gap: 8px;
@@ -30,6 +76,15 @@
 }
 
 .lct-shared-view {
+  /* Same side gutters as the sheet, so "Tải PDF" / "Tạo công tác" never sit flush on the edge. */
+  padding: 0 24px 32px;
+  /* Shared buttons (.work-primary-button…) read these; without them "Tải PDF" rendered white on white. */
+  --work-ink: var(--lvt-ink);
+  --work-navy: var(--lvt-navy);
+  --work-paper: var(--lvt-paper);
+  --work-line: var(--lvt-line);
+  --work-teal: var(--lvt-teal);
+  --work-coral: var(--lvt-coral);
   min-width: 0;
 }
 
@@ -78,6 +133,9 @@
 }
 
 .lct-download {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   grid-column: 3;
   justify-self: end;
   margin-left: 0;
@@ -89,6 +147,9 @@
 }
 
 .lct-sheet {
+  --lct-ink: #1f1f1f;
+  --lct-head-bg: #efefef;
+  --lct-paper: #fff;
   max-width: 980px;
   margin: 0 auto;
   padding: 18px 22px 28px;
@@ -101,6 +162,36 @@
 
 .lct-official-header {
   margin-bottom: 12px;
+}
+
+/* Working copy with unapproved changes: header line + light diagonal watermark. */
+.lct-sheet.is-draft {
+  position: relative;
+  overflow: hidden;
+}
+
+.lct-sheet.is-draft::after {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  content: attr(data-draft-mark);
+  color: var(--lvt-danger-text);
+  font-size: clamp(32px, 7vw, 72px);
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0.08;
+  transform: rotate(-30deg);
+  pointer-events: none;
+}
+
+.lct-draft-mark {
+  margin: -4px 0 12px;
+  color: var(--lvt-danger-text);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
 }
 
 .lct-official-banner {
@@ -168,6 +259,16 @@
   font-weight: 700;
   width: 16%;
   vertical-align: middle;
+}
+
+.lct-table-scroll {
+  max-width: 100%;
+}
+
+/* "14g00" never splits inside a time. */
+.lct-table .lct-time-cell {
+  white-space: nowrap;
+  word-break: normal;
 }
 
 .lct-col-day { width: 16%; }
@@ -283,7 +384,231 @@
   min-height: 38px;
 }
 
+/* Weekly BGH approval */
+.lct-week-status {
+  max-width: 980px;
+  margin: 0 auto 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--lvt-line);
+  border-radius: 12px;
+  background: var(--lvt-surface);
+  color: var(--lvt-ink);
+}
+
+.lct-week-status.is-submitted,
+.lct-week-status.is-approved_changed {
+  border-color: var(--lvt-gold);
+  background: var(--lvt-warning-bg);
+}
+
+.lct-week-status.is-returned {
+  border-color: var(--lvt-danger-line);
+  background: var(--lvt-danger-bg);
+}
+
+.lct-week-status.is-approved {
+  border-color: var(--lvt-teal);
+  background: var(--lvt-success-bg);
+}
+
+.lct-week-status-main {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.lct-week-pill {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--lvt-surface-muted);
+  color: var(--lvt-ink);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.is-submitted > .lct-week-pill,
+.is-submitted .lct-week-pill,
+.is-approved_changed .lct-week-pill {
+  background: var(--lvt-paper);
+  color: var(--lvt-warning-text);
+}
+
+.is-returned .lct-week-pill {
+  background: var(--lvt-paper);
+  color: var(--lvt-danger-text);
+}
+
+.is-approved .lct-week-pill {
+  background: var(--lvt-paper);
+  color: var(--lvt-success-text);
+}
+
+.lct-week-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.lct-week-copy p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.lct-week-copy small {
+  display: block;
+  margin-top: 2px;
+  color: var(--lvt-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.lct-week-changes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.lct-week-change-kind {
+  margin-right: 5px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--lvt-paper);
+  color: var(--lvt-ink-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.lct-week-change-kind.is-removed,
+.lct-week-change-kind.is-moved_out {
+  color: var(--lvt-danger-text);
+}
+
+.lct-week-change-kind.is-added {
+  color: var(--lvt-success-text);
+}
+
+.lct-week-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.lct-week-status .work-feedback {
+  margin: 10px 0 0;
+}
+
+.lct-week-return {
+  border-color: var(--lvt-danger-line);
+  color: var(--lvt-danger-text);
+}
+
+.lct-week-return-modal .lct-week-return-confirm {
+  border-color: var(--lvt-coral-strong);
+  background: var(--lvt-coral-strong);
+}
+
+.lct-week-return-field {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 4px;
+  font-size: 13px;
+  color: var(--lvt-muted);
+}
+
+.lct-week-return-field textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 10px;
+  border: 1px solid var(--lvt-line);
+  border-radius: 9px;
+  color: var(--lvt-ink);
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.lct-month-weeks {
+  display: grid;
+  gap: 6px;
+  max-width: 980px;
+  margin: 0 auto 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.lct-month-weeks li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--lvt-line);
+  border-radius: 10px;
+  background: var(--lvt-surface);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.lct-month-weeks li > span:first-child {
+  flex: 1;
+}
+
+.lct-unapproved-notice {
+  display: grid;
+  gap: 6px;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 32px 20px;
+  border: 1px solid var(--lvt-line);
+  border-radius: 12px;
+  background: var(--lvt-surface);
+  color: var(--lvt-muted);
+  text-align: center;
+  font-size: 14px;
+}
+
+.lct-unapproved-notice strong {
+  color: var(--lvt-ink);
+  font-size: 16px;
+}
+
+.lct-table tr.lct-row-pending > td {
+  background: var(--lvt-warning-bg);
+}
+
+.lct-table tr.lct-row-pending > td:nth-of-type(1) {
+  box-shadow: inset 3px 0 0 var(--lvt-gold);
+}
+
+.lct-add-participants {
+  padding: 3px 8px;
+  border: 1px dashed var(--lvt-teal);
+  border-radius: 7px;
+  background: var(--lvt-success-bg);
+  color: var(--lvt-teal-text);
+  font-family: Montserrat, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+
 @media (max-width: 720px) {
+  .lct-week-status-main {
+    flex-direction: column;
+  }
+
+  .lct-week-actions {
+    justify-content: flex-start;
+  }
+
   .lct-sheet {
     padding: 12px 8px 20px;
   }
@@ -309,7 +634,84 @@
   }
 }
 
+@media (max-width: 680px) {
+  .duty-workspace-head,
+  .duty-workspace-head.has-actions {
+    flex-direction: column;
+    align-items: stretch;
+    margin-top: 16px;
+  }
+
+  .duty-workspace-head .duty-workspace-tabs {
+    width: 100%;
+  }
+
+  .duty-workspace-head .duty-workspace-tabs button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 8px;
+  }
+
+  .duty-workspace-actions {
+    margin-left: 0;
+  }
+
+  .duty-workspace-actions button {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
+}
+
+/* Phones: keep readable column widths and scroll the sheet sideways in its own box. */
+@media (max-width: 680px) {
+  .lct-shared-view {
+    padding: 0 16px 24px;
+  }
+
+  .lct-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .lct-table {
+    min-width: 640px;
+  }
+
+  .lct-table th,
+  .lct-table td {
+    font-size: 13px;
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .lct-table thead th:first-child,
+  .lct-table .lct-day-cell {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--lct-paper);
+    box-shadow: inset -1px 0 0 var(--lct-ink);
+  }
+
+  .lct-table thead th:first-child {
+    z-index: 2;
+    background: var(--lct-head-bg);
+  }
+}
+
 @media print {
+  .lct-table-scroll {
+    overflow: visible;
+  }
+
+  .duty-workspace-actions,
+  .lct-week-status,
+  .lct-month-weeks,
+  .lct-add-participants {
+    display: none !important;
+  }
+
   .duty-workspace-tabs,
   .lct-shared-toolbar,
   .report-people-panel,

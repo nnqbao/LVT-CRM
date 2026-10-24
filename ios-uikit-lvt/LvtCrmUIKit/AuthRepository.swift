@@ -60,7 +60,28 @@ final class AuthRepository: ObservableObject {
         guard !normalized.isEmpty, !password.isEmpty else {
             return .failure(ConvexException(code: "EMAIL_PASSWORD_REQUIRED", message: "Nhập email và mật khẩu."))
         }
+        return await signIn(
+            provider: "password",
+            params: ["email": normalized, "password": password, "flow": "signIn"]
+        )
+    }
 
+    /// Face ID / Touch ID: the Secure Enclave key signed a single-use `device_login` challenge.
+    func signIn(deviceCredentialId: String, challengeId: String, signature: String) async -> Result<UserSession, Error> {
+        await signIn(
+            provider: "device-key",
+            params: ["credentialId": deviceCredentialId, "challengeId": challengeId, "signature": signature]
+        )
+    }
+
+    /// Passkey: AuthenticationResponseJSON for a `passkey_login` challenge.
+    func signIn(passkeyChallengeId challengeId: String, response: String) async -> Result<UserSession, Error> {
+        await signIn(provider: "passkey", params: ["challengeId": challengeId, "response": response])
+    }
+
+    /// Every sign-in method shares the same steps: tokens → Keychain, sessionContext, publish (so the
+    /// mustChangePassword gate still applies), rollback of an interrupted account switch.
+    private func signIn(provider: String, params: [String: Any]) async -> Result<UserSession, Error> {
         let previousCredentials = tokenStore.snapshot()
         let previousState = state
         authGeneration += 1
@@ -73,10 +94,7 @@ final class AuthRepository: ObservableObject {
         do {
             let result = try await convex.action(
                 "auth:signIn",
-                args: [
-                    "provider": "password",
-                    "params": ["email": normalized, "password": password, "flow": "signIn"] as [String: Any],
-                ],
+                args: ["provider": provider, "params": params],
                 authenticated: false
             )
             guard let tokens = result["tokens"] as? [String: Any],

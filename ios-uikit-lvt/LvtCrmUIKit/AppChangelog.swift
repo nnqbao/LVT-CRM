@@ -8,6 +8,71 @@ struct AppChangelogEntry: Equatable {
 enum AppChangelog {
     static let entries: [AppChangelogEntry] = [
         AppChangelogEntry(
+            version: "3.1.2",
+            highlights: [
+                "Sửa tiêu đề Việc của tôi / Việc tôi tạo và các mục Lịch công tác bị che phía trên thanh tab.",
+                "Thanh tab tự cao lên khi chữ xuống dòng ở cỡ chữ lớn, không còn biểu tượng bị tràn.",
+            ]
+        ),
+        AppChangelogEntry(
+            version: "3.1.1",
+            highlights: [
+                "Thanh tab có biểu tượng kèm chữ ở Lớp học, Trao đổi, Lịch công tác và Công việc; các ô chia đều nên không còn tab bị che hay phải vuốt ngang.",
+                "Số việc của từng tab Công việc hiện thành chấm số trên biểu tượng.",
+            ]
+        ),
+        AppChangelogEntry(
+            version: "3.1.0",
+            highlights: [
+                "Menu Lớp chủ nhiệm đổi tên thành Lớp học, gồm Tổng quan, Chủ nhiệm, Giảng dạy, Lịch dạy và Học bạ. Tổng quan hiện tiết dạy hôm nay (Đã ghi sổ / Chưa ghi sổ) và học sinh vắng của lớp chủ nhiệm.",
+                "Lớp giảng dạy xếp theo tiết sắp dạy gần nhất; bấm lớp để ghi Sổ đầu bài (ngày dạy, tiết, 1–5 sao, nhận xét). Trang lớp chủ nhiệm có thêm tab Sổ đầu bài theo tuần.",
+                "Lịch dạy xem dạng Danh sách, Tuần (Thứ 2–6 × 10 tiết) và Tháng. Học bạ: chọn lớp theo khối, học sinh, xem điểm từng môn, ĐTB học kỳ và cả năm; thêm, sửa, xóa điểm môn mình dạy.",
+                "Đăng nhập bằng Face ID / Touch ID: bật tại Cá nhân › Bảo mật, lần sau bấm nút trên màn hình đăng nhập. Ứng dụng không lưu mật khẩu.",
+                "Tạo passkey tại Cá nhân › Bảo mật và “Đăng nhập bằng passkey” trên màn hình đăng nhập.",
+                "Báo cáo › Bán trú hiện theo quyền Bán trú của nhóm quyền.",
+            ]
+        ),
+        AppChangelogEntry(
+            version: "3.0.0",
+            highlights: [
+                "Công việc do Văn thư/Quản trị giao cho người khác cần Ban giám hiệu duyệt: chọn người duyệt rồi bấm “Gửi duyệt”. Người tạo thấy Chờ duyệt x/y, Đã duyệt hoặc Bị trả lại kèm lý do, sửa rồi “Lưu và gửi duyệt lại”.",
+                "Ban giám hiệu có mục “Chờ tôi duyệt”: Duyệt (có xác nhận) hoặc Trả lại kèm lý do. Sau lượt duyệt đầu tiên, công việc không còn sửa/xóa được (trừ khi máy chủ cho phép quản trị sửa và gửi duyệt lại).",
+                "Ban giám hiệu và tổ trưởng/tổ phó tạo công việc theo quyền máy chủ cấp; phân công chưa được duyệt hiện “Chờ duyệt (chưa giao)”. Thông báo chờ duyệt, đã duyệt, bị trả lại mở đúng công việc.",
+                "Mục mới Báo cáo › Bán trú trên Tổng quan: danh sách giáo viên tham gia theo “Học kỳ · Năm học” (phòng ban mình hoặc toàn trường theo quyền Báo cáo); quản trị viên thêm, sửa, xóa Kỳ bán trú.",
+                "Nút “?” trên các màn hình chính mở hướng dẫn sử dụng đúng chủ đề.",
+            ]
+        ),
+        AppChangelogEntry(
+            version: "2.0.0",
+            highlights: [
+                "Mục mới Điểm danh cho Giám thị (và quản trị viên): chọn Lớp 6–9, mở lớp, đánh dấu học sinh Vắng rồi Lưu lớp. Mặc định cả lớp có mặt; nhập bằng Excel dùng bản web.",
+                "Lớp chủ nhiệm: học sinh vắng hiện đầu danh sách với Vắng có phép / Vắng không phép; GVCN bật “Vắng không phép” ngay trên dòng, không cần ghi lý do. Lớp chưa được Giám thị điểm danh sẽ hiện thông báo.",
+                "Việc của tôi trong Công việc: thêm việc riêng với hạn chót và giờ nhắc, đánh dấu hoàn thành, sửa, xóa. Bấm thông báo nhắc việc mở đúng danh sách.",
+                "Bỏ nhập điểm danh camera và mục Vắng chờ xử lý theo bản web mới.",
+            ]
+        ),
+        AppChangelogEntry(
+            version: "1.16.0",
+            highlights: [
+                "Lịch công tác chung xem theo tuần ngay trên app, mỗi ngày một danh sách. Giáo viên chỉ thấy lịch đã được Ban Giám hiệu duyệt.",
+                "Ban Giám hiệu duyệt hoặc trả lại lịch tuần (kèm lý do) trên app; văn thư sửa công tác và nộp duyệt. Bấm thông báo mở đúng tuần.",
+            ]
+        ),
+        AppChangelogEntry(
+            version: "1.15.0",
+            highlights: [
+                "Lớp chủ nhiệm gọn và dễ đọc hơn: ô số Có mặt / Trễ / Vắng / Chưa có, mỗi lớp còn 2 dòng kèm trạng thái màu (\"Đủ 41/41\", \"3 vắng\", \"Chưa điểm danh\").",
+                "Chọn ngày bằng nút ‹ ›, ngày nghỉ chỉ hiện một thông báo. Chi tiết lớp mở thẳng phần điểm danh, mỗi học sinh một dòng.",
+            ]
+        ),
+        AppChangelogEntry(
+            version: "1.14.1",
+            highlights: [
+                "Mục Lớp chủ nhiệm (theo nhóm quyền): tổng quan lớp theo ngày, vắng chờ xử lý, danh sách lớp và hồ sơ học sinh.",
+                "Sửa lỗi danh sách lớp trống khi chưa nhập tìm kiếm; lớp chưa có GVCN hiện “Chưa phân công”.",
+            ]
+        ),
+        AppChangelogEntry(
             version: "1.13.0",
             highlights: [
                 "Mục Trao đổi: mọi cuộc trò chuyện Công tác, Công việc và nhóm, theo hoạt động mới nhất.",

@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.FactCheck
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material3.AlertDialog
@@ -67,9 +69,20 @@ import lvt.crm.ui.components.accountInitials
 import lvt.crm.ui.duties.DutiesTabHost
 import lvt.crm.ui.duties.DutiesViewModel
 import lvt.crm.ui.duties.DutyListTab
+import lvt.crm.ui.duties.SharedWeekPresentation
 import lvt.crm.ui.home.DashboardScreen
 import lvt.crm.ui.home.DashboardViewModel
 import lvt.crm.ui.home.PlaceholderScreen
+import lvt.crm.ui.teaching.ClassesHubScreen
+import lvt.crm.ui.teaching.GradebookViewModel
+import lvt.crm.ui.teaching.TeachingViewModel
+import lvt.crm.ui.homeroom.HomeroomViewModel
+import lvt.crm.ui.attendance.AttendanceScreen
+import lvt.crm.ui.boarding.BoardingScreen
+import lvt.crm.ui.boarding.BoardingViewModel
+import lvt.crm.ui.attendance.AttendanceViewModel
+import lvt.crm.ui.todos.PersonalTodosViewModel
+import lvt.crm.ui.work.WorkHubScreen
 import lvt.crm.ui.notifications.NotificationsScreen
 import lvt.crm.ui.notifications.NotificationsViewModel
 import lvt.crm.ui.profile.ProfileScreen
@@ -89,7 +102,10 @@ private object Routes {
     const val Chat = "chat"
     const val Duties = "duties"
     const val Work = "work"
+    const val Homeroom = "homeroom"
+    const val Attendance = "attendance"
     const val Profile = "profile"
+    const val Boarding = "boarding"
 }
 
 @Composable
@@ -103,7 +119,7 @@ fun LvtRoot(
         AuthState.Loading -> PlaceholderScreen(title = "CRM Lê Văn Tám", body = "Đang tải…")
         AuthState.SignedOut -> {
             val loginVm: LoginViewModel = viewModel(
-                factory = LoginViewModel.factory(container.authRepository),
+                factory = LoginViewModel.factory(container.authRepository, container.deviceAuthRepository),
             )
             LoginScreen(viewModel = loginVm)
         }
@@ -116,7 +132,7 @@ fun LvtRoot(
                 onDone = {},
             )
         }
-            is AuthState.SignedIn -> {
+        is AuthState.SignedIn -> {
             NotificationPermissionAndSync(container)
             MainShell(
                 container = container,
@@ -128,6 +144,11 @@ fun LvtRoot(
                 positionName = state.session.positionName,
                 hasAvatar = state.session.hasAvatar,
                 avatarVersion = state.session.avatarVersion,
+                canSeeHomeroom = state.session.canSeeHomeroom,
+                canSeeAttendance = state.session.canSeeAttendance,
+                canSeeWork = state.session.canSeeWork,
+                canSeeBoarding = state.session.canSeeBoarding,
+                canManageBoarding = state.session.canManageBoarding,
                 notificationDestination = notificationDestination,
                 onNotificationDestinationHandled = onNotificationDestinationHandled,
                 onSignOut = {
@@ -151,6 +172,11 @@ private fun MainShell(
     positionName: String?,
     hasAvatar: Boolean,
     avatarVersion: String?,
+    canSeeHomeroom: Boolean,
+    canSeeAttendance: Boolean,
+    canSeeWork: Boolean,
+    canSeeBoarding: Boolean,
+    canManageBoarding: Boolean,
     notificationDestination: NotificationDestination?,
     onNotificationDestinationHandled: () -> Unit,
     onSignOut: () -> Unit,
@@ -193,13 +219,18 @@ private fun MainShell(
         container.avatarRepository.sync(sessionUserId, hasAvatar, avatarVersion)
     }
 
-    val tabs = listOf(
-        Triple(Routes.Overview, R.string.nav_overview, Icons.Outlined.Dashboard),
-        Triple(Routes.Chat, R.string.nav_chat, Icons.Outlined.Forum),
-        Triple(Routes.Duties, R.string.nav_duties, Icons.Outlined.WorkOutline),
-        Triple(Routes.Work, R.string.nav_work, Icons.Outlined.TaskAlt),
-    )
-    val mainTabRoutes = setOf(Routes.Overview, Routes.Chat, Routes.Duties, Routes.Work)
+    val attendanceIsTab = canSeeAttendance && !canSeeHomeroom
+    val tabs = buildList {
+        add(Triple(Routes.Overview, R.string.nav_overview, Icons.Outlined.Dashboard))
+        if (canSeeHomeroom) add(Triple(Routes.Homeroom, R.string.nav_homeroom, Icons.Outlined.Groups))
+        // Giám thị without Lớp học gets Điểm danh as a tab; otherwise it opens from Lớp học › Lớp chủ nhiệm
+        // so the bottom bar keeps at most five items.
+        if (attendanceIsTab) add(Triple(Routes.Attendance, R.string.nav_attendance, Icons.AutoMirrored.Outlined.FactCheck))
+        add(Triple(Routes.Chat, R.string.nav_chat, Icons.Outlined.Forum))
+        add(Triple(Routes.Duties, R.string.nav_duties, Icons.Outlined.WorkOutline))
+        add(Triple(Routes.Work, R.string.nav_work, Icons.Outlined.TaskAlt))
+    }
+    val mainTabRoutes = tabs.mapTo(mutableSetOf()) { it.first }
     val highlightedTab = if (current in mainTabRoutes) current else selectedTab
 
     LaunchedEffect(current) {
@@ -388,7 +419,21 @@ private fun MainShell(
                             workFilterToken += 1
                         }
                     },
+                    onOpenBoarding = if (canSeeBoarding) {
+                        { navController.navigate(Routes.Boarding) { launchSingleTop = true } }
+                    } else {
+                        null
+                    },
                 )
+            }
+            if (canSeeBoarding) {
+                composable(Routes.Boarding) {
+                    val vm: BoardingViewModel = viewModel(
+                        key = "boarding-$sessionUserId-$canManageBoarding",
+                        factory = BoardingViewModel.factory(container.boardingRepository, canManageBoarding),
+                    )
+                    BoardingScreen(viewModel = vm, onBack = { navController.popBackStack() })
+                }
             }
             composable(Routes.Notifications) {
                 NotificationsScreen(
@@ -397,6 +442,48 @@ private fun MainShell(
                     tabOpenToken = tabOpenToken,
                     onBack = { navController.popBackStack() },
                 )
+            }
+            if (canSeeHomeroom) {
+                composable(Routes.Homeroom) {
+                    val vm: HomeroomViewModel = viewModel(
+                        key = "homeroom-$sessionUserId-$role",
+                        factory = HomeroomViewModel.factory(container.homeroomRepository),
+                    )
+                    val teachingVm: TeachingViewModel = viewModel(
+                        key = "teaching-$sessionUserId",
+                        factory = TeachingViewModel.factory(container.teachingRepository),
+                    )
+                    val gradebookVm: GradebookViewModel = viewModel(
+                        key = "gradebook-$sessionUserId",
+                        factory = GradebookViewModel.factory(container.teachingRepository),
+                    )
+                    // Lớp học: Tổng quan, Lớp chủ nhiệm (existing homeroom), Lớp giảng dạy, Lịch dạy, Học bạ.
+                    ClassesHubScreen(
+                        homeroomViewModel = vm,
+                        teachingViewModel = teachingVm,
+                        gradebookViewModel = gradebookVm,
+                        canManage = role == "admin" || role == "moderator",
+                        onOpenAttendance = if (canSeeAttendance) {
+                            { navController.navigate(Routes.Attendance) { launchSingleTop = true } }
+                        } else {
+                            null
+                        },
+                        classLogsLoader = { classId, from, to -> container.teachingRepository.classLogs(classId, from, to) },
+                    )
+                }
+            }
+            if (canSeeAttendance) {
+                composable(Routes.Attendance) {
+                    val vm: AttendanceViewModel = viewModel(
+                        key = "attendance-$sessionUserId-$role",
+                        factory = AttendanceViewModel.factory(container.attendanceRepository),
+                    )
+                    AttendanceScreen(
+                        viewModel = vm,
+                        onBack = if (attendanceIsTab) null else ({ navController.popBackStack() }),
+                        onLeave = { navController.popBackStack() },
+                    )
+                }
             }
             composable(Routes.Chat) {
                 val chatFocus = focusTarget?.takeIf { it.opensChat }
@@ -436,7 +523,10 @@ private fun MainShell(
                     dutiesRepository = container.dutiesRepository,
                     chatRepository = container.chatRepository,
                     focusId = focusTarget
-                        ?.takeIf { it.route == Routes.Duties }
+                        ?.takeIf { it.route == Routes.Duties && !SharedWeekPresentation.isWeekNotification(it.sourceType) }
+                        ?.sourceId,
+                    openWeek = focusTarget
+                        ?.takeIf { it.route == Routes.Duties && SharedWeekPresentation.isWeekNotification(it.sourceType) }
                         ?.sourceId,
                     openChat = focusTarget?.opensChat == true && focusTarget?.route == Routes.Duties,
                     focusToken = focusTarget
@@ -449,24 +539,36 @@ private fun MainShell(
                 )
             }
             composable(Routes.Work) {
-                val vm: WorkViewModel = viewModel(
-                    factory = WorkViewModel.factory(container.workRepository),
+                val todosVm: PersonalTodosViewModel = viewModel(
+                    key = "todos-$sessionUserId",
+                    factory = PersonalTodosViewModel.factory(container.personalTodosRepository),
                 )
-                WorkScreen(
-                    viewModel = vm,
-                    chatRepository = container.chatRepository,
-                    focusId = focusTarget
-                        ?.takeIf { it.route == Routes.Work }
-                        ?.sourceId,
-                    openChat = focusTarget?.opensChat == true && focusTarget?.route == Routes.Work,
-                    focusToken = focusTarget
-                        ?.takeIf { it.route == Routes.Work }
-                        ?.let { it.notificationKey ?: it.sourceId },
-                    tabOpenToken = tabOpenToken,
-                    openFilter = workOpenFilter,
-                    openFilterToken = workFilterToken,
-                    onOpenDocument = ::openDocument,
-                )
+                val todoFocus = focusTarget?.takeIf { it.route == Routes.Work && it.opensTodos }
+                WorkHubScreen(
+                    canSeeWork = canSeeWork,
+                    todosViewModel = todosVm,
+                    focusToken = focusTarget?.takeIf { it.route == Routes.Work }?.let { it.notificationKey ?: it.sourceId },
+                    todoFocusId = todoFocus?.sourceId,
+                ) {
+                    val vm: WorkViewModel = viewModel(
+                        factory = WorkViewModel.factory(container.workRepository),
+                    )
+                    WorkScreen(
+                        viewModel = vm,
+                        chatRepository = container.chatRepository,
+                        focusId = focusTarget
+                            ?.takeIf { it.route == Routes.Work && !it.opensTodos }
+                            ?.sourceId,
+                        openChat = focusTarget?.opensChat == true && focusTarget?.route == Routes.Work,
+                        focusToken = focusTarget
+                            ?.takeIf { it.route == Routes.Work && !it.opensTodos }
+                            ?.let { it.notificationKey ?: it.sourceId },
+                        tabOpenToken = tabOpenToken,
+                        openFilter = workOpenFilter,
+                        openFilterToken = workFilterToken,
+                        onOpenDocument = ::openDocument,
+                    )
+                }
             }
             composable(Routes.Profile) {
                 ProfileScreen(
@@ -481,6 +583,8 @@ private fun MainShell(
                     appearanceStore = container.appearanceStore,
                     onSignOut = onSignOut,
                     onBack = { navController.popBackStack() },
+                    userId = sessionUserId,
+                    deviceAuthRepository = container.deviceAuthRepository,
                 )
             }
         }

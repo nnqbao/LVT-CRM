@@ -35,4 +35,15 @@ class NotificationDestinationTest {
         assertFalse(NotificationDestination("duty", "duty_assigned", "duty-1", null).opensChat)
         assertFalse(NotificationDestination.opensChat("personal_task"))
     }
+
+    @Test
+    fun todoRemindersOpenTheWorkHubTodoList() {
+        val push = NotificationDestination("todo", "todo_reminder", "todo-1", "todo:todo_reminder:todo-1:1")
+        assertEquals("work", push.route)
+        assertTrue(push.opensTodos)
+        assertFalse(push.opensChat)
+        assertTrue(NotificationDestination("", "todo_reminder", "todo-1", null).opensTodos)
+        assertFalse(NotificationDestination("work", "approval", "doc-1", null).opensTodos)
+        assertFalse(NotificationDestination("duty", "duty_assigned", "duty-1", null).opensTodos)
+    }
 }

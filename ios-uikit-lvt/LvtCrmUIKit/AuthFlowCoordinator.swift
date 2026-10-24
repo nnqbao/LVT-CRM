@@ -45,7 +45,7 @@ final class AuthFlowCoordinator {
         case .signedOut:
             container.notificationSync.cancel()
             root = UINavigationController(
-                rootViewController: LoginViewController(authRepository: container.authRepository)
+                rootViewController: LoginViewController(authRepository: container.authRepository, quickSignIn: container.quickSignIn)
             )
         case .mustChangePassword:
             root = UINavigationController(
@@ -66,7 +66,13 @@ final class AuthFlowCoordinator {
                 dutiesRepository: container.dutiesRepository,
                 workRepository: container.workRepository,
                 chatRepository: container.chatRepository,
-                avatarRepository: container.avatarRepository
+                avatarRepository: container.avatarRepository,
+                homeroomRepository: container.homeroomRepository,
+                attendanceRepository: container.attendanceRepository,
+                personalTodoRepository: container.personalTodoRepository,
+                boardingRepository: container.boardingRepository,
+                teachingRepository: container.teachingRepository,
+                quickSignIn: container.quickSignIn
             )
             root = tabBarController
             if let pendingDestination {

@@ -6,14 +6,14 @@ import {
   getWorkAssignerMode,
   getWorkVisibilityMode,
   isOperationalManagerRole,
-  isSameDepartmentSubordinate,
   resolveUserMenuAccess,
   WORK_ASSIGNER_MODE_ADMIN_MOD,
   WORK_ASSIGNER_MODE_SUPERVISOR,
 } from "./lib";
 import {
-  canCreateAssignments,
-  canCreatorMutateWork,
+  canAssignWorkDepartment,
+  canAssignWorkToUser,
+  canCreateWorkDocuments,
   canReviewWorkCompletion,
   canSeeArchivedWork,
   canSeeLiveWork,
@@ -22,6 +22,8 @@ import {
   isWorkItemArchived,
   isWorkReleased,
   isWorkStatusCompleted,
+  opsCanAssignWorkToUser,
+  opsWorkAssigneeError,
   workMenuBadgeCount,
   shouldBypassWorkCompletionReview,
   workAssignmentPushUserIds,
@@ -34,18 +36,48 @@ import {
   claimDriveUploadCleanup,
   commitDriveUploadStage,
   completeDriveUploadCleanup,
+  deleteConvexObject,
   finalizeDriveUploadStage,
   registerDriveUploadStage,
   releaseDriveUploadCleanup,
 } from "./driveUploadStages";
-import { canMutateWorkDocument } from "./workDocumentPolicy";
+import { storageProviderForKey } from "./fileObjects";
+import {
+  applyWorkApproval,
+  applyWorkRejection,
+  canApproveWorkDocument,
+  canRejectWorkDocument,
+  cleanWorkReturnReason,
+  isDesignatedWorkApprover,
+  isEligibleWorkApprover,
+  isWorkApprovalLocked,
+  workApprovalDecidedAt,
+  workApprovalRequestText,
+  workApprovalSubmission,
+  workAssignmentsUnchanged,
+  workDocumentEditPolicy,
+  workDocumentFollowsApprovalFlow,
+  workDocumentNeedsApproval,
+  workDocumentRequiresApproval,
+  workEditNeedsApproval,
+  workHasSubmissions,
+  workReturnReason,
+} from "./workDocumentPolicy";
 import {
   assertActiveDocumentType,
   listActiveDocumentTypes,
 } from "./documentTypes";
 import { requireDocumentTypeId, resolveDisplayedDocumentType } from "./documentTypePolicy";
+import {
+  isUserInModeratorScope,
+  isWorkDocumentInModeratorScope,
+  MODERATOR_DEPARTMENT_SCOPE_ERROR,
+  moderatorDepartmentScope,
+  workDocumentScopeAssignments,
+} from "./moderatorScope";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const APPROVAL_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const ACCEPTED_EXTENSIONS = new Set(["pdf", "docx", "xlsx", "xls", "png", "jpg", "jpeg"]);
 
@@ -233,8 +265,11 @@ async function validateDocumentWorkflow(
     const approver = activeUsers.find((user: any) => String(user._id) === userId);
     if (
       !approver ||
-      isOperationalManagerRole(approver.role) ||
-      activePositionLevel(approver, positions) < 4
+      !isEligibleWorkApprover({
+        status: approver.status,
+        role: approver.role,
+        level: activePositionLevel(approver, positions),
+      })
     ) {
       throw new Error("INVALID_WORK_APPROVER");
     }
@@ -290,6 +325,18 @@ async function relatedDocumentWork(ctx: any, documentId: Id<"officeDocuments">) 
   return { workItems, personalTasks };
 }
 
+/** Active work items and their active personal tasks: the rows whose submissions lock the document. */
+function activeSubmissionRows(related: { workItems: any[]; personalTasks: any[] }) {
+  const activeItems = related.workItems.filter((item: any) => item.active);
+  const activeItemIds = new Set(activeItems.map((item: any) => String(item._id)));
+  return [
+    ...activeItems,
+    ...related.personalTasks.filter(
+      (task: any) => task.active && activeItemIds.has(String(task.workItemId)),
+    ),
+  ];
+}
+
 async function deactivateRelatedDocumentWork(
   ctx: any,
   related: { workItems: any[]; personalTasks: any[] },
@@ -332,7 +379,8 @@ function assignmentTypeOf(item: any): "department" | "individual" {
 }
 
 async function requireWorkWrite(ctx: any) {
-  const actor = await assignmentCreatorOrThrow(ctx);
+  const base = await assignmentCreatorOrThrow(ctx, canCreateWorkDocuments);
+  const actor = { ...base, departmentScope: moderatorDepartmentScope(base.user) };
   if (actor.isOps) return actor;
   const menuAccess = await resolveUserMenuAccess(ctx, actor.user);
   if ((menuAccess.work || "hidden") === "hidden") {
@@ -341,36 +389,117 @@ async function requireWorkWrite(ctx: any) {
   return actor;
 }
 
-async function releasePendingWorkDocuments(ctx: any) {
-  const documents = await ctx.db.query("officeDocuments").collect();
-  const now = Date.now();
-  for (const document of documents) {
-    if (!document.active || document.status !== "pending") continue;
-    await ctx.db.patch(document._id, {
-      status: "approved",
-      updatedAt: now,
-    });
-  }
+function usersByIdMap(users: any[]) {
+  return new Map<string, any>(users.map((user: any) => [String(user._id), user]));
+}
+
+/** Department-scoped moderators manage only documents whose every assignment is inside their department. */
+function isDocumentInScope(
+  scope: string | null,
+  document: any,
+  usersById: Map<string, { departmentId?: string | null }>,
+) {
+  return isWorkDocumentInModeratorScope(scope, workDocumentScopeAssignments(document), usersById);
+}
+
+function personalTaskInScope(
+  scope: string | null,
+  task: any,
+  activeWorkItems: any[],
+  docsById: Map<string, any>,
+  usersById: Map<string, { departmentId?: string | null }>,
+) {
+  if (!scope) return true;
+  const item = activeWorkItems.find((workItem: any) => String(workItem._id) === String(task.workItemId));
+  const document = item ? docsById.get(String(item.documentId)) : null;
+  return Boolean(document) && isDocumentInScope(scope, document, usersById);
+}
+
+async function documentInActorScope(ctx: any, scope: string | null, document: any) {
+  if (!scope) return true;
+  const users = await ctx.db.query("users").collect();
+  return isDocumentInScope(scope, document, usersByIdMap(users));
+}
+
+/** Non-ops creator → target rule (BGH: any department, lower level; others: same department, lower level). */
+function actorCanAssignUser(
+  actor: { user: any; level: number; positions: any[] },
+  target: any,
+) {
+  return canAssignWorkToUser(
+    {
+      _id: String(actor.user._id),
+      role: String(actor.user.role || ""),
+      level: actor.level,
+      departmentId: actor.user.departmentId,
+    },
+    {
+      _id: String(target._id),
+      level: activePositionLevel(target, actor.positions),
+      departmentId: target.departmentId,
+    },
+  );
 }
 
 async function assertWorkAssignmentsForActor(
   ctx: any,
   assignmentInputs: DocumentAssignmentInput[],
-  actor: { user: any; isOps: boolean; positions: any[] },
+  actor: { user: any; isOps: boolean; level: number; positions: any[]; departmentScope: string | null },
+  approverInputs: string[] = [],
+  options: { allowOpsAnyDepartment?: boolean } = {},
 ) {
-  const { assignments } = await validateDocumentWorkflow(ctx, assignmentInputs, []);
-  if (!actor.isOps) {
+  const { assignments, approverUserIds } = await validateDocumentWorkflow(
+    ctx,
+    assignmentInputs,
+    approverInputs,
+  );
+  if (actor.isOps && actor.departmentScope) {
+    const users = await ctx.db.query("users").collect();
+    if (!isWorkDocumentInModeratorScope(actor.departmentScope, assignments, usersByIdMap(users))) {
+      throw new Error(MODERATOR_DEPARTMENT_SCOPE_ERROR);
+    }
+  }
+  if (actor.isOps) {
+    // Văn thư/admin individual targets: self always; another admin/mod only in
+    // the same department (an admin editing may keep/assign any admin/mod);
+    // never Ban giám hiệu (level ≥ 4). Department assignments are still
+    // allowed (handled by the department).
     for (const assignment of assignments) {
-      if (assignment.type !== "individual") throw new Error("WORK_DEPARTMENT_FORBIDDEN");
+      if (assignment.type !== "individual") continue;
       for (const userId of assignment.userIds) {
         const target = await ctx.db.get(userId);
-        if (!target || !isSameDepartmentSubordinate(actor.user, target, actor.positions)) {
-          throw new Error("NOT_A_SUBORDINATE");
+        if (!target) continue;
+        const error = opsWorkAssigneeError(
+          { _id: String(actor.user._id), departmentId: actor.user.departmentId },
+          {
+            _id: String(target._id),
+            role: target.role,
+            level: activePositionLevel(target, actor.positions),
+            departmentId: target.departmentId,
+          },
+          options,
+        );
+        if (error) throw new Error(error);
+      }
+    }
+  }
+  if (!actor.isOps) {
+    for (const assignment of assignments) {
+      if (assignment.type !== "individual") {
+        if (!canAssignWorkDepartment(actor.user.role, actor.level)) {
+          throw new Error("WORK_DEPARTMENT_FORBIDDEN");
+        }
+        continue;
+      }
+      for (const userId of assignment.userIds) {
+        const target = await ctx.db.get(userId);
+        if (!target || !actorCanAssignUser(actor, target)) {
+          throw new Error("WORK_ASSIGNEE_NOT_SUBORDINATE");
         }
       }
     }
   }
-  return assignments;
+  return { assignments, approverUserIds };
 }
 
 async function requireWorkAccess(ctx: any) {
@@ -386,6 +515,7 @@ async function requireWorkAccess(ctx: any) {
     user,
     access: isOperationalManagerRole(user.role) ? "view_all" : menuAccess.work,
     isAdmin: isOperationalManagerRole(user.role),
+    departmentScope: moderatorDepartmentScope(user),
     level: isOperationalManagerRole(user.role) ? 5 : activePositionLevel(user, positions),
     positions,
   };
@@ -491,11 +621,13 @@ function isWorkManagementListVisible(args: {
   actorLevel: number;
   actorDepartmentId: string;
   visibilityMode: "creator" | "school";
-  usersById: Map<string, { status?: string }>;
+  usersById: Map<string, { status?: string; departmentId?: string }>;
+  departmentScope: string | null;
 }) {
+  const inModeratorScope = isDocumentInScope(args.departmentScope, args.document, args.usersById);
   const archived = args.items.some((item: any) => isWorkItemArchived(args.document, item, args.usersById))
     || isWorkItemArchived(args.document, { assignmentType: "department" }, args.usersById);
-  if (archived) return canSeeArchivedWork(args.actorRole);
+  if (archived) return canSeeArchivedWork(args.actorRole, inModeratorScope);
   const isAssignee = args.items.some((item: any) => {
     if (assignmentTypeOf(item) === "individual") {
       return (item.assigneeUserIds || []).some((id: string) => String(id) === String(args.actorUserId));
@@ -509,6 +641,10 @@ function isWorkManagementListVisible(args: {
     createdBy: String(args.document.createdBy),
     isAssignee,
     visibilityMode: args.visibilityMode,
+    inModeratorScope,
+    // Approvers review pending documents in their own "Chờ tôi duyệt" list (listMine),
+    // so the management list keeps pending work to the creator and in-scope admin/mod.
+    released: isWorkReleased(args.document),
   });
 }
 
@@ -526,6 +662,13 @@ function managementDocumentWorkStatus(document: any, items: any[], catalogData: 
     return adminModItemStatus(item, members);
   });
   return overallCompletionStatus(statuses);
+}
+
+/** Not-yet-released documents show their approval state instead of completion progress. */
+function documentListStatus(document: any, items: any[], catalogData: any) {
+  if (document.status === "pending") return "awaiting_approval";
+  if (document.status === "rejected") return "approval_returned";
+  return managementDocumentWorkStatus(document, items, catalogData);
 }
 
 function isActorAssignedToWorkItem(
@@ -615,7 +758,58 @@ function personView(user: any, catalogData: any, status?: string) {
   };
 }
 
-async function documentView(ctx: any, document: any, catalogData: any, items: any[] = []) {
+/** "Đã chỉnh sửa bởi …" fields: editor name resolved server-side, never an email. */
+function lastEditedView(document: any, catalogData: any) {
+  if (!document?.lastEditedBy || !document?.lastEditedAt) {
+    return { lastEditedByName: null as string | null, lastEditedAt: null as number | null };
+  }
+  const editor = catalogData.users.find((user: any) => String(user._id) === String(document.lastEditedBy));
+  return {
+    lastEditedByName: String(editor?.name || "").trim() || "Người dùng",
+    lastEditedAt: Number(document.lastEditedAt),
+  };
+}
+
+type DocumentViewer = {
+  userId: string;
+  role: string;
+  /** Creator, or an in-scope admin/moderator; anyone else gets read-only flags. */
+  canManage: boolean;
+};
+
+/**
+ * Per-document flags clients rely on (web + native): `canEdit`, `canDelete`,
+ * `editRequiresReapproval`, `hasSubmissions`. `submissionRows` are the active
+ * work items and personal tasks of the document.
+ */
+function documentEditFlags(document: any, submissionRows: any[], viewer: DocumentViewer | null) {
+  const hasSubmissions = workHasSubmissions(submissionRows);
+  if (!viewer) {
+    return { canEdit: false, canDelete: false, editRequiresReapproval: false, hasSubmissions };
+  }
+  const policy = workDocumentEditPolicy({
+    document,
+    actorRole: viewer.role,
+    canManage: viewer.canManage,
+    hasSubmissions,
+  });
+  return {
+    canEdit: policy.canEdit,
+    canDelete: policy.canDelete,
+    // Admin edit path back to BGH approval. Exception applied on save (and
+    // mirrored by clients from the form): the admin as the only assignee.
+    editRequiresReapproval: policy.canEdit && policy.editRequiresReapproval,
+    hasSubmissions,
+  };
+}
+
+async function documentView(
+  ctx: any,
+  document: any,
+  catalogData: any,
+  items: any[] = [],
+  options: { viewer?: DocumentViewer | null; personalTasks?: any[] } = {},
+) {
   const rejectedByUserIds = document.rejectedByUserIds || [];
   const assignments = documentAssignments(document).map((assignment: any) => {
     const type = assignment.type === "individual" ? "individual" : "department";
@@ -630,17 +824,24 @@ async function documentView(ctx: any, document: any, catalogData: any, items: an
       deadline: assignment.deadline,
     };
   });
+  const decisions = document.approvalDecisions || [];
   const approvers = document.approverUserIds
-    .map((id: string) => catalogData.activeUsers.find((user: any) => String(user._id) === String(id)))
+    .map((id: string) => catalogData.users.find((user: any) => String(user._id) === String(id)))
     .filter(Boolean)
-    .map((user: any) => ({
-      _id: user._id,
-      name: user.name || user.email || "Chưa đặt tên",
-      email: user.email || "",
-      level: activePositionLevel(user, catalogData.positions),
-      approved: document.approvedByUserIds.some((id: string) => String(id) === String(user._id)),
-      rejected: rejectedByUserIds.some((id: string) => String(id) === String(user._id)),
-    }));
+    .map((user: any) => {
+      const decision = decisions.find((row: any) => String(row.userId) === String(user._id));
+      return {
+        _id: user._id,
+        name: user.name || user.email || "Chưa đặt tên",
+        email: user.email || "",
+        level: activePositionLevel(user, catalogData.positions),
+        approved: document.approvedByUserIds.some((id: string) => String(id) === String(user._id)),
+        rejected: rejectedByUserIds.some((id: string) => String(id) === String(user._id)),
+        decidedAt: decision?.at ?? null,
+        reason: decision?.reason || "",
+      };
+    });
+  const creator = catalogData.users.find((user: any) => String(user._id) === String(document.createdBy));
   return {
     _id: document._id,
     title: workListTitle(document),
@@ -666,11 +867,32 @@ async function documentView(ctx: any, document: any, catalogData: any, items: an
     approvers,
     approvalCount: document.approvedByUserIds.length,
     approvalTotal: document.approverUserIds.length,
+    requiresApproval: workDocumentRequiresApproval({
+      requiresApproval: document.requiresApproval,
+      creatorRole: creator?.role,
+    }),
+    // Văn thư flow regardless of current assignments (an edit that adds anyone
+    // besides the creator needs approval again).
+    approvalFlow: workDocumentFollowsApprovalFlow({
+      requiresApproval: document.requiresApproval,
+      creatorRole: creator?.role,
+    }),
+    approvalLocked: isWorkApprovalLocked(document),
+    submittedAt: document.submittedAt ?? document.createdAt,
+    decidedAt: workApprovalDecidedAt(document),
+    returnReason: workReturnReason(document),
     createdAt: document.createdAt,
     createdBy: document.createdBy,
+    creatorName: creator ? creator.name || creator.email || "—" : "—",
+    // Only the role kind, for the "Người tạo: … (Quản trị viên|Văn thư)" label.
+    creatorRole: creator?.role === "admin" || creator?.role === "moderator" ? creator.role : "user",
     archived: false,
-    canEdit: canMutateWorkDocument(document, items),
-    canDelete: canMutateWorkDocument(document, items),
+    ...lastEditedView(document, catalogData),
+    ...documentEditFlags(
+      document,
+      activeSubmissionRows({ workItems: items, personalTasks: options.personalTasks || [] }),
+      options.viewer ?? null,
+    ),
   };
 }
 
@@ -843,6 +1065,7 @@ export const completeDriveCleanupJob = mutation({
     if (references.some((document: any) => document.active)) {
       throw new Error("WORK_FILE_STILL_REFERENCED");
     }
+    await deleteConvexObject(ctx, job.driveFileId);
     const now = Date.now();
     await ctx.db.patch(args.cleanupJobId, {
       active: false,
@@ -871,7 +1094,8 @@ export const authorizeFileDownload = query({
       throw new Error("WORK_FILE_NOT_FOUND");
     }
 
-    let allowed = access.isAdmin || String(document.createdBy) === String(access.user._id);
+    let allowed = String(document.createdBy) === String(access.user._id)
+      || (access.isAdmin && await documentInActorScope(ctx, access.departmentScope, document));
     if (!allowed) {
       allowed = document.approverUserIds.some(
         (id: string) => String(id) === String(access.user._id),
@@ -911,24 +1135,126 @@ export const authorizeFileDownload = query({
   },
 });
 
+async function activeUsersList(ctx: any) {
+  return (await ctx.db.query("users").collect()).filter((row: any) => row.status === "active");
+}
+
+/** Push the released work to its assignees (never before approval). */
+async function notifyWorkAssignees(
+  ctx: any,
+  args: {
+    assignments: Array<{ type?: string; userIds?: string[]; departmentId?: string }>;
+    documentId: string;
+    title: string;
+    body: string;
+    /** The actor never gets a push for work they assigned to themselves. */
+    skipUserId?: string;
+  },
+) {
+  const users = await activeUsersList(ctx);
+  const recipients = workAssignmentPushUserIds({ assignments: args.assignments, users })
+    .filter((id) => !args.skipUserId || id !== String(args.skipUserId));
+  if (!recipients.length) return;
+  await ctx.scheduler.runAfter(0, internal.pushActions.sendToUsers, {
+    userIds: recipients,
+    title: args.title,
+    body: args.body,
+    kind: "work",
+    sourceType: "department_work",
+    sourceId: args.documentId,
+  });
+}
+
+/** Push "Công việc chờ duyệt" to the designated approvers of a (re)submitted document. */
+async function notifyWorkApprovers(
+  ctx: any,
+  args: {
+    approverUserIds: string[];
+    documentId: string;
+    title: string;
+    resubmitted: boolean;
+    /** Set when someone other than the creator (re)submitted, e.g. an admin edit. */
+    editorName?: string | null;
+  },
+) {
+  if (!args.approverUserIds.length) return;
+  const { pushBody } = workApprovalRequestText({ title: args.title, editorName: args.editorName });
+  await ctx.scheduler.runAfter(0, internal.pushActions.sendToUsers, {
+    userIds: args.approverUserIds.map(String),
+    title: args.resubmitted ? "Công việc chờ duyệt lại" : "Công việc chờ duyệt",
+    body: pushBody,
+    kind: "work",
+    sourceType: "approval",
+    sourceId: args.documentId,
+  });
+}
+
 export const formOptions = query({
   args: {},
   handler: async (ctx) => {
     const actor = await requireWorkWrite(ctx);
     const visibilityMode = await getWorkVisibilityMode(ctx);
     const { activeUsers, departments, positions } = await catalog(ctx);
+    const opsTarget = (user: any) => ({
+      _id: String(user._id),
+      role: user.role,
+      level: activePositionLevel(user, positions),
+      departmentId: user.departmentId,
+    });
+    const opsActor = { _id: String(actor.user._id), departmentId: actor.user.departmentId };
+    const isAdminActor = actor.user.role === "admin";
     const users = activeUsers.filter((user: any) => {
-      if (actor.isOps) return true;
-      return isSameDepartmentSubordinate(actor.user, user, actor.positions);
+      if (actor.isOps) {
+        return isUserInModeratorScope(actor.departmentScope, user)
+          && opsCanAssignWorkToUser(opsActor, opsTarget(user), { allowOpsAnyDepartment: isAdminActor });
+      }
+      return actorCanAssignUser(actor, user);
+    });
+    // Admin/mod accounts of another department: an admin may keep/assign them
+    // only when editing an existing document (never on create).
+    const editOnlyUser = (user: any) => isAdminActor
+      && !opsCanAssignWorkToUser(opsActor, opsTarget(user));
+    const canAssignDepartments = canAssignWorkDepartment(actor.user.role, actor.level);
+    const personOption = (user: any) => ({
+      _id: user._id,
+      name: user.name || user.email || "Chưa đặt tên",
+      email: user.email || "",
+      role: user.role,
+      departmentId: user.departmentId,
+      departmentName:
+        departments.find((department: any) => String(department._id) === String(user.departmentId))
+          ?.name || "",
+      positionName:
+        positions.find((position: any) => String(position._id) === String(user.positionId))?.name
+        || "",
+      level: activePositionLevel(user, positions),
+      isSelf: String(user._id) === String(actor.user._id),
+    });
+    const assigneeOption = (user: any) => ({
+      ...personOption(user),
+      ...(editOnlyUser(user) ? { editOnly: true } : {}),
     });
     return {
       canCreate: true,
       isOps: actor.isOps,
+      /**
+       * Documents created by admin/mod need Ban giám hiệu approval before
+       * release, unless the only assignee is the creator (`selfUserId`).
+       */
+      requiresApproval: actor.isOps,
+      selfUserId: actor.user._id,
+      canAssignDepartments,
+      departmentScope: actor.departmentScope,
       visibilityMode,
       assignerMode: WORK_ASSIGNER_MODE_ADMIN_MOD,
-      departments: actor.isOps
+      departments: canAssignDepartments
         ? departments
             .filter((department: any) => department.active)
+            .filter((department: any) =>
+              !actor.isOps
+              || !actor.departmentScope
+              || String(department._id) === String(actor.departmentScope),
+            )
             .sort((a: any, b: any) => a.name.localeCompare(b.name, "vi"))
             .map((department: any) => ({
               _id: department._id,
@@ -937,23 +1263,22 @@ export const formOptions = query({
             }))
         : [],
       users: users
-        .map((user: any) => ({
-          _id: user._id,
-          name: user.name || user.email || "Chưa đặt tên",
-          email: user.email || "",
-          role: user.role,
-          departmentId: user.departmentId,
-          departmentName:
-            departments.find((department: any) => String(department._id) === String(user.departmentId))
-              ?.name || "",
-          positionName:
-            positions.find((position: any) => String(position._id) === String(user.positionId))?.name
-            || "",
-          level: activePositionLevel(user, positions),
-        }))
+        .map(assigneeOption)
         .sort((a: any, b: any) => a.name.localeCompare(b.name, "vi")),
       documentTypes: await listActiveDocumentTypes(ctx),
-      approvers: [],
+      // Approvers are school-wide Ban giám hiệu, even for a department-scoped moderator.
+      approvers: actor.isOps
+        ? activeUsers
+            .filter((user: any) =>
+              isEligibleWorkApprover({
+                status: user.status,
+                role: user.role,
+                level: activePositionLevel(user, positions),
+              }),
+            )
+            .map(personOption)
+            .sort((a: any, b: any) => b.level - a.level || a.name.localeCompare(b.name, "vi"))
+        : [],
     };
   },
 });
@@ -982,7 +1307,6 @@ export const createDocument = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await requireWorkWrite(ctx);
-    await releasePendingWorkDocuments(ctx);
     const title = cleanWorkTitle(args.title);
     const hasFile = Boolean(args.driveFileId || args.fileId);
     const documentTypeId = await resolveDocumentTypeForFile(ctx, hasFile, args.documentTypeId);
@@ -990,7 +1314,20 @@ export const createDocument = mutation({
       ? validateDocumentFile(args.fileName || "", args.fileSize || 0)
       : { fileName: "", fileType: "" };
     if (args.driveFileId && !args.cleanupToken) throw new Error("UPLOAD_NOT_FOUND");
-    const assignments = await assertWorkAssignmentsForActor(ctx, args.assignments, actor);
+    // Creator-based rule: admin/mod (văn thư) documents need Ban giám hiệu
+    // approval, except when the creator assigned the work only to themselves.
+    const requiresApproval = workDocumentNeedsApproval({
+      followsApprovalFlow: workDocumentFollowsApprovalFlow({ creatorRole: actor.user.role }),
+      assignments: args.assignments,
+      creatorId: actor.user._id,
+    });
+    const { assignments, approverUserIds } = await assertWorkAssignmentsForActor(
+      ctx,
+      args.assignments,
+      actor,
+      requiresApproval ? args.approverUserIds || [] : [],
+    );
+    const approval = workApprovalSubmission(requiresApproval, approverUserIds);
 
     const now = Date.now();
     if (args.driveFileId && args.cleanupToken) {
@@ -1006,7 +1343,7 @@ export const createDocument = mutation({
       fileId: args.fileId,
       driveFileId: args.driveFileId,
       driveChecksum: args.driveChecksum,
-      storageProvider: args.driveFileId ? "google_drive" : "convex",
+      storageProvider: args.driveFileId ? storageProviderForKey(args.driveFileId) : "convex",
       fileName: file.fileName,
       fileType: file.fileType,
       fileSize: hasFile ? args.fileSize || 0 : 0,
@@ -1016,10 +1353,8 @@ export const createDocument = mutation({
       content: firstAssignment.content,
       deadline: firstAssignment.deadline,
       assignments: storedAssignments(assignments),
-      approverUserIds: [],
-      approvedByUserIds: [],
-      rejectedByUserIds: [],
-      status: "approved",
+      ...approval,
+      submittedAt: now,
       active: true,
       createdBy: actor.user._id,
       updatedBy: actor.user._id,
@@ -1038,19 +1373,25 @@ export const createDocument = mutation({
         assignmentCount: assignments.length,
         departmentCount: assignments.filter((item) => item.type === "department").length,
         individualCount: assignments.filter((item) => item.type === "individual").length,
+        requiresApproval: approval.requiresApproval,
+        approverCount: approval.approverUserIds.length,
       }),
       at: now,
     });
-    const users = (await ctx.db.query("users").collect()).filter((row: any) => row.status === "active");
-    const recipients = workAssignmentPushUserIds({ assignments, users });
-    if (recipients.length) {
-      await ctx.scheduler.runAfter(0, internal.pushActions.sendToUsers, {
-        userIds: recipients,
+    if (approval.requiresApproval) {
+      await notifyWorkApprovers(ctx, {
+        approverUserIds: approval.approverUserIds,
+        documentId: String(documentId),
+        title,
+        resubmitted: false,
+      });
+    } else {
+      await notifyWorkAssignees(ctx, {
+        assignments,
+        documentId: String(documentId),
         title: "Công việc mới",
         body: title,
-        kind: "work",
-        sourceType: "department_work",
-        sourceId: String(documentId),
+        skipUserId: String(actor.user._id),
       });
     }
     return documentId;
@@ -1084,11 +1425,22 @@ export const updateDocument = mutation({
     const document = await ctx.db.get(args.documentId);
     if (!document?.active) throw new Error("WORK_DOCUMENT_NOT_FOUND");
     const relatedBefore = await relatedDocumentWork(ctx, args.documentId);
-    const creatorMutable = canCreatorMutateWork(relatedBefore.workItems);
-    if (!actor.isOps && String(document.createdBy) !== String(actor.user._id)) {
-      throw new Error("WORK_UPDATE_FORBIDDEN");
+    // Out-of-scope documents fall back to ordinary creator rules for a scoped moderator.
+    const managesAsOps = actor.isOps
+      && await documentInActorScope(ctx, actor.departmentScope, document);
+    if (!managesAsOps && String(document.createdBy) !== String(actor.user._id)) {
+      throw new Error(actor.isOps ? MODERATOR_DEPARTMENT_SCOPE_ERROR : "WORK_UPDATE_FORBIDDEN");
     }
-    if (!actor.isOps && !creatorMutable) throw new Error("WORK_DOCUMENT_IMMUTABLE");
+    // Any submission makes the document read-only for everyone. The first
+    // approval locks it too, except for `admin`, whose edit sends an
+    // approved/released document back to Ban giám hiệu (`editRequiresReapproval`).
+    const editPolicy = workDocumentEditPolicy({
+      document,
+      actorRole: actor.user.role,
+      canManage: true,
+      hasSubmissions: workHasSubmissions(activeSubmissionRows(relatedBefore)),
+    });
+    if (editPolicy.editError) throw new Error(editPolicy.editError);
 
     const replacementRequested =
       args.driveFileId !== undefined
@@ -1120,7 +1472,29 @@ export const updateDocument = mutation({
       };
     }
 
-    const assignments = await assertWorkAssignmentsForActor(ctx, args.assignments, actor);
+    const creator = await ctx.db.get(document.createdBy as Id<"users">);
+    // Admin re-approval path: approval again unless the editing admin is the
+    // only assignee. Otherwise the creator-based rule (workDocumentNeedsApproval).
+    const requiresApproval = workEditNeedsApproval({
+      editRequiresReapproval: editPolicy.editRequiresReapproval,
+      followsApprovalFlow: workDocumentFollowsApprovalFlow({
+        requiresApproval: document.requiresApproval,
+        creatorRole: creator?.role,
+      }),
+      assignments: args.assignments,
+      creatorId: document.createdBy,
+      editorId: actor.user._id,
+    });
+    const { assignments, approverUserIds } = await assertWorkAssignmentsForActor(
+      ctx,
+      args.assignments,
+      actor,
+      requiresApproval ? args.approverUserIds ?? document.approverUserIds ?? [] : [],
+      // Admin may keep/assign admin/mod accounts of any department when editing.
+      { allowOpsAnyDepartment: actor.user.role === "admin" },
+    );
+    // Editing resets every prior decision and resubmits approval-required documents.
+    const approval = workApprovalSubmission(requiresApproval, approverUserIds);
     if (replacement) {
       await commitDriveUploadStage(
         ctx,
@@ -1131,6 +1505,12 @@ export const updateDocument = mutation({
     }
 
     const related = relatedBefore;
+    // Same assignments → keep the existing work graph (items, personal tasks);
+    // otherwise replace it atomically with the document update.
+    const keepWorkItems = workAssignmentsUnchanged(
+      related.workItems.filter((item: any) => item.active),
+      assignments,
+    );
     const now = Date.now();
     const firstAssignment = assignments[0];
     const title = args.title !== undefined ? cleanWorkTitle(args.title) : document.title;
@@ -1146,7 +1526,7 @@ export const updateDocument = mutation({
             fileId: undefined,
             driveFileId: replacement.driveFileId,
             driveChecksum: replacement.driveChecksum,
-            storageProvider: "google_drive",
+            storageProvider: storageProviderForKey(replacement.driveFileId),
             fileName: replacement.fileName,
             fileType: replacement.fileType,
             fileSize: replacement.fileSize,
@@ -1158,13 +1538,20 @@ export const updateDocument = mutation({
       content: firstAssignment.content,
       deadline: firstAssignment.deadline,
       assignments: storedAssignments(assignments),
-      approverUserIds: [],
-      status: "approved",
+      ...approval,
+      ...(approval.requiresApproval ? { submittedAt: now } : {}),
+      // "Đã chỉnh sửa bởi …": set on every successful edit only (not create/approve/reject).
+      lastEditedBy: String(actor.user._id),
+      lastEditedAt: now,
       updatedBy: actor.user._id,
       updatedAt: now,
     });
-    await insertDocumentWorkItems(ctx, args.documentId, assignments, actor.user._id, now);
-    const deactivated = await deactivateRelatedDocumentWork(ctx, related, actor.user._id, now);
+    const deactivated = keepWorkItems
+      ? { workItemCount: 0, personalTaskCount: 0 }
+      : await (async () => {
+          await insertDocumentWorkItems(ctx, args.documentId, assignments, actor.user._id, now);
+          return await deactivateRelatedDocumentWork(ctx, related, actor.user._id, now);
+        })();
 
     const supersededDriveFileId = replacement && document.driveFileId !== replacement.driveFileId
       ? document.driveFileId
@@ -1185,21 +1572,37 @@ export const updateDocument = mutation({
         replacementFile: Boolean(replacement),
         cleanupJobId,
         assignmentCount: assignments.length,
+        requiresApproval: approval.requiresApproval,
+        approverCount: approval.approverUserIds.length,
+        reapproval: editPolicy.editRequiresReapproval && approval.requiresApproval,
+        keptWorkItems: keepWorkItems,
         deactivatedWorkItemCount: deactivated.workItemCount,
         deactivatedPersonalTaskCount: deactivated.personalTaskCount,
       }),
       at: now,
     });
-    const users = (await ctx.db.query("users").collect()).filter((row: any) => row.status === "active");
-    const recipients = workAssignmentPushUserIds({ assignments, users });
-    if (recipients.length) {
-      await ctx.scheduler.runAfter(0, internal.pushActions.sendToUsers, {
-        userIds: recipients,
+    const displayTitle = workListTitle({
+      title,
+      fileName: replacement?.fileName || document.fileName,
+      content: firstAssignment.content,
+    });
+    if (approval.requiresApproval) {
+      await notifyWorkApprovers(ctx, {
+        approverUserIds: approval.approverUserIds,
+        documentId: String(args.documentId),
+        title: displayTitle,
+        resubmitted: true,
+        editorName: String(actor.user._id) !== String(document.createdBy)
+          ? String(actor.user.name || "").trim() || "Người dùng"
+          : null,
+      });
+    } else {
+      await notifyWorkAssignees(ctx, {
+        assignments,
+        documentId: String(args.documentId),
         title: "Công việc đã cập nhật",
-        body: workListTitle({ title, fileName: replacement?.fileName || document.fileName, content: firstAssignment.content }),
-        kind: "work",
-        sourceType: "department_work",
-        sourceId: String(args.documentId),
+        body: displayTitle,
+        skipUserId: String(actor.user._id),
       });
     }
     return { documentId: args.documentId, cleanupJobId };
@@ -1213,12 +1616,21 @@ export const deleteDocument = mutation({
     const document = await ctx.db.get(args.documentId);
     if (!document?.active) throw new Error("WORK_DOCUMENT_NOT_FOUND");
     const related = await relatedDocumentWork(ctx, args.documentId);
-    if (!actor.isOps && String(document.createdBy) !== String(actor.user._id)) {
-      throw new Error("WORK_UPDATE_FORBIDDEN");
+    const managesAsOps = actor.isOps
+      && await documentInActorScope(ctx, actor.departmentScope, document);
+    if (!managesAsOps && String(document.createdBy) !== String(actor.user._id)) {
+      throw new Error(actor.isOps ? MODERATOR_DEPARTMENT_SCOPE_ERROR : "WORK_UPDATE_FORBIDDEN");
     }
-    if (!actor.isOps && !canCreatorMutateWork(related.workItems)) {
-      throw new Error("WORK_DOCUMENT_IMMUTABLE");
-    }
+    // Delete stays locked after the first approval for everyone (admin included),
+    // and any submission makes the document read-only.
+    if (isWorkApprovalLocked(document)) throw new Error("WORK_DOCUMENT_IMMUTABLE");
+    const deletePolicy = workDocumentEditPolicy({
+      document,
+      actorRole: actor.user.role,
+      canManage: true,
+      hasSubmissions: workHasSubmissions(activeSubmissionRows(related)),
+    });
+    if (deletePolicy.deleteError) throw new Error(deletePolicy.deleteError);
 
     const now = Date.now();
     await ctx.db.patch(args.documentId, {
@@ -1291,14 +1703,16 @@ export const listAdmin = query({
   handler: async (ctx) => {
     const actor = await requireWorkWrite(ctx);
     const visibilityMode = await getWorkVisibilityMode(ctx);
-    const [documents, workItems, catalogData] = await Promise.all([
+    const [documents, workItems, personalTasks, catalogData] = await Promise.all([
       ctx.db.query("officeDocuments").collect(),
       ctx.db.query("workItems").collect(),
+      ctx.db.query("personalTasks").collect(),
       catalog(ctx),
     ]);
     const activeDocuments = documents.filter((document: any) => document.active);
     const activeWorkItems = workItems.filter((item: any) => item.active);
-    const usersById = new Map<string, { status?: string }>(
+    const activePersonalTasks = personalTasks.filter((task: any) => task.active);
+    const usersById = new Map<string, { status?: string; departmentId?: string }>(
       catalogData.users.map((user: any) => [String(user._id), user]),
     );
     const visibleDocuments = activeDocuments.filter((document: any) =>
@@ -1311,6 +1725,7 @@ export const listAdmin = query({
         actorDepartmentId: String(actor.user.departmentId || ""),
         visibilityMode,
         usersById,
+        departmentScope: actor.departmentScope,
       }),
     );
     const views = await Promise.all(
@@ -1333,6 +1748,8 @@ export const listAdmin = query({
             _id: item._id,
             type,
             departmentId: item.departmentId,
+            // Edit form prefill (individual rows); ids only, names come from members.
+            userIds: type === "individual" ? (item.assigneeUserIds || []).map(String) : [],
             departmentName:
               type === "individual"
                 ? "Cá nhân"
@@ -1352,10 +1769,23 @@ export const listAdmin = query({
             })),
           };
         });
+        // UX only (server re-checks): a scoped moderator cannot manage out-of-scope
+        // documents they did not create, even when they see them as an assignee.
+        const isCreator = String(document.createdBy) === String(actor.user._id);
+        const outOfScopeForMod = Boolean(actor.departmentScope)
+          && !isCreator
+          && !isDocumentInScope(actor.departmentScope, document, usersById);
+        // Non-ops viewers (e.g. Ban giám hiệu in school mode) only manage their own documents.
+        const readOnly = outOfScopeForMod || (!actor.isOps && !isCreator);
+        const itemIds = new Set(items.map((item: any) => String(item._id)));
+        const view = await documentView(ctx, document, catalogData, items, {
+          viewer: { userId: String(actor.user._id), role: String(actor.user.role || ""), canManage: !readOnly },
+          personalTasks: activePersonalTasks.filter((task: any) => itemIds.has(String(task.workItemId))),
+        });
         return {
-          ...(await documentView(ctx, document, catalogData, items)),
+          ...view,
           assignments: assignmentViews,
-          workStatus: managementDocumentWorkStatus(document, items, catalogData),
+          workStatus: documentListStatus(document, items, catalogData),
           taskCount: assignmentViews.reduce(
             (total: number, assignment: any) => total + assignment.taskCount,
             0,
@@ -1412,17 +1842,93 @@ export const listAdmin = query({
   },
 });
 
+/** Designated Ban giám hiệu approver gate (never admin/moderator, level 4+). */
+async function requireDocumentApprover(ctx: any, documentId: Id<"officeDocuments">) {
+  const access = await requireWorkAccess(ctx);
+  if (access.isAdmin) throw new Error("ADMIN_USE_MANAGEMENT");
+  const document = await ctx.db.get(documentId);
+  if (!document?.active) throw new Error("WORK_DOCUMENT_NOT_FOUND");
+  if (
+    !isDesignatedWorkApprover(document, String(access.user._id))
+    || !isEligibleWorkApprover({ status: access.user.status, role: access.user.role, level: access.level })
+  ) {
+    throw new Error("WORK_APPROVER_FORBIDDEN");
+  }
+  return { access, document };
+}
+
 export const approveDocument = mutation({
   args: { documentId: v.id("officeDocuments") },
-  handler: async () => {
-    throw new Error("WORK_APPROVAL_DISABLED");
+  handler: async (ctx, args) => {
+    const { access, document } = await requireDocumentApprover(ctx, args.documentId);
+    const userId = String(access.user._id);
+    if (document.approvedByUserIds.some((id: string) => String(id) === userId)) return;
+    if (!canApproveWorkDocument(document, userId)) throw new Error("WORK_DOCUMENT_ALREADY_DECIDED");
+    const now = Date.now();
+    const next = applyWorkApproval(document, userId, now);
+    await ctx.db.patch(args.documentId, {
+      ...next,
+      updatedBy: access.user._id,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: access.user._id,
+      targetEmail: access.user.email,
+      action: "work.document.approve",
+      details: JSON.stringify({ documentId: args.documentId, status: next.status }),
+      at: now,
+    });
+    if (next.status !== "approved") return;
+    const title = workListTitle(document);
+    await ctx.scheduler.runAfter(0, internal.pushActions.sendToUsers, {
+      userIds: [String(document.createdBy)],
+      title: "Công việc đã được duyệt",
+      body: title,
+      kind: "work",
+      sourceType: "work_approved",
+      sourceId: String(args.documentId),
+    });
+    await notifyWorkAssignees(ctx, {
+      assignments: documentAssignments(document),
+      documentId: String(args.documentId),
+      title: "Công việc mới",
+      body: title,
+    });
   },
 });
 
 export const rejectDocument = mutation({
-  args: { documentId: v.id("officeDocuments") },
-  handler: async () => {
-    throw new Error("WORK_APPROVAL_DISABLED");
+  args: { documentId: v.id("officeDocuments"), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { access, document } = await requireDocumentApprover(ctx, args.documentId);
+    const userId = String(access.user._id);
+    if ((document.rejectedByUserIds || []).some((id: string) => String(id) === userId)) return;
+    if (!canRejectWorkDocument(document)) throw new Error("WORK_DOCUMENT_ALREADY_DECIDED");
+    const reason = cleanWorkReturnReason(args.reason);
+    const now = Date.now();
+    const next = applyWorkRejection(document, userId, reason, now);
+    // Work items stay as they are: a returned document is not released, and the
+    // creator's edit replaces them (or delete deactivates them).
+    await ctx.db.patch(args.documentId, {
+      ...next,
+      updatedBy: access.user._id,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: access.user._id,
+      targetEmail: access.user.email,
+      action: "work.document.reject",
+      details: JSON.stringify({ documentId: args.documentId, status: next.status }),
+      at: now,
+    });
+    await ctx.scheduler.runAfter(0, internal.pushActions.sendToUsers, {
+      userIds: [String(document.createdBy)],
+      title: "Công việc bị trả lại",
+      body: `${workListTitle(document)}: ${reason}`,
+      kind: "work",
+      sourceType: "work_returned",
+      sourceId: String(args.documentId),
+    });
   },
 });
 
@@ -1764,7 +2270,8 @@ export const reviewPersonalCompletion = mutation({
 
     const target = await ctx.db.get(args.userId as Id<"users">);
     const targetLevel = target ? activePositionLevel(target, access.positions) : 0;
-    let canReview = access.isAdmin;
+    let canReview = access.isAdmin
+      && await documentInActorScope(ctx, access.departmentScope, parentDocument);
     if (!canReview && assignerMode === WORK_ASSIGNER_MODE_SUPERVISOR) {
       // L2/L3 review level-1 subordinates only (matches listMine badge/UI).
       canReview =
@@ -1836,7 +2343,18 @@ export const listMine = query({
       tasksByItem.set(String(task.workItemId), list);
     }
 
-    const visibleApprovalDocs: any[] = [];
+    // Documents this Ban giám hiệu member was designated to approve (any decision state).
+    // Decided documents stay listed for 30 days so the approver can see the outcome.
+    const decidedSince = Date.now() - APPROVAL_HISTORY_MS;
+    const visibleApprovalDocs = access.isAdmin
+      ? []
+      : activeDocuments.filter((document: any) =>
+          isDesignatedWorkApprover(document, String(access.user._id))
+          && (
+            document.status === "pending"
+            || (workApprovalDecidedAt(document) ?? document.updatedAt ?? 0) >= decidedSince
+          ),
+        );
 
     const approvalViews = await Promise.all(
       visibleApprovalDocs.map(async (document: any) => {
@@ -1883,8 +2401,15 @@ export const listMine = query({
             taskCount: tasks.length,
           };
         });
+        const itemIds = new Set(items.map((item: any) => String(item._id)));
         return {
-          ...(await documentView(ctx, document, catalogData, items)),
+          // Approvers never edit or delete here (no viewer → read-only flags); the creator does.
+          ...(await documentView(ctx, document, catalogData, items, {
+            personalTasks: [...itemIds].flatMap((id) => tasksByItem.get(id) || []),
+          })),
+          awaitingMyDecision: canApproveWorkDocument(document, String(access.user._id)),
+          canReject:
+            canApproveWorkDocument(document, String(access.user._id)) && canRejectWorkDocument(document),
           assignments,
           workStatus: overallCompletionStatus(
             assignments.map((assignment: any) => assignment.status),
@@ -1940,6 +2465,7 @@ export const listMine = query({
           documentId: document._id,
           documentTitle: workListTitle(document),
           documentContent: document.content,
+          ...lastEditedView(document, catalogData),
           fileName: document.fileName,
           fileUrl: null,
           privateFile: Boolean(document.driveFileId || document.fileId),
@@ -2004,10 +2530,13 @@ export const listMine = query({
         userId: access.user._id,
         level: access.level,
         isAdmin: access.isAdmin,
-        canCreate: canCreateAssignments(access.user.role, access.isAdmin ? 0 : access.level) || access.isAdmin,
+        canCreate: canCreateWorkDocuments(access.user.role, access.level),
         assignerMode: WORK_ASSIGNER_MODE_ADMIN_MOD,
         assignableUsers: [],
-        approvals: approvalViews.sort((a, b) => a.deadline.localeCompare(b.deadline)),
+        approvals: approvalViews.sort(
+          (a, b) => Number(b.awaitingMyDecision) - Number(a.awaitingMyDecision)
+            || (b.submittedAt || 0) - (a.submittedAt || 0),
+        ),
         departmentWorks: [],
         personalTasks: [],
         myTasks: myWorkItems.sort((a, b) => a.deadline.localeCompare(b.deadline)),
@@ -2068,6 +2597,7 @@ export const listMine = query({
             documentId: document?._id ?? null,
             documentTitle: document ? workListTitle(document) : "",
             documentContent: document?.content || "",
+            ...lastEditedView(document, catalogData),
             fileName: document?.fileName || "",
             fileUrl: null,
             privateFile: Boolean(document?.driveFileId || document?.fileId),
@@ -2089,7 +2619,16 @@ export const listMine = query({
           (user: any) => String(user._id) === String(row.userId),
         );
         const targetLevel = target ? activePositionLevel(target, catalogData.positions) : 0;
-        const canReview = access.isAdmin
+        const canReview = (
+          access.isAdmin
+          && personalTaskInScope(
+            access.departmentScope,
+            task,
+            activeWorkItems,
+            docsById,
+            usersByIdMap(catalogData.users),
+          )
+        )
           || (
             (access.level === 2 || access.level === 3) &&
             targetLevel > 0 &&
@@ -2145,7 +2684,10 @@ export const listMine = query({
               }))
               .sort((a: any, b: any) => b.level - a.level || a.name.localeCompare(b.name, "vi"))
           : [],
-      approvals: approvalViews.sort((a, b) => a.deadline.localeCompare(b.deadline)),
+      approvals: approvalViews.sort(
+        (a, b) => Number(b.awaitingMyDecision) - Number(a.awaitingMyDecision)
+          || (b.submittedAt || 0) - (a.submittedAt || 0),
+      ),
       departmentWorks: departmentWorkViews.filter(Boolean),
       personalTasks: personalTaskViews.filter(Boolean).sort((a: any, b: any) =>
         a.deadline.localeCompare(b.deadline),
@@ -2192,7 +2734,8 @@ async function workItemViewWithContext(
         })),
       status: taskOverallStatus(task),
     })),
-    document: await documentView(ctx, document, catalogData, [item]),
+    ...lastEditedView(document, catalogData),
+    document: await documentView(ctx, document, catalogData, [item], { personalTasks: tasks }),
   };
 }
 
@@ -2202,8 +2745,7 @@ export const badge = query({
     const access = await requireWorkAccess(ctx);
     const assignerMode = await getWorkAssignerMode(ctx);
     const visibilityMode = await getWorkVisibilityMode(ctx);
-    const canCreate =
-      canCreateAssignments(access.user.role, access.isAdmin ? 0 : access.level) || access.isAdmin;
+    const canCreate = canCreateWorkDocuments(access.user.role, access.level);
     const [documents, workItems, personalTasks] = await Promise.all([
       ctx.db.query("officeDocuments").collect(),
       ctx.db.query("workItems").collect(),
@@ -2213,7 +2755,7 @@ export const badge = query({
     const activeDocuments = documents.filter((document: any) => document.active);
     const activeWorkItems = workItems.filter((item: any) => item.active);
     const docsById = new Map(activeDocuments.map((document: any) => [String(document._id), document]));
-    const usersById = new Map<string, { status?: string }>(
+    const usersById = new Map<string, { status?: string; departmentId?: string }>(
       catalogData.users.map((user: any) => [String(user._id), user]),
     );
     const tasksByItem = new Map<string, any[]>();
@@ -2223,7 +2765,12 @@ export const badge = query({
       tasksByItem.set(String(task.workItemId), list);
     }
 
-    let pendingApprovalCount = 0;
+    // Documents waiting for this Ban giám hiệu member's approval decision.
+    let pendingApprovalCount = access.isAdmin
+      ? 0
+      : activeDocuments.filter((document: any) =>
+          canApproveWorkDocument(document, String(access.user._id)),
+        ).length;
     if (assignerMode === WORK_ASSIGNER_MODE_ADMIN_MOD) {
       for (const item of activeWorkItems) {
         const document = docsById.get(String(item.documentId));
@@ -2244,7 +2791,10 @@ export const badge = query({
             (user: any) => String(user._id) === String(row.userId),
           );
           const targetLevel = target ? activePositionLevel(target, catalogData.positions) : 0;
-          const canReview = access.isAdmin
+          const canReview = (
+            access.isAdmin
+            && personalTaskInScope(access.departmentScope, task, activeWorkItems, docsById, usersById)
+          )
             || (
               (access.level === 2 || access.level === 3) &&
               targetLevel > 0 &&
@@ -2299,6 +2849,9 @@ export const badge = query({
     let incompleteCreatedCount = 0;
     if (canCreate) {
       for (const document of activeDocuments) {
+        // Non-ops creators (incl. Ban giám hiệu, who may see school-wide documents)
+        // only count what they created themselves.
+        if (!access.isAdmin && String(document.createdBy) !== String(access.user._id)) continue;
         const items = workItemsForDocument(activeWorkItems, document._id);
         if (!isWorkManagementListVisible({
           document,
@@ -2309,6 +2862,7 @@ export const badge = query({
           actorDepartmentId: String(access.user.departmentId || ""),
           visibilityMode,
           usersById,
+          departmentScope: access.departmentScope,
         })) continue;
         if (!isWorkStatusCompleted(managementDocumentWorkStatus(document, items, catalogData))) {
           incompleteCreatedCount += 1;

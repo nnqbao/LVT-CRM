@@ -14,11 +14,13 @@ import {
   claimDriveUploadCleanup,
   commitDriveUploadStage,
   completeDriveUploadCleanup,
+  deleteConvexObject,
   finalizeDriveUploadStage,
   registerDriveUploadStage,
   releaseDriveUploadCleanup,
 } from "./driveUploadStages";
 import { canAddStaffFault, canSeeStaffFaultRecord, STAFF_FAULTS_MENU_ID } from "./staffFaultsPolicy";
+import { moderatorDepartmentScope, opsTargetInScope } from "./moderatorScope";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const SCHOOL_YEAR_RE = /^\d{4}-\d{4}$/;
@@ -111,6 +113,8 @@ function periodKeyFor(args: {
 type ActorCtx = {
   user: any;
   isOps: boolean;
+  /** Set for a moderator limited to one department (Đánh giá nhân sự + Ghi nhận lỗi). */
+  departmentScope: string | null;
   level: number;
   positions: any[];
   menuAccess: Record<string, string>;
@@ -126,6 +130,7 @@ async function loadPeopleReviewActor(ctx: any): Promise<ActorCtx> {
   return {
     user,
     isOps,
+    departmentScope: moderatorDepartmentScope(user),
     level: isOps ? 0 : activePositionLevel(user, positions),
     positions,
     menuAccess,
@@ -157,14 +162,28 @@ function staffFaultsAccessLevel(access: ActorCtx) {
   return access.menuAccess[STAFF_FAULTS_MENU_ID];
 }
 
-function actorSeesStaffFault(access: ActorCtx, fault: { targetUserId: string; recordedByUserId: string }) {
+function actorSeesStaffFault(
+  access: ActorCtx,
+  fault: { targetUserId: string; recordedByUserId: string },
+  target: { departmentId?: string } | null | undefined,
+) {
   return canSeeStaffFaultRecord({
     isOps: access.isOps,
     access: staffFaultsAccessLevel(access),
     actorUserId: String(access.user._id),
     targetUserId: String(fault.targetUserId),
     recordedByUserId: String(fault.recordedByUserId),
+    departmentScope: access.departmentScope,
+    targetDepartmentId: target?.departmentId || null,
   });
+}
+
+/** Ops power over `target`, narrowed to the department for a scoped moderator. */
+function opsReaches(actor: ActorCtx, target: any) {
+  return opsTargetInScope(
+    { _id: String(actor.user._id), isOps: actor.isOps, departmentScope: actor.departmentScope },
+    target,
+  );
 }
 
 function personLabel(user: any) {
@@ -195,8 +214,10 @@ function canRecordFault(actor: ActorCtx, target: any) {
   }
 
   if (actor.isOps) {
-    // Admin/Mod may fault anyone except L4/L5 (and other ops accounts).
+    // Admin/Mod may fault anyone except L4/L5 (and other ops accounts);
+    // a department-scoped moderator only inside their department.
     if (targetIsOps) return false;
+    if (!opsReaches(actor, target)) return false;
     return targetLevel !== 4 && targetLevel !== 5;
   }
 
@@ -260,7 +281,7 @@ function canWriteEvaluationText(actor: ActorCtx, target: any) {
   }
 
   if (targetLevel >= 1 && targetLevel <= 3) {
-    return actor.isOps || actor.level === 4 || actor.level === 5;
+    return opsReaches(actor, target) || actor.level === 4 || actor.level === 5;
   }
 
   return false;
@@ -268,7 +289,8 @@ function canWriteEvaluationText(actor: ActorCtx, target: any) {
 
 function canViewTarget(actor: ActorCtx, target: any) {
   if (String(actor.user._id) === String(target._id)) return true;
-  if (actor.isOps || actor.level === 4 || actor.level === 5) return true;
+  if (actor.isOps) return opsReaches(actor, target);
+  if (actor.level === 4 || actor.level === 5) return true;
   if (actor.level === 2 || actor.level === 3) {
     return isSameDepartmentSubordinate(actor.user, target, actor.positions);
   }
@@ -425,7 +447,7 @@ async function boardingParticipationKeys(ctx: any, userId: string) {
       schoolYear: period.schoolYear,
       semester: period.semester,
       periodKey: `BD-${period.schoolYear}-HK${period.semester}`,
-      label: `HK${period.semester} · ${period.schoolYear}`,
+      label: `Học kỳ ${period.semester} · Năm học ${period.schoolYear}`,
     }))
     .sort(
       (a: any, b: any) =>
@@ -578,7 +600,7 @@ export const authorizeFileDownload = query({
       if (!fault?.active || !fault.driveFileId) throw new Error("PEOPLE_REVIEW_FILE_NOT_FOUND");
       const target = await ctx.db.get(fault.targetUserId as Id<"users">);
       const viaPeopleReview = peopleReviewVisible && target && canViewTarget(access, target);
-      const viaStaffFaults = staffFaultsVisible && actorSeesStaffFault(access, fault);
+      const viaStaffFaults = staffFaultsVisible && actorSeesStaffFault(access, fault, target);
       if (!viaPeopleReview && !viaStaffFaults) throw new Error("PEOPLE_REVIEW_FILE_FORBIDDEN");
       return {
         driveFileId: fault.driveFileId,
@@ -625,6 +647,7 @@ export const overview = query({
     if (access.isOps || access.level === 4 || access.level === 5) {
       mode = "school";
       people = activeUsers
+        .filter((user: any) => !access.isOps || opsReaches(access, user))
         .map((user: any) => {
           const isOps = isOperationalManagerRole(user.role);
           const level = isOps ? null : activePositionLevel(user, positions);
@@ -861,7 +884,7 @@ export const staffFaultLog = query({
         if (!fault.active) return false;
         if (faultFrom && fault.violationDate < faultFrom) return false;
         if (faultTo && fault.violationDate > faultTo) return false;
-        return actorSeesStaffFault(access, fault);
+        return actorSeesStaffFault(access, fault, usersById.get(String(fault.targetUserId)));
       })
       .sort((a: any, b: any) => b.violationDate.localeCompare(a.violationDate) || b.createdAt - a.createdAt)
       .map((fault: any) => mapStaffFaultRow(fault, usersById, departments, actorId));
@@ -1351,6 +1374,20 @@ export const completeDriveCleanupJob = mutation({
     const job = await ctx.db.get(args.cleanupJobId);
     if (!job?.active) return;
     if (String(job.createdBy) !== String(access.user._id)) throw new Error("DRIVE_CLEANUP_FORBIDDEN");
+    const [faults, evaluations] = await Promise.all([
+      ctx.db
+        .query("personnelFaults")
+        .withIndex("by_drive_file", (q: any) => q.eq("driveFileId", job.driveFileId))
+        .collect(),
+      ctx.db
+        .query("personnelEvaluationFiles")
+        .withIndex("by_drive_file", (q: any) => q.eq("driveFileId", job.driveFileId))
+        .collect(),
+    ]);
+    // Never delete a stored object that an active record still points at.
+    if (![...faults, ...evaluations].some((row: any) => row.active)) {
+      await deleteConvexObject(ctx, job.driveFileId);
+    }
     await ctx.db.patch(args.cleanupJobId, { active: false, updatedAt: Date.now() });
   },
 });

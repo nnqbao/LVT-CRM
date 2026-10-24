@@ -6,10 +6,10 @@ import { homeroomRoles, parseHomeroomPath } from './homeroomRoutes';
 import { vietnamTodayYmd } from './homeroomTime';
 import { formatDateLong, isYmd } from './homeroomLabels';
 import { HomeroomStudentQueryErrorBoundary } from './studentQueryErrorBoundary';
-import { HomeroomViewErrorBoundary, Icon, Loading, SilentBoundary } from './homeroomUi';
+import { HomeroomViewErrorBoundary, Icon, Loading } from './homeroomUi';
 import HomeroomOverview from './HomeroomOverview';
-import HomeroomPendingAbsences from './HomeroomPendingAbsences';
-import HomeroomAttendanceImport from './HomeroomAttendanceImport';
+import { MySchedule, TeachingClasses, TeachingOverview } from '../teaching/TeachingViews';
+import { GradebookClass, GradebookClasses, StudentGradebook } from '../teaching/Gradebook';
 import HomeroomClassDetail from './HomeroomClassDetail';
 import HomeroomStudentDetail from './HomeroomStudentDetail';
 import { ClassCatalogPanel } from './HomeroomClassCatalog';
@@ -61,8 +61,9 @@ export default function HomeroomRouter({ session }) {
 
   const nav = {
     overview: () => go(homeroomPathname()),
-    pending: () => go(homeroomPathname({ pendingAbsences: true })),
-    import: (date = '') => go(homeroomPathname({ importAttendance: true }), { date }),
+    section: (section) => go(homeroomPathname({ section })),
+    gradebookClass: (id) => go(homeroomPathname({ gradebookClassId: id })),
+    gradebookStudent: (id) => go(homeroomPathname({ gradebookStudentId: id })),
     manage: () => go(homeroomPathname({ manageClasses: true })),
     openClass: (id, tab = '', date = '') => go(homeroomPathname({ classId: id, tab: tab || undefined }), { date }),
     openStudent: (id) => go(homeroomPathname({ studentId: id })),
@@ -72,25 +73,32 @@ export default function HomeroomRouter({ session }) {
   if (years === undefined) {
     return (
       <section className="homeroom-view">
-        <Loading label="Đang tải Lớp chủ nhiệm…" />
+        <Loading label="Đang tải Lớp học…" />
       </section>
     );
   }
 
   const navItems = [
     { key: 'overview', label: 'Tổng quan', icon: 'overview', show: true, onClick: nav.overview },
-    { key: 'pending', label: 'Vắng chờ xử lý', icon: 'inbox', show: roles.seesClasses, onClick: nav.pending, badge: true },
-    { key: 'import', label: 'Nhập điểm danh', icon: 'upload', show: roles.canImport, onClick: () => nav.import() },
+    { key: 'homeroom', label: 'Lớp chủ nhiệm', icon: 'users', show: true, onClick: () => nav.section('homeroom') },
+    { key: 'teaching', label: 'Lớp giảng dạy', icon: 'edit', show: true, onClick: () => nav.section('teaching') },
+    { key: 'schedule', label: 'Lịch dạy', icon: 'calendar', show: true, onClick: () => nav.section('schedule') },
+    { key: 'gradebook', label: 'Học bạ', icon: 'file', show: true, onClick: () => nav.section('gradebook') },
     { key: 'manage', label: 'Quản lý lớp', icon: 'classes', show: roles.isManager, onClick: nav.manage },
   ].filter((item) => item.show);
-  const activeKey = route.view === 'class' || route.view === 'student' ? '' : route.view;
+  const activeKey =
+    route.view === 'class' || route.view === 'student'
+      ? ''
+      : route.view === 'gradebookClass' || route.view === 'gradebookStudent'
+        ? 'gradebook'
+        : route.view;
   const resetKey = `${location.path}|${selectedYearId}`;
 
   return (
     <section className="homeroom-view">
       <header className="hr-shell-head">
         <div className="hr-shell-title">
-          <span className="hr-eyebrow">Lớp chủ nhiệm</span>
+          <span className="hr-eyebrow">Lớp học</span>
           <h1>{selectedYear ? `Năm học ${selectedYear.name}` : 'Chưa có năm học'}</h1>
           <p>{formatDateLong(vietnamTodayYmd())}</p>
         </div>
@@ -103,6 +111,7 @@ export default function HomeroomRouter({ session }) {
               onChange={(event) => {
                 setYearId(event.target.value);
                 if (route.view === 'class' || route.view === 'student') nav.overview();
+                if (route.view === 'gradebookClass' || route.view === 'gradebookStudent') nav.section('gradebook');
               }}
             >
               {!years?.length ? <option value="">Chưa có năm học</option> : null}
@@ -115,7 +124,7 @@ export default function HomeroomRouter({ session }) {
           </label>
         </div>
         {selectedYearId ? (
-          <nav className="hr-shell-nav" aria-label="Điều hướng Lớp chủ nhiệm">
+          <nav className="hr-shell-nav" aria-label="Điều hướng Lớp học">
             {navItems.map((item) => (
               <button
                 key={item.key}
@@ -126,11 +135,6 @@ export default function HomeroomRouter({ session }) {
               >
                 <Icon name={item.icon} size={16} />
                 <span>{item.label}</span>
-                {item.badge ? (
-                  <SilentBoundary>
-                    <PendingBadge yearId={selectedYearId} />
-                  </SilentBoundary>
-                ) : null}
               </button>
             ))}
           </nav>
@@ -142,15 +146,19 @@ export default function HomeroomRouter({ session }) {
       ) : (
         <HomeroomViewErrorBoundary resetKey={resetKey} onBack={nav.overview}>
           {route.view === 'overview' ? (
+            <TeachingOverview yearId={selectedYearId} nav={nav} />
+          ) : route.view === 'homeroom' ? (
             <HomeroomOverview yearId={selectedYearId} roles={roles} nav={nav} />
-          ) : route.view === 'pending' ? (
-            <HomeroomPendingAbsences yearId={selectedYearId} nav={nav} />
-          ) : route.view === 'import' ? (
-            roles.canImport ? (
-              <HomeroomAttendanceImport yearId={selectedYearId} initialDate={location.date} nav={nav} />
-            ) : (
-              <Forbidden text="Chỉ Giám thị hoặc quản trị được nhập điểm danh." onBack={nav.overview} />
-            )
+          ) : route.view === 'teaching' ? (
+            <TeachingClasses yearId={selectedYearId} />
+          ) : route.view === 'schedule' ? (
+            <MySchedule yearId={selectedYearId} />
+          ) : route.view === 'gradebook' ? (
+            <GradebookClasses yearId={selectedYearId} nav={nav} />
+          ) : route.view === 'gradebookClass' ? (
+            <GradebookClass key={route.classId} classId={route.classId} nav={nav} />
+          ) : route.view === 'gradebookStudent' ? (
+            <StudentGradebook key={route.studentId} studentId={route.studentId} nav={nav} />
           ) : route.view === 'manage' ? (
             roles.isManager ? (
               <ClassCatalogPanel session={session} yearId={selectedYearId} schoolYears={years} onOpenClass={(id) => nav.openClass(id)} />
@@ -175,13 +183,6 @@ export default function HomeroomRouter({ session }) {
       )}
     </section>
   );
-}
-
-function PendingBadge({ yearId }) {
-  const overview = useQuery(anyApi.homeroomReports.overview, { schoolYearId: yearId });
-  const total = overview?.pendingTotal || 0;
-  if (!total) return null;
-  return <span className="hr-badge" aria-label={`${total} buổi vắng chờ xử lý`}>{total > 99 ? '99+' : total}</span>;
 }
 
 function Forbidden({ text, onBack }) {
@@ -213,7 +214,7 @@ function EmptySchoolYearState({ isAdmin }) {
           </button>
         </>
       ) : (
-        <p>Vui lòng liên hệ quản trị viên để tạo năm học trước khi sử dụng Lớp chủ nhiệm.</p>
+        <p>Vui lòng liên hệ quản trị viên để tạo năm học trước khi sử dụng Lớp học.</p>
       )}
     </div>
   );

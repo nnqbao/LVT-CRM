@@ -51,7 +51,7 @@
   border-radius: 999px;
   color: #c9f6e9;
   background: rgba(255, 255, 255, .08);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: .1em;
   text-transform: uppercase;
@@ -88,7 +88,7 @@
 }
 
 .report-hero-mark span {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: inherit;
   font-size: 38px;
   font-weight: 800;
   line-height: .9;
@@ -96,7 +96,7 @@
 
 .report-hero-mark small {
   color: #36727b;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 900;
   letter-spacing: .08em;
 }
@@ -146,7 +146,7 @@
   justify-content: space-between;
   padding: 0 6px;
   color: #61738b;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: .1em;
   text-transform: uppercase;
@@ -159,14 +159,14 @@
   height: 24px;
   border-radius: 8px;
   color: #fff;
-  background: var(--report-coral);
-  font-size: 11px;
+  background: var(--lvt-coral-strong, #c0472f);
+  font-size: 12px;
 }
 
 .report-people-panel > p {
   margin: 8px 6px 14px;
-  color: #8491a3;
-  font-size: 11px;
+  color: var(--lvt-muted);
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -197,7 +197,7 @@
   padding: 6px 9px;
   color: #536a83;
   background: #edf3f6;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -211,7 +211,7 @@
   border-radius: 7px;
   color: #176c5e;
   background: #dff3ed;
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .report-people-group-list {
@@ -255,7 +255,7 @@
   border-radius: 13px 13px 13px 4px;
   color: #fff;
   background: linear-gradient(145deg, #295a94, #19a78b);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 900;
   letter-spacing: .03em;
 }
@@ -278,12 +278,12 @@
 }
 
 .report-person small {
-  color: #8592a4;
-  font-size: 9px;
+  color: var(--lvt-muted);
+  font-size: 12px;
 }
 
 .report-person i {
-  color: #9ba8b8;
+  color: var(--lvt-muted);
   font-size: 19px;
   font-style: normal;
 }
@@ -348,15 +348,15 @@
 }
 
 .report-panel-toggle small {
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
 }
 
 .report-calendar-title span {
   display: block;
   margin-bottom: 3px;
-  color: #718197;
-  font-size: 10px;
+  color: var(--lvt-muted);
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -393,7 +393,7 @@
   border-right: 1px solid #dfe7ef;
   color: #607087;
   background: transparent;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 750;
 }
 
@@ -434,13 +434,13 @@
 
 .report-summary-row strong {
   color: var(--report-navy);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: inherit;
   font-size: 21px;
 }
 
 .report-summary-row span {
-  color: #75849a;
-  font-size: 10px;
+  color: var(--lvt-muted);
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -492,11 +492,11 @@
   min-height: 58px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--report-line);
-  color: #76869b;
+  color: var(--lvt-muted);
 }
 
 .report-week-day > header span {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 850;
   text-transform: uppercase;
 }
@@ -508,7 +508,7 @@
   height: 31px;
   border-radius: 11px;
   color: var(--report-navy);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: inherit;
   font-size: 16px;
 }
 
@@ -534,7 +534,7 @@
 .report-day-empty {
   padding: 18px 4px;
   color: #b6c0ca;
-  font-size: 10px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -596,7 +596,7 @@
   display: -webkit-box;
   min-width: 0;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.3;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -606,7 +606,7 @@
 .report-event-location {
   overflow: hidden;
   opacity: .76;
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -629,7 +629,7 @@
   display: block;
   min-width: 0;
   overflow: hidden;
-  font-size: 9px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -649,8 +649,8 @@
 .report-month-weekdays span {
   padding: 10px;
   border-right: 1px solid var(--report-line);
-  color: #75859a;
-  font-size: 9px;
+  color: var(--lvt-muted);
+  font-size: 11px;
   font-weight: 850;
   letter-spacing: .05em;
   text-align: center;
@@ -689,11 +689,20 @@
   width: 25px;
   height: 25px;
   margin: 0 0 5px auto;
+  padding: 0;
+  border: 0;
   border-radius: 9px;
   color: #66768b;
-  font-family: Georgia, "Times New Roman", serif;
+  background: transparent;
+  font-family: inherit;
   font-size: 12px;
   font-weight: 800;
+  cursor: default;
+}
+
+.report-month-count,
+.report-month-agenda {
+  display: none;
 }
 
 .report-month-day.is-today .report-month-number {
@@ -708,8 +717,8 @@
 
 .report-more-events {
   padding-left: 4px;
-  color: #657994;
-  font-size: 8px;
+  color: var(--lvt-muted);
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -742,7 +751,7 @@
 .report-mini-month h4 {
   margin: 0 0 10px;
   color: var(--report-navy);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: inherit;
   font-size: 15px;
 }
 
@@ -755,8 +764,8 @@
 
 .report-mini-weekdays span {
   padding: 3px 0;
-  color: #98a3b2;
-  font-size: 7px;
+  color: var(--lvt-muted);
+  font-size: 12px;
   font-weight: 850;
   text-align: center;
 }
@@ -771,7 +780,7 @@
   border-radius: 7px;
   color: #64758b;
   background: transparent;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .report-mini-day:disabled {
@@ -800,12 +809,12 @@
   right: -1px;
   display: grid;
   place-items: center;
-  width: 11px;
-  height: 11px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   color: #fff;
-  background: var(--report-coral);
-  font-size: 6px;
+  background: var(--lvt-coral-strong, #c0472f);
+  font-size: 9px;
   font-style: normal;
 }
 
@@ -837,8 +846,8 @@
 }
 
 .report-empty-overlay small {
-  color: #96a1b0;
-  font-size: 10px;
+  color: var(--lvt-muted);
+  font-size: 12px;
 }
 
 .report-event-detail {
@@ -876,7 +885,7 @@
   border-radius: 999px;
   color: #765716;
   background: #fff0be;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -925,7 +934,7 @@
 .report-event-detail h3 {
   margin: 0 28px 17px 0;
   color: var(--report-navy);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: inherit;
   font-size: 21px;
   line-height: 1.25;
 }
@@ -944,8 +953,8 @@
 
 .report-event-detail dt {
   margin-bottom: 3px;
-  color: #8895a5;
-  font-size: 7px;
+  color: var(--lvt-muted);
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -954,7 +963,7 @@
 .report-event-detail dd {
   margin: 0;
   color: #42536a;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.35;
 }
 
@@ -999,7 +1008,7 @@
 .report-detail-attendance small {
   flex: 1 1 100%;
   color: #8a6a2a;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .report-detail-people {
@@ -1037,10 +1046,6 @@
   gap: 6px;
 }
 
-.report-toolbar-actions .duty-list-create-actions {
-  margin-left: 0;
-}
-
 .report-work-document-name {
   display: block;
   max-width: 100%;
@@ -1056,7 +1061,7 @@
   min-height: 420px;
   border: 1px solid var(--report-line);
   border-radius: 16px;
-  color: #718197;
+  color: var(--lvt-muted);
   background: #fff;
 }
 
@@ -1071,7 +1076,7 @@
 
 .report-loading p {
   margin-top: -130px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 @keyframes report-rise {
@@ -1108,8 +1113,42 @@
   .report-person { grid-template-columns: 34px 145px; min-width: 195px; }
   .report-person > i { display: none; }
   .report-person-avatar { width: 34px; height: 34px; }
-  .report-calendar-toolbar { display: grid; }
+  /* The base flex rule's space-between would shrink the single grid track to its content. */
+  .report-calendar-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; }
   .report-toolbar-actions { justify-content: flex-start; }
+}
+
+/* Phones: all 7 days fit; each day shows a count, the chosen day's work is listed below. */
+@media (max-width: 680px) {
+  .report-month-calendar { min-width: 0; }
+  .report-month-weekdays span { padding: 8px 0; font-size: 12px; letter-spacing: 0; }
+  .report-month-day { min-height: 0; padding: 2px; }
+  .report-month-events { display: none; }
+  .report-month-number {
+    position: relative;
+    width: 100%;
+    height: auto;
+    min-height: 44px;
+    margin: 0;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .report-month-number:focus-visible { outline: 2px solid var(--report-teal); outline-offset: -2px; }
+  .report-month-day.is-selected .report-month-number { box-shadow: inset 0 0 0 2px var(--report-teal); }
+  .report-month-count {
+    display: block;
+    min-width: 18px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    color: var(--lvt-paper);
+    background: var(--lvt-navy);
+    font-size: 12px;
+    font-style: normal;
+    line-height: 1.4;
+  }
+  .report-month-agenda { display: grid; gap: 8px; padding: 12px; border-top: 1px solid var(--report-line); }
+  .report-month-agenda h4 { margin: 0; color: var(--lvt-navy); font-size: 15px; font-weight: 800; }
 }
 
 @media (max-width: 560px) {
@@ -1118,11 +1157,15 @@
   .report-summary-row { grid-template-columns: repeat(3, 1fr); padding: 10px 12px; }
   .report-summary-row > div { display: grid; gap: 1px; }
   .report-summary-row strong { font-size: 18px; }
-  .report-summary-row span { font-size: 8px; }
+  .report-summary-row span { font-size: 12px; }
   .report-calendar-toolbar { padding: 15px 13px; }
   .report-calendar-title h3 { font-size: 17px; }
-  .report-toolbar-actions { display: grid; justify-content: stretch; }
+  .report-toolbar-actions { display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; }
   .report-period-nav, .report-mode-switch { justify-content: center; }
+  /* Nhân sự: one department per full-width page; its people share the width. */
+  .report-people-list { scroll-snap-type: x mandatory; }
+  .report-people-group { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; }
+  .report-person { flex: 1 0 195px; grid-template-columns: 34px minmax(0, 1fr); }
   .report-period-nav button, .report-mode-switch button { flex: 1; }
   .report-event-detail { top: auto; right: 16px; bottom: 16px; left: 16px; width: auto; }
 }
@@ -1133,4 +1176,14 @@
   .report-event-detail {
     animation: none;
   }
+}
+
+.report-detail-approval {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--lvt-warning-bg);
+  color: var(--lvt-warning-text);
+  font-size: 13px;
+  font-weight: 650;
 }

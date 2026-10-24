@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { anyApi } from 'convex/server';
 import { openNotification } from './openNotification.js';
+import { isDutyWeekNotification } from '../duties/dutyWeekApproval.js';
 
 function formatDueAt(value) {
   if (!value) return '—';
@@ -19,23 +20,23 @@ function formatDueAt(value) {
 function NotificationItem({ item, onOpen, onDismiss, canDelete, pending }) {
   return (
     <article
-      className={`notification-card ${item.read ? 'is-read' : 'is-unread'} milestone-${item.milestoneHours}${item.sourceType === 'completion_rejected' ? ' is-rejection' : ''}`}
+      className={`notification-card ${item.read ? 'is-read' : 'is-unread'} milestone-${item.milestoneHours}${item.sourceType === 'completion_rejected' || item.sourceType === 'work_returned' ? ' is-rejection' : ''}`}
     >
       <button
         type="button"
         className="notification-card-main"
-        title={item.sourceType === 'group_chat' || item.kind === 'group' ? 'Mở nhóm trao đổi' : item.kind === 'duty' ? 'Mở công tác này' : 'Mở công việc này'}
+        title={item.sourceType === 'group_chat' || item.kind === 'group' ? 'Mở nhóm trao đổi' : item.kind === 'duty' ? 'Mở công tác này' : item.kind === 'todo' ? 'Mở Việc của tôi' : 'Mở công việc này'}
         onClick={() => onOpen(item)}
         disabled={pending === item.key}
       >
         <span className="notification-icon" aria-hidden="true">
-          {item.sourceType === 'completion_rejected' ? '!' : item.kind === 'duty' ? '◷' : '✓'}
+          {item.sourceType === 'completion_rejected' || item.sourceType === 'work_returned' ? '!' : item.kind === 'duty' ? '◷' : '✓'}
         </span>
         <span className="notification-copy">
           <span className="notification-meta">
             <strong>{item.milestoneLabel}</strong>
             <small>
-              {item.sourceType === 'work_chat' || item.sourceType === 'duty_chat' || item.sourceType === 'group_chat'
+              {item.sourceType === 'work_chat' || item.sourceType === 'duty_chat' || item.sourceType === 'group_chat' || isDutyWeekNotification(item)
                 ? `Lúc ${formatDueAt(item.dueAt)}`
                 : `Hạn ${formatDueAt(item.dueAt)}`}
             </small>
@@ -106,7 +107,8 @@ export default function NotificationsView({ data, onOpenItem }) {
   }
 
   const dutyItems = data.items.filter((item) => item.kind === 'duty');
-  const workItems = data.items.filter((item) => item.kind === 'work');
+  // "Việc của tôi" reminders sit with Công việc.
+  const workItems = data.items.filter((item) => item.kind === 'work' || item.kind === 'todo');
   const groupItems = data.items.filter((item) => item.kind === 'group');
   const unreadKeys = data.items.filter((item) => !item.read).map((item) => item.key);
 

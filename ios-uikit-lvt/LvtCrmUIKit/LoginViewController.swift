@@ -5,6 +5,7 @@ final class LoginViewController: UIViewController, UITextFieldDelegate {
     private enum Mode { case signIn, forgotPassword }
 
     private let authRepository: AuthRepository
+    private let quickSignIn: QuickSignInService
     private var mode: Mode = .signIn
     private var isBusy = false
     private var keyboardObservers: [NSObjectProtocol] = []
@@ -20,9 +21,14 @@ final class LoginViewController: UIViewController, UITextFieldDelegate {
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
     private let submitButton = UIButton(type: .system)
     private let modeButton = UIButton(type: .system)
+    /// Face ID / Touch ID: shown only when this device holds a device credential (label names the account).
+    private let biometricButton = UIButton(type: .system)
+    /// Passkey: always offered in sign-in mode.
+    private let passkeyButton = UIButton(type: .system)
 
-    init(authRepository: AuthRepository) {
+    init(authRepository: AuthRepository, quickSignIn: QuickSignInService) {
         self.authRepository = authRepository
+        self.quickSignIn = quickSignIn
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -105,6 +111,14 @@ final class LoginViewController: UIViewController, UITextFieldDelegate {
         configureButton(modeButton, filled: false)
         modeButton.addTarget(self, action: #selector(toggleMode), for: .touchUpInside)
 
+        configureQuickButton(biometricButton, symbol: quickSignIn.availability.kind.symbol)
+        biometricButton.addTarget(self, action: #selector(signInWithBiometrics), for: .touchUpInside)
+        biometricButton.accessibilityHint = "Xác thực trên máy rồi đăng nhập, không cần mật khẩu"
+        configureQuickButton(passkeyButton, symbol: "person.badge.key")
+        passkeyButton.configuration?.title = "Đăng nhập bằng passkey"
+        passkeyButton.addTarget(self, action: #selector(signInWithPasskey), for: .touchUpInside)
+        passkeyButton.accessibilityHint = "Chọn passkey đã lưu cho LVT CRM"
+
         [emailField, passwordField].forEach {
             $0.delegate = self
             $0.addTarget(self, action: #selector(textDidChange), for: .editingChanged)
@@ -126,7 +140,7 @@ final class LoginViewController: UIViewController, UITextFieldDelegate {
             activityIndicator.leadingAnchor.constraint(equalTo: submitButton.leadingAnchor, constant: 16),
         ])
 
-        [titleLabel, subtitleLabel, formTitleLabel, emailField, passwordField, messageLabel, submitRow, modeButton]
+        [titleLabel, subtitleLabel, formTitleLabel, emailField, passwordField, messageLabel, submitRow, biometricButton, passkeyButton, modeButton]
             .forEach(contentStack.addArrangedSubview)
         contentStack.setCustomSpacing(28, after: subtitleLabel)
     }
@@ -152,6 +166,8 @@ final class LoginViewController: UIViewController, UITextFieldDelegate {
             passwordField.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
             submitButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 50),
             modeButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            biometricButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 50),
+            passkeyButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 50),
         ])
     }
 
@@ -181,6 +197,68 @@ final class LoginViewController: UIViewController, UITextFieldDelegate {
         button.titleLabel?.adjustsFontForContentSizeCategory = true
     }
 
+    private func configureQuickButton(_ button: UIButton, symbol: String) {
+        var configuration = UIButton.Configuration.tinted()
+        configuration.baseForegroundColor = .systemIndigo
+        configuration.baseBackgroundColor = .systemIndigo
+        configuration.cornerStyle = .large
+        configuration.image = UIImage(systemName: symbol)
+        configuration.imagePadding = 8
+        configuration.titleLineBreakMode = .byWordWrapping
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var updated = attributes
+            updated.font = UIFont.preferredFont(forTextStyle: .headline)
+            return updated
+        }
+        button.configuration = configuration
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+    }
+
+    /// The Face ID / Touch ID button follows the Keychain record (it disappears after DEVICE_CREDENTIAL_INVALID).
+    private func refreshQuickButtons() {
+        let isSignIn = mode == .signIn
+        let record = quickSignIn.deviceRecord
+        let kind = quickSignIn.availability.kind
+        biometricButton.isHidden = !isSignIn || record == nil
+        biometricButton.configuration?.title = kind.loginTitle(email: record?.email ?? "")
+        biometricButton.configuration?.image = UIImage(systemName: kind.symbol)
+        biometricButton.accessibilityLabel = kind.loginTitle(email: record?.email ?? "")
+        passkeyButton.isHidden = !isSignIn
+    }
+
+    @objc private func signInWithBiometrics() {
+        guard !isBusy else { return }
+        view.endEditing(true)
+        setBusy(true)
+        clearMessage()
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await quickSignIn.signInWithDeviceKey()
+            if case .failure(let error) = result { showQuick(error: error) }
+            refreshQuickButtons()
+            setBusy(false)
+        }
+    }
+
+    @objc private func signInWithPasskey() {
+        guard !isBusy, let anchor = view.window else { return }
+        view.endEditing(true)
+        setBusy(true)
+        clearMessage()
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await quickSignIn.signInWithPasskey(anchor: anchor)
+            if case .failure(let error) = result { showQuick(error: error) }
+            setBusy(false)
+        }
+    }
+
+    /// User cancellation stays silent.
+    private func showQuick(error: Error) {
+        guard let message = QuickSignInService.message(for: error) else { return }
+        showMessage(message, color: .systemRed)
+    }
+
     @objc private func textDidChange() { updateEnabledState() }
 
     @objc private func togglePasswordVisibility(_ sender: UIButton) {
@@ -203,6 +281,7 @@ final class LoginViewController: UIViewController, UITextFieldDelegate {
         submitButton.configuration?.title = isSignIn ? "Đăng nhập" : "Gửi mật khẩu tạm"
         modeButton.configuration?.title = isSignIn ? "Quên mật khẩu?" : "Quay lại đăng nhập"
         emailField.returnKeyType = isSignIn ? .next : .go
+        refreshQuickButtons()
         updateEnabledState()
         if animated { UIAccessibility.post(notification: .layoutChanged, argument: formTitleLabel) }
     }
@@ -214,6 +293,8 @@ final class LoginViewController: UIViewController, UITextFieldDelegate {
         emailField.isEnabled = !isBusy
         passwordField.isEnabled = !isBusy
         modeButton.isEnabled = !isBusy
+        biometricButton.isEnabled = !isBusy
+        passkeyButton.isEnabled = !isBusy
     }
 
     @objc private func submit() {

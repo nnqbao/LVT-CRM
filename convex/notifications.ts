@@ -1,3 +1,4 @@
+import { todoReminderNotificationItem } from "./personalTodoPolicy";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import {
@@ -18,7 +19,20 @@ import {
   canOperateMenu,
   WORK_ASSIGNER_MODE_ADMIN_MOD,
 } from "./lib";
-import { dutyListTitle, isDutyParticipant, isWorkNotificationAssignee, workListTitle } from "./assignmentPolicy";
+import {
+  dutyListTitle,
+  isDutyParticipant,
+  isWorkNotificationAssignee,
+  isWorkReleased,
+  workListTitle,
+} from "./assignmentPolicy";
+import {
+  canApproveWorkDocument,
+  workApprovalDecidedAt,
+  workApprovalRequestText,
+  workApprovalResubmittedBy,
+  workCreatorApprovalNotice,
+} from "./workDocumentPolicy";
 import {
   buildChatNotificationItem,
   CHAT_NOTIFICATION_TTL_MS,
@@ -28,21 +42,89 @@ import {
 import { chatEventToFeedItem, mergeChatFeedItems } from "./chatNotifications";
 import { canAccessDutyChat } from "./dutyMessagePolicy";
 import { canAccessWorkChat } from "./workMessagePolicy";
+import { moderatorDepartmentScope } from "./moderatorScope";
 import { createMilestones, mergeMilestoneItems, unionMilestoneHours } from "./notificationSettings";
-import { dutyNotificationEndFloor, loadActiveDutiesFromEndDate } from "./dutyRange";
+import { dutyNotificationEndFloor, loadPublicDutiesFromEndDate } from "./dutyRange";
+import { projectPublicDuty } from "./dutyApproval";
 
 const HOUR_MS = 60 * 60 * 1000;
 const VN_OFFSET_MS = 7 * HOUR_MS;
 
 type NotificationSource = {
   kind: "duty" | "work";
-  sourceType: "duty" | "duty_assigned" | "approval" | "department_work" | "personal_task" | "completion_rejected" | "work_assigned" | "work_chat" | "duty_chat";
+  sourceType: "duty" | "duty_assigned" | "approval" | "department_work" | "personal_task" | "completion_rejected" | "work_assigned" | "work_chat" | "duty_chat" | "work_approved" | "work_returned";
   sourceId: string;
   title: string;
   description: string;
   dueAt: number;
   priority?: "high" | "normal";
 };
+
+function weekRangeLabel(weekStart: string) {
+  const [year, month, day] = weekStart.split("-").map(Number);
+  const saturday = new Date(Date.UTC(year, month - 1, day + 5));
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(day)}/${pad(month)} – ${pad(saturday.getUTCDate())}/${pad(saturday.getUTCMonth() + 1)}`;
+}
+
+const DUTY_WEEK_APPROVED_NOTICE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Weekly Lịch công tác approval: BGH sees weeks waiting for them; văn thư sees
+ * weeks sent back or approved in the last 7 days.
+ */
+async function dutyWeekNotificationItems(ctx: any, user: any, level: number, now: number) {
+  const base = { kind: "duty" as const, milestoneHours: 0 };
+  if (!isOperationalManagerRole(user.role)) {
+    if (level < 4) return [];
+    const waiting = await ctx.db
+      .query("dutyWeeks")
+      .withIndex("by_status", (q: any) => q.eq("status", "submitted"))
+      .collect();
+    return waiting.map((row: any) => ({
+      ...base,
+      key: `duty:duty_week_review:${row.weekStart}:${row.submittedAt}`,
+      sourceType: "duty_week_review" as const,
+      sourceId: String(row.weekStart),
+      title: `Lịch công tác tuần ${weekRangeLabel(row.weekStart)} chờ duyệt`,
+      description: "Văn thư đã nộp lịch tuần, cần Ban Giám hiệu duyệt.",
+      dueAt: Number(row.submittedAt) || now,
+      milestoneLabel: "Cần duyệt",
+      availableAt: Number(row.submittedAt) || now,
+    }));
+  }
+  const [returned, approved] = await Promise.all([
+    ctx.db.query("dutyWeeks").withIndex("by_status", (q: any) => q.eq("status", "returned")).collect(),
+    ctx.db.query("dutyWeeks").withIndex("by_status", (q: any) => q.eq("status", "approved")).collect(),
+  ]);
+  return [
+    ...returned.map((row: any) => ({
+      ...base,
+      key: `duty:duty_week_returned:${row.weekStart}:${row.returnedAt}`,
+      sourceType: "duty_week_returned" as const,
+      sourceId: String(row.weekStart),
+      title: `Lịch công tác tuần ${weekRangeLabel(row.weekStart)} bị trả lại`,
+      description: String(row.returnNote || "Ban Giám hiệu yêu cầu sửa lại."),
+      dueAt: Number(row.returnedAt) || now,
+      milestoneLabel: "Bị trả lại",
+      availableAt: Number(row.returnedAt) || now,
+      priority: "high" as const,
+    })),
+    ...approved
+      .filter((row: any) => Number(row.approvedAt) >= now - DUTY_WEEK_APPROVED_NOTICE_MS)
+      .map((row: any) => ({
+        ...base,
+        key: `duty:duty_week_approved:${row.weekStart}:${row.approvedAt}`,
+        sourceType: "duty_week_approved" as const,
+        sourceId: String(row.weekStart),
+        title: `Lịch công tác tuần ${weekRangeLabel(row.weekStart)} đã được duyệt`,
+        description: "Giáo viên đã thấy lịch tuần này.",
+        dueAt: Number(row.approvedAt),
+        milestoneLabel: "Đã duyệt",
+        availableAt: Number(row.approvedAt),
+      })),
+  ];
+}
 
 function dutyDueAt(duty: { endDate: string; endTime: string }) {
   const [year, month, day] = duty.endDate.split("-").map(Number);
@@ -121,7 +203,8 @@ async function notificationItems(ctx: any, requestedNow?: number) {
     enabledPersonal.some((row: any) => row.kind === "work");
 
   const [duties, documents, workItems, personalTasks, positions, departments, users, workMessages, dutyMessages, storedChatEvents] = await Promise.all([
-    needDuties ? loadActiveDutiesFromEndDate(ctx, dutyEndFloor) : Promise.resolve([]),
+    // Reminders follow the approved schedule only.
+    needDuties ? loadPublicDutiesFromEndDate(ctx, dutyEndFloor) : Promise.resolve([]),
     needWork ? ctx.db.query("officeDocuments").collect() : Promise.resolve([]),
     needWork ? ctx.db.query("workItems").collect() : Promise.resolve([]),
     needWork ? ctx.db.query("personalTasks").collect() : Promise.resolve([]),
@@ -180,24 +263,28 @@ async function notificationItems(ctx: any, requestedNow?: number) {
 
   const assignerMode = await getWorkAssignerMode(ctx);
   const workSources: NotificationSource[] = [];
-  if (canUseWork && level >= 4) {
+  const submittedAtByDocument = new Map<string, number>();
+  if (canSeeWorkModule && level >= 4 && !isOperationalManagerRole(user.role)) {
+    // Ban giám hiệu: documents waiting for my approval decision (workflow, not a reminder switch).
+    const userNameById = new Map<string, string>(
+      users.map((row: any) => [String(row._id), String(row.name || "").trim()]),
+    );
     for (const document of activeDocuments) {
-      const isApprover = document.approverUserIds.some(
-        (id: string) => String(id) === String(user._id),
-      );
-      const hasActed =
-        document.approvedByUserIds.some((id: string) => String(id) === String(user._id)) ||
-        (document.rejectedByUserIds || []).some((id: string) => String(id) === String(user._id));
-      if (document.status === "pending" && isApprover && !hasActed) {
-        workSources.push({
-          kind: "work",
-          sourceType: "approval",
-          sourceId: String(document._id),
-          title: `Công văn cần duyệt: ${document.fileName}`,
-          description: "Bạn được chỉ định duyệt công văn này.",
-          dueAt: workDueAt(document.deadline),
-        });
-      }
+      if (!canApproveWorkDocument(document, String(user._id))) continue;
+      submittedAtByDocument.set(String(document._id), Number(document.submittedAt || document.createdAt) || now);
+      const resubmittedBy = workApprovalResubmittedBy(document);
+      const { description } = workApprovalRequestText({
+        title: workListTitle(document),
+        editorName: resubmittedBy ? userNameById.get(resubmittedBy) || "Người dùng" : null,
+      });
+      workSources.push({
+        kind: "work",
+        sourceType: "approval",
+        sourceId: String(document._id),
+        title: `Công việc chờ duyệt: ${workListTitle(document)}`,
+        description,
+        dueAt: workDueAt(document.deadline),
+      });
     }
   }
 
@@ -368,14 +455,14 @@ async function notificationItems(ctx: any, requestedNow?: number) {
           dueAt: dutyDueAt(duty),
           milestoneHours: 0,
           milestoneLabel: "Mới phân công",
-          availableAt: duty.createdAt,
+          availableAt: Number(duty.publishedAt) || duty.createdAt,
         }))
     : [];
   const newWorkAssignments = canUseWork
     ? activeWorkItems
         .filter((item: any) => {
           const document = documentsById.get(String(item.documentId)) as any;
-          if (!document || document.status === "rejected" || !item.createdAt) return false;
+          if (!isWorkReleased(document) || !item.createdAt) return false;
           if (workDueAt(item.deadline) < now) return false;
           const completed = (item.completedUserIds || []).some(
             (id: string) => String(id) === String(user._id),
@@ -403,8 +490,12 @@ async function notificationItems(ctx: any, requestedNow?: number) {
         .map((item: any) => {
           const document = documentsById.get(String(item.documentId)) as any;
           const type = item.assignmentType === "individual" ? "individual" : "department";
+          // An admin edit can send a released document back to approval while keeping
+          // its work items; the re-release is a new "Công việc mới" for the assignee.
+          const resubmittedAt = Number(document?.submittedAt) || 0;
+          const releaseSuffix = resubmittedAt > (Number(item.createdAt) || 0) ? `:${resubmittedAt}` : "";
           return {
-            key: `work:work_assigned:${String(item._id)}:new`,
+            key: `work:work_assigned:${String(item._id)}:new${releaseSuffix}`,
             kind: "work" as const,
             sourceType: "work_assigned" as const,
             sourceId: String(item._id),
@@ -416,7 +507,8 @@ async function notificationItems(ctx: any, requestedNow?: number) {
             dueAt: workDueAt(item.deadline),
             milestoneHours: 0,
             milestoneLabel: "Mới phân công",
-            availableAt: item.createdAt,
+            // Approval-required work becomes visible when Ban giám hiệu releases it.
+            availableAt: Math.max(Number(item.createdAt) || 0, workApprovalDecidedAt(document) || 0),
           };
         })
     : [];
@@ -445,13 +537,46 @@ async function notificationItems(ctx: any, requestedNow?: number) {
         source.sourceType === "approval" &&
         !approvalIdsWithMilestone.has(source.sourceId),
     )
-    .map((source) => ({
-      key: `work:approval:${source.sourceId}`,
-      ...source,
-      milestoneHours: 0,
-      milestoneLabel: "Cần duyệt",
-      availableAt: now,
-    }));
+    .map((source) => {
+      const submittedAt = submittedAtByDocument.get(source.sourceId) || now;
+      return {
+        // A resubmission is a new request: the key changes so it shows as unread again.
+        key: `work:approval:${source.sourceId}:${submittedAt}`,
+        ...source,
+        milestoneHours: 0,
+        milestoneLabel: "Cần duyệt",
+        availableAt: submittedAt,
+      };
+    });
+  // Creator (văn thư): approval outcome of documents they sent to Ban giám hiệu.
+  const creatorApprovalItems = canSeeWorkModule
+    ? activeDocuments.flatMap((document: any) => {
+        const notice = workCreatorApprovalNotice(document, String(user._id), now);
+        if (!notice) return [];
+        const returned = notice.decision === "rejected";
+        return [{
+          key: `work:${returned ? "work_returned" : "work_approved"}:${String(document._id)}:${notice.at}`,
+          kind: "work" as const,
+          sourceType: returned ? ("work_returned" as const) : ("work_approved" as const),
+          sourceId: String(document._id),
+          title: returned
+            ? `Công việc bị trả lại: ${workListTitle(document)}`
+            : `Công việc đã được duyệt: ${workListTitle(document)}`,
+          description: returned
+            ? notice.reason || "Ban giám hiệu đã trả lại, hãy sửa và gửi duyệt lại."
+            : "Ban giám hiệu đã duyệt, công việc đã được giao.",
+          dueAt: notice.at,
+          milestoneHours: 0,
+          milestoneLabel: returned ? "Bị trả lại" : "Đã duyệt",
+          availableAt: notice.at,
+          ...(returned ? { priority: "high" as const } : {}),
+        }];
+      })
+    : [];
+  // Approval steps are workflow, not deadline reminders: they ignore the duty reminder switch.
+  const dutyWeekItems = canSeeDutiesModule
+    ? await dutyWeekNotificationItems(ctx, user, level, now)
+    : [];
   const usersById = new Map(users.map((row: any) => [String(row._id), row]));
   const displayUserName = (id: string) => {
     const row = usersById.get(String(id)) as { name?: string; email?: string } | undefined;
@@ -493,7 +618,8 @@ async function notificationItems(ctx: any, requestedNow?: number) {
     ];
     const extraDuties = await Promise.all(missingDutyIds.map((dutyId) => ctx.db.get(dutyId)));
     for (const duty of extraDuties) {
-      if (duty) dutyById.set(String(duty._id), duty);
+      const visible = isOperationalManagerRole(user.role) ? duty : projectPublicDuty(duty);
+      if (visible) dutyById.set(String(visible._id), visible);
     }
   }
   const computedChatItems = selectVisibleChatNotifications(
@@ -505,7 +631,7 @@ async function notificationItems(ctx: any, requestedNow?: number) {
               if (!workChatAccess.has(documentId)) {
                 const document = documentsById.get(documentId);
                 const items = workItemsByDocument.get(documentId) || [];
-                const assigned = items.some((item: any) =>
+                const assigned = isWorkReleased(document as any) && items.some((item: any) =>
                   isWorkNotificationAssignee({
                     user,
                     item,
@@ -525,6 +651,7 @@ async function notificationItems(ctx: any, requestedNow?: number) {
                     workItems: items,
                     personalTasks: personalTasksByDocument.get(documentId) || [],
                     usersById: usersById as Map<string, { status?: string }>,
+                    departmentScope: moderatorDepartmentScope(user),
                   }),
                 );
               }
@@ -600,7 +727,15 @@ async function notificationItems(ctx: any, requestedNow?: number) {
     })
     .map((row: any) => chatEventToFeedItem(row));
   const chatItems = mergeChatFeedItems([storedChatItems, computedChatItems], now);
-  const milestones = [...newDutyAssignments, ...newWorkAssignments, ...pendingApprovalItems, ...chatItems, ...scheduledMilestones]
+  // "Việc của tôi": owner's own fired reminders only; independent of work/duties menus.
+  const todoRows = await ctx.db
+    .query("personalTodos")
+    .withIndex("by_user_active_due", (q: any) => q.eq("userId", user._id).eq("active", true))
+    .collect();
+  const todoItems = todoRows
+    .map((row: any) => todoReminderNotificationItem(row))
+    .filter((item: any): item is NonNullable<ReturnType<typeof todoReminderNotificationItem>> => item !== null);
+  const milestones = [...newDutyAssignments, ...newWorkAssignments, ...pendingApprovalItems, ...creatorApprovalItems, ...dutyWeekItems, ...chatItems, ...scheduledMilestones, ...todoItems]
     .sort((a, b) => b.availableAt - a.availableAt || a.title.localeCompare(b.title, "vi"));
   const [reads, dismissals] = await Promise.all([
     ctx.db

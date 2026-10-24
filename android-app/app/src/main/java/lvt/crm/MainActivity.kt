@@ -2,7 +2,6 @@ package lvt.crm
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,13 +10,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 import lvt.crm.push.NotificationDestination
 import lvt.crm.ui.LvtRoot
 import lvt.crm.ui.theme.LvtCrmTheme
 import lvt.crm.update.PlayStoreUpdater
 
-class MainActivity : ComponentActivity() {
+/** FragmentActivity (still a ComponentActivity) so BiometricPrompt can host its fragment. */
+class MainActivity : FragmentActivity() {
     private data class PendingDestination(val id: Long, val destination: NotificationDestination)
 
     private val destinationQueue = ArrayDeque<PendingDestination>()

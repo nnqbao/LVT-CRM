@@ -21,6 +21,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.Visibility
@@ -32,12 +34,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +69,7 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     val isForgot = state.mode == LoginMode.ForgotPassword
     val context = LocalContext.current
+    LaunchedEffect(viewModel) { viewModel.refreshQuickSignIn() }
 
     Box(
         modifier = Modifier
@@ -258,6 +263,27 @@ fun LoginScreen(
                         }
                     }
 
+                    if (!isForgot) {
+                        QuickSignInButtons(
+                            deviceLoginEmail = state.deviceLoginEmail,
+                            enabled = !state.loading,
+                            onFingerprint = {
+                                val activity = context.findFragmentActivity() ?: return@QuickSignInButtons
+                                viewModel.signInWithDeviceKey { signature ->
+                                    activity.unlockSignature(
+                                        signature,
+                                        title = "Đăng nhập bằng vân tay",
+                                        subtitle = state.deviceLoginEmail.orEmpty(),
+                                    )
+                                }
+                            },
+                            onPasskey = {
+                                val activity = context.findFragmentActivity() ?: return@QuickSignInButtons
+                                viewModel.signInWithPasskey { request -> activity.getPasskeyResponse(request) }
+                            },
+                        )
+                    }
+
                     TextButton(
                         onClick = {
                             if (isForgot) viewModel.showSignIn() else viewModel.showForgotPassword()
@@ -287,6 +313,51 @@ fun LoginScreen(
             ) {
                 Text(stringResource(R.string.privacy_policy))
             }
+        }
+    }
+}
+
+/**
+ * "Đăng nhập bằng vân tay" (only when this device holds a fingerprint credential; label names the
+ * account) and "Đăng nhập bằng passkey" (Android 9+). Both reuse the password sign-in path.
+ */
+@Composable
+private fun QuickSignInButtons(
+    deviceLoginEmail: String?,
+    enabled: Boolean,
+    onFingerprint: () -> Unit,
+    onPasskey: () -> Unit,
+) {
+    if (deviceLoginEmail != null) {
+        OutlinedButton(
+            onClick = onFingerprint,
+            enabled = enabled,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp)
+                .height(52.dp),
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            Icon(Icons.Outlined.Fingerprint, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+            Text(
+                "Đăng nhập bằng vân tay · $deviceLoginEmail",
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+    }
+    if (passkeysSupported) {
+        OutlinedButton(
+            onClick = onPasskey,
+            enabled = enabled,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp)
+                .height(52.dp),
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+            Text("Đăng nhập bằng passkey")
         }
     }
 }

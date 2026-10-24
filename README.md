@@ -1,24 +1,25 @@
 # LVT CRM
 
-CRM nội bộ cho Trường THCS Lê Văn Tám. Stack: **Vite + React 19**, backend **Convex self-hosted** (local Docker) với **Convex Auth (Password provider)** — đăng nhập email + mật khẩu, hồ sơ do admin cấp.
+CRM nội bộ cho Trường THCS Lê Văn Tám. Stack: **Vite + React 19**, backend **Convex Cloud** với **Convex Auth (Password provider)** — đăng nhập email + mật khẩu, hồ sơ do admin cấp.
 
 **URL production:** https://lvt.vscgroup.io.vn
 **Chính sách bảo mật (công khai, Việt + Anh):** https://lvt.vscgroup.io.vn/privacy
 **Ứng dụng:** CRM Lê Văn Tám — Android `lvt.crm`, iOS `vn.lvt.crm.uikit`
-Frontend production chạy static server qua LaunchAgent; Convex self-hosted chạy Docker với persistent volume, chỉ bind localhost. Public backend/auth proxy: `https://lvt-convex.vscgroup.io.vn` và `https://lvt-convex-site.vscgroup.io.vn`; hai hostname này đi qua Cloudflare Tunnel.
+Frontend production chạy static server qua LaunchAgent trên Mac mini, public qua Cloudflare Tunnel. Backend là Convex Cloud: prod `confident-guanaco-953`, sandbox `decisive-puma-318`. Bản Convex self-hosted cũ (Docker, `127.0.0.1:3210`) đã ngừng từ 2026-09-14.
+
+> **Sandbox, prod, quy trình phát hành, lệnh deploy, backup:** xem mục *Môi trường, quy trình phát hành và vận hành* trong [`AGENTS.md`](AGENTS.md). Mọi thay đổi làm ở sandbox trước, owner duyệt rồi mới lên prod.
 
 Vận hành production:
 
-- Build: `npm run build:production`
+- Build + deploy web prod: `npm run build:production` (chạy trong `~/projects/LVT-CRM` là deploy luôn)
 - Chạy local production: `npm run start`
+- **Hướng dẫn sử dụng cho người dùng:** cẩm nang trong app tại `/huong-dan-su-dung.html` (nguồn `docs/guide/`, build `npm run guide:build`, ảnh minh họa dữ liệu giả `npm run guide:shots`). Mỗi trang có nút tròn **?** cạnh tên trang mở đúng mục hướng dẫn trong khung bên phải (`?embed=1`); bảng menu → mục nằm ở `GUIDE_ANCHORS` trong `src/navigationRoutes.js`. Server chỉ cho trang này được nhúng iframe cùng origin (`scripts/lib/static-frame-policy.mjs`); mọi thứ khác vẫn `X-Frame-Options: DENY`.
 - **Hướng dẫn AI session:** Cursor đọc `.cursor/rules/*.mdc`; Claude Code đọc `CLAUDE.md`; chi tiết sản phẩm/import user trong `README.md`.
-- Auto-start Colima + Convex: LaunchAgent `ai.lvt.crm.convex` chạy `./scripts/lvt-convex-ensure.sh` (RunAtLoad + KeepAlive). Log: `~/Library/Logs/lvt-crm-convex-ensure.log`.
-- Backup Convex gồm file storage: `./scripts/lvt-convex-backup.sh`
-- Backup tự động hằng đêm lúc 00:30, lưu ngoài repo dưới `/Users/vsc_agent/clawd/backups/lvt-crm-convex/nightly/`.
-- Admin key chỉ đọc từ macOS Keychain bởi script deploy/backup; không lưu trong `.env.local`, source hoặc bundle.
-- File công văn (Drive mới **và** Convex Storage cũ) không bao giờ đưa link cho trình duyệt. Frontend gửi Convex Auth token đến `/api/files/:documentId`; server kiểm tra quyền, lấy từ **cache server 24 giờ** (hoặc tải Drive/storage một lần rồi cache), rồi mới stream. Upload Drive prewarm cache (best-effort).
-- Drive OAuth do `gog` quản lý ngoài repo. Folder ID được đọc từ macOS Keychain với service `lvt-crm-drive-folder-id`; không commit OAuth token/credential hoặc bật “Anyone with the link”.
-- Quên mật khẩu (web / Android / API iOS): `users.requestPasswordReset` gửi mật khẩu tạm qua Gmail API từ `thcslevantambinhthanh@gmail.com`. Cấu hình Convex env `GMAIL_*` (xem `.env.example`); lấy refresh token một lần bằng `node scripts/gmail-oauth-setup.mjs`. Không commit `client_secret*.json`.
+- Backup Convex prod (gồm file storage) tự động lúc 00:30 bằng `~/ops/scripts/lvt-crm-convex-backup.sh`, lưu `~/projects/LVT-CRM/.runtime/backups/convex/cloud-*.zip`, giữ 7 ngày.
+- Deploy key Convex Cloud chỉ đọc từ `~/projects/LVT-CRM/.convex-cloud-keys.csv` (untracked) qua `scripts/lvt-convex-cloud-env.sh`; không lưu trong source, bundle hay log.
+- File công văn / Đánh giá nhân sự **lưu trên Convex File Storage** (từ 10/2026; nằm trong backup Convex hằng đêm). Upload: trình duyệt/app → `/api/files/upload` → server chuyển tiếp tới HTTP route Convex `/lvt-files/upload` bằng token của chính người dùng (Convex kiểm tra quyền, lưu file và đăng ký staged upload). Bản ghi giữ cột `driveFileId` làm khóa đối tượng: `cvx_<storageId>` = Convex, còn lại = Drive cũ. Không bao giờ đưa link cho trình duyệt: frontend gửi token đến `/api/files/:documentId`; server kiểm tra quyền rồi chuyển tiếp file từ `/lvt-files/object` (Convex kiểm tra quyền lại) hoặc storage cũ **chỉ qua bộ nhớ, không ghi xuống đĩa** máy chủ. Riêng file Drive cũ vẫn dùng cache đĩa 24 giờ.
+- Drive (`gog`) chỉ còn dùng để đọc/xoá file Drive cũ; không còn upload mới lên Drive. Không commit OAuth token/credential hoặc bật “Anyone with the link”.
+- Quên mật khẩu (web / Android / API iOS): `users.requestPasswordReset` gửi mật khẩu tạm qua AgentMail từ inbox `thcslevantambinhthanh@agentmail.to`. Cấu hình Convex env `AGENTMAIL_API_KEY`, `AGENTMAIL_INBOX_ID` (xem `.env.example`); thiếu cấu hình báo `MAIL_NOT_CONFIGURED`, key sai/thiếu quyền báo `MAIL_AUTH_FAILED`. Không commit API key.
 
 ## Phạm vi hiện tại
 
@@ -31,8 +32,8 @@ Vận hành production:
   - `user` — **User**: các chức năng chính theo **nhóm quyền** do Administrator gán.
 - Administrator quản lý thông số tối cao; Administrator và Moderator cùng quản lý nghiệp vụ (công tác, công việc, …).
 - Mật khẩu băm bởi Convex Auth (Scrypt); plaintext không lưu / không ghi audit. Tài khoản tạo/reset có `mustChangePassword=true`.
-- **Đã có luồng dữ liệu:** Lịch công tác (cá nhân + lịch chung dạng mẫu Word/PDF, xác nhận tham gia, địa điểm nhập text), Công việc (tạo/giao ngay, nộp + duyệt hoàn thành), Báo cáo (Công việc; Bán trú đang ẩn), Thông báo (mốc hạn + click mở đúng mục), Thiết lập hiển thị.
-- **Đã có nền tảng Lớp chủ nhiệm (Phase 1):** năm học, lớp, phân công GVCN/Giám thị, học sinh/phụ huynh, nhập danh sách Excel (atomic), nhập/công bố điểm danh camera có giới hạn, sổ điểm danh ngày, phân loại vắng, báo cáo/xuất cơ bản. Ngày chuyển lớp / thay GVCN thuộc lớp/GVCN mới; bản ghi cũ đóng ngày trước đó (`endDate`/`effectiveTo` inclusive). Chưa chốt workbook camera thật và lịch ngày học nhà trường.
+- **Đã có luồng dữ liệu:** Lịch công tác (cá nhân + lịch chung dạng mẫu Word/PDF, xác nhận tham gia, địa điểm nhập text), Công việc (tạo/giao ngay, nộp + duyệt hoàn thành), Báo cáo (Công việc · Bán trú), **Bán trú** (kỳ bán trú + giáo viên tham gia), Thông báo (mốc hạn + click mở đúng mục), Thiết lập hiển thị.
+- **Đã có nền tảng Lớp chủ nhiệm (Phase 1):** năm học, lớp, phân công GVCN/Giám thị, học sinh/phụ huynh, nhập danh sách Excel (atomic), Giám thị điểm danh trên menu Điểm danh (tick vắng hoặc nhập Excel 3 cột; nhập file camera đã ngừng), sổ điểm danh ngày, GVCN đánh dấu vắng không phép, báo cáo/xuất cơ bản. Ngày chuyển lớp / thay GVCN thuộc lớp/GVCN mới; bản ghi cũ đóng ngày trước đó (`endDate`/`effectiveTo` inclusive). Chưa chốt workbook camera thật và lịch ngày học nhà trường.
 - **Vẫn placeholder:** Đánh giá nhân sự.
 
 ## Mô hình phân quyền
@@ -61,7 +62,7 @@ Mỗi nhóm quy định quyền trên **7** menu **Chức năng chính**:
 | `people-review` | Đánh giá nhân sự |
 | `staff-faults` | Ghi nhận lỗi |
 
-Mỗi menu có một mức: **`hidden`** (ẩn) · **`view`** (thao tác nghiệp vụ trong phạm vi của mình) · **`view_all`** (thao tác nghiệp vụ trên phạm vi toàn trường, nơi module hỗ trợ) · **`supervisor`** (**Giám thị**, chỉ menu `homeroom`). Mức legacy **`edit`** vẫn đọc được nhưng chuẩn hóa thành `view` khi lưu; không dùng `edit` để biểu diễn Giám thị. **Giám thị** không phải vai trò hệ thống (`users.role` vẫn là `user`), không thỏa `view_all`, và không được `canOperateMenu`. Phạm vi lớp/toàn trường của Giám thị đến từ phân công riêng, không từ riêng mức menu. Tạo công việc/công tác toàn trường vẫn theo role/cấp, không theo mức menu. Menu **Ghi nhận lỗi**: hai mục **Lỗi của tôi** / **Lỗi do tôi ghi nhận**; **Xem** chỉ thấy hai mục đó; **Xem tối cao** vẫn theo cùng hai mục (lỗi của người khác hiện nếu mình là đối tượng hoặc người ghi); nút thêm chỉ admin/mod và cấp 2–5★.
+Mỗi menu có một mức: **`hidden`** (ẩn) · **`view`** (thao tác nghiệp vụ trong phạm vi của mình) · **`view_all`** (thao tác nghiệp vụ trên phạm vi toàn trường, nơi module hỗ trợ) · **`supervisor`** (**Giám thị**, chỉ menu `attendance` — Điểm danh; menu này chỉ có Ẩn hoặc Giám thị). Mức legacy **`edit`** vẫn đọc được nhưng chuẩn hóa thành `view` khi lưu; không dùng `edit` để biểu diễn Giám thị. **Giám thị** không phải vai trò hệ thống (`users.role` vẫn là `user`), không thỏa `view_all`, và không được `canOperateMenu`. Giám thị điểm danh mọi lớp đang hoạt động trên menu **Điểm danh** (`/diem-danh`) và không có quyền trong Lớp chủ nhiệm. Nhóm quyền cũ `homeroom=supervisor` được chuyển bằng `permissionGroups:migrateSupervisorToAttendance`. Tạo công việc/công tác toàn trường vẫn theo role/cấp, không theo mức menu. Menu **Ghi nhận lỗi**: hai mục **Lỗi của tôi** / **Lỗi do tôi ghi nhận**; **Xem** chỉ thấy hai mục đó; **Xem tối cao** vẫn theo cùng hai mục (lỗi của người khác hiện nếu mình là đối tượng hoặc người ghi); nút thêm chỉ admin/mod và cấp 2–5★.
 
 - Mỗi nhóm có **mã** (`code`): tối đa **20** ký tự, chỉ `A–Z 0–9 _ -`, luôn lưu/hiển thị **IN HOA**; dùng trong file import user (`ma_nhom_quyen`).
 - Nhóm cũ thiếu mã được backfill tự động (`permissionGroups.ensureCodes`): chữ cái đầu mỗi từ tên (bỏ dấu), nếu trùng thì 3 rồi 4 ký tự đầu, rồi thêm số.
@@ -90,19 +91,21 @@ CRUD chức vụ với **cấp bậc 1–5 sao** (vàng). Cấp bậc dùng cho 
 
 ### Công việc / công văn
 
-- Công việc **không duyệt công văn**. Tạo xong là giao ngay. User **Nộp** kèm file bằng chứng và có thể gửi thêm nội dung text (không bắt buộc) cho người giao; **người tạo** mới đánh dấu hoàn thành (kèm %) hoặc trả về (kèm lý do, có thể đổi hạn).
-- Badge menu **Công việc** = task chờ duyệt hoàn thành + việc chưa hoàn thành của tôi + việc chưa hoàn thành tôi tạo.
+- **Duyệt theo người tạo**: công việc do **Văn thư (admin/mod)** tạo phải chọn ít nhất một **Người duyệt (Ban giám hiệu)** — user 4/5★ đang hoạt động, không phải admin/mod. Công việc ở trạng thái **Chờ duyệt** cho đến khi **đủ** người duyệt bấm **Duyệt**, rồi mới giao cho người nhận (chuông + push). Người duyệt có thể **Trả lại** (bắt buộc lý do) khi chưa ai duyệt; Văn thư sửa rồi gửi duyệt lại. Lần duyệt đầu tiên khóa sửa/xóa vĩnh viễn với mọi người trừ **Quản trị viên (admin)**: admin vẫn sửa được nhưng công việc phải gửi Ban giám hiệu duyệt lại (tạm ẩn với người nhận); xóa vẫn bị khóa. Khi đã có người nộp kết quả, công việc chỉ xem với mọi người (`WORK_HAS_SUBMISSIONS`). Mỗi lần sửa ghi “Đã chỉnh sửa bởi … lúc …”. Trong lúc chờ duyệt / bị trả lại chỉ người tạo, người duyệt và admin/mod (trong phạm vi) thấy công việc.
+- Công việc do người khác tạo được giao ngay: tổ trưởng/tổ phó (và mọi user 2★ trở lên) giao cho cấp thấp hơn **cùng phòng ban**; Ban giám hiệu (4/5★) giao cho cấp thấp hơn ở **mọi phòng ban** và được giao cả phòng ban. User 1★ không tạo được công việc (dùng **Việc của tôi** cho việc cá nhân).
+- User **Nộp** kèm file bằng chứng và có thể gửi thêm nội dung text (không bắt buộc) cho người giao; **người tạo** mới đánh dấu hoàn thành (kèm %) hoặc trả về (kèm lý do, có thể đổi hạn).
+- Badge menu **Công việc** = công việc chờ tôi duyệt (Ban giám hiệu) + task chờ duyệt hoàn thành + việc chưa hoàn thành của tôi + việc chưa hoàn thành tôi tạo.
 - Danh sách **Việc của tôi** / **Việc tôi tạo**: bốn tab **Việc cần làm**, **Đang chờ duyệt**, **Quá hạn**, **Đã duyệt hoàn thành** — mỗi tab hiện số việc. Thẻ công việc dùng icon Thu gọn/Chi tiết/Sửa/Xóa; icon chat mở trao đổi (rich text) trên Convex cho mọi người đã thấy việc đó (người giao, người nhận, admin/mod, 4/5★ theo chế độ hiển thị). Người gửi có thể **thu hồi** tin của mình trong 15 phút (giữ dòng, hiện *Tin nhắn đã được thu hồi*). Tin nhắn mới (chưa thu hồi) tạo thông báo chuông cho người khác được xem thread; bấm thông báo mở đúng việc và popup Trao đổi.
-- Sửa/xóa: người tạo đến khi user nộp; admin/mod mọi lúc.
+- Sửa/xóa: chỉ khi chưa có ai duyệt; ngoài ra người tạo đến khi user nộp, admin/mod (trong phạm vi) mọi lúc.
 - File đính kèm công việc là tùy chọn. Có file thì **bắt buộc chọn Loại văn bản** (Kế hoạch / Biên bản / Báo cáo, catalog admin). File cũ chưa có loại được gắn mặc định **Biên bản**. Danh sách ưu tiên **tên công việc**.
 - Nộp hoàn thành: bắt buộc file bằng chứng **và** loại văn bản. Bằng chứng cũ chưa có loại cũng gắn **Biên bản**.
 - File xem/tải qua `/api/files/:documentId` + cache server; không trả URL Drive hay Convex Storage cho client.
 
 ### Cấu trúc menu
 
-1. **Chức năng chính**: Báo cáo (submenu: Công việc; Bán trú đang ẩn), **Trao đổi** (hub hai cột `/trao-doi`, luôn hiện với người đã đăng nhập; danh sách cuộc trò chuyện Công tác / Công việc / Nhóm), **Lịch công tác** (tab **cá nhân** = lịch tuần/tháng/quý/năm kèm cột nhân sự như Báo cáo Công việc; tab **chung** = mẫu Word/PDF; nút **Tạo công tác** / **Import Excel** cho admin/mod và tổ trưởng/tổ phó 2/3★ — tạo mở trang riêng `/cong-tac/tao`; thẻ/hàng công tác dùng icon Thu gọn/Chi tiết/Sửa/Xóa và icon chat trao đổi trên Convex — quyền chat = quyền thấy công tác trên lịch cá nhân: admin/mod, `view_all`, người tạo, người tham gia, cấp dưới cùng phòng), Công việc (nút **Tạo công việc** cùng nhóm), Lớp chủ nhiệm, Đánh giá nhân sự, Ghi nhận lỗi. **Thông báo** không nằm trên sidebar; mở từ chuông góc trên → **Xem toàn bộ**. **Hồ sơ nội bộ / Đổi mật khẩu / Quản lý thiết bị đăng nhập** mở từ avatar tròn góc trên (không còn mục Thông tin cá nhân trên sidebar). `/bao-cao/cong-tac` chuyển vào tab lịch chung.
-2. **Quản trị hệ thống**: đang ẩn (Quản lý công tác / bán trú / công việc đã gộp hoặc tạm tắt).
-3. **Thiết lập tối cao** (chỉ Administrator): Thiết lập người dùng, phòng ban, nhóm quyền, chức vụ, **loại văn bản**, **Thiết lập hiển thị**. Thiết lập địa điểm đã gỡ; địa điểm công tác nhập text tự do.
+1. **Chức năng chính**: Báo cáo (submenu: Công việc · Bán trú), **Trao đổi** (hub hai cột `/trao-doi`, luôn hiện với người đã đăng nhập; danh sách cuộc trò chuyện Công tác / Công việc / Nhóm), **Lịch công tác** (tab **cá nhân** = lịch tuần/tháng/quý/năm kèm cột nhân sự như Báo cáo Công việc; tab **chung** = mẫu Word/PDF; nút **Tạo công tác** / **Import Excel** cho admin/mod và tổ trưởng/tổ phó 2/3★ — tạo mở trang riêng `/cong-tac/tao`; thẻ/hàng công tác dùng icon Thu gọn/Chi tiết/Sửa/Xóa và icon chat trao đổi trên Convex — quyền chat = quyền thấy công tác trên lịch cá nhân: admin/mod, `view_all`, người tạo, người tham gia, cấp dưới cùng phòng), Công việc (nút **Tạo công việc** cùng nhóm), Lớp chủ nhiệm, Điểm danh, **Bán trú** (`/ban-tru`; `/quan-ly-ban-tru` cũ chuyển về đây — admin/mod có tab **Kỳ bán trú** để thêm/sửa/xóa kỳ và tab **Danh sách tham gia**; người khác chỉ xem danh sách. Không có khóa ma trận quyền riêng: menu hiện theo mức **Báo cáo**, đúng như `convex/boarding.ts` kiểm tra — `boarding:write` cho admin/mod, `report` cho người có Báo cáo khác Ẩn; `Xem` chỉ thấy phòng ban mình, `Xem tối cao` thấy toàn trường), Đánh giá nhân sự, Ghi nhận lỗi. **Thông báo** không nằm trên sidebar; mở từ chuông góc trên → **Xem toàn bộ**. **Hồ sơ nội bộ / Đổi mật khẩu / Quản lý thiết bị đăng nhập** mở từ avatar tròn góc trên (không còn mục Thông tin cá nhân trên sidebar). `/bao-cao/cong-tac` chuyển vào tab lịch chung.
+2. **Quản trị hệ thống**: đang ẩn (Quản lý công tác / công việc đã gộp vào menu chính; Quản lý bán trú nay là menu **Bán trú**).
+3. **Thiết lập tối cao** (chỉ Administrator): Thiết lập người dùng, phòng ban, nhóm quyền, chức vụ, **loại văn bản**, **Thiết lập hiển thị**. **Thiết lập năm học**, **Thư viện giao diện**. Thiết lập địa điểm đã gỡ (`/thiet-lap-dia-diem` chuyển về Thiết lập phòng ban); địa điểm công tác (form, import Excel cột `dia_diem`, BGH sửa) là text tự do tối đa 200 ký tự, không tra danh mục. Bảng `locations` và dữ liệu cũ giữ nguyên để hiển thị tên địa điểm của các công tác cũ dùng `locationIds`.
 
 ### Thông báo & Thiết lập hiển thị
 
@@ -118,12 +121,13 @@ CRUD chức vụ với **cấp bậc 1–5 sao** (vàng). Cấp bậc dùng cho 
 |------|----------|
 | `users` (+ authTables) | Hồ sơ, `role`, `departmentId`, `permissionGroupId`, `positionId`, status, `mustChangePassword`, `loginLockedAt`, `importRollbackAt` |
 | `departments` | Phòng ban (`code` unique) |
-| `locations` | Địa điểm (catalog cũ; công tác mới dùng `duties.locationText`) |
-| `permissionGroups` | Nhóm quyền + `code` + `menuAccess[]` (`supervisor` chỉ cho `homeroom`) |
+| `locations` | Địa điểm (catalog cũ: không còn màn hình thiết lập, chỉ dùng để hiển thị tên địa điểm của công tác cũ; công tác mới dùng `duties.locationText`) |
+| `permissionGroups` | Nhóm quyền + `code` + `menuAccess[]` (`supervisor` chỉ cho `attendance`) |
 | `schoolYears`, `schoolCalendarDays`, `homeroomClasses`, `homeroomAssignments` | Năm học, lịch ngày học, lớp, phân công GVCN/Giám thị |
 | `students`, `studentGuardians`, `classEnrollments` | Học sinh, liên hệ, quá trình học theo năm |
 | `studentRosterImportUploads`, `studentRosterImportRows` | Nhập danh sách lớp (staged, atomic) |
-| `attendanceImportUploads`, `attendanceImportRows`, `studentAttendanceDays`, `studentAttendanceCorrections` | Import camera, sổ ngày, nhật ký phân loại |
+| `attendanceImportUploads`, `attendanceImportRows`, `studentAttendanceDays`, `studentAttendanceCorrections` | Import camera (đã ngừng, chỉ còn lịch sử), sổ ngày, nhật ký phân loại |
+| `attendanceClassDays`, `supervisorAttendanceUploads` | Lớp/ngày Giám thị đã lưu điểm danh; file Excel Giám thị tạm (xoá sau 1 giờ) |
 | `positions` | Chức vụ + `code` + `level` 1–5 |
 | `documentTypes` | Loại văn bản công việc (Kế hoạch / Biên bản / Báo cáo) |
 | `userImportUploads` | File Excel import user tạm (Convex Storage, TTL 1 giờ) |
@@ -135,7 +139,7 @@ CRUD chức vụ với **cấp bậc 1–5 sao** (vàng). Cấp bậc dùng cho 
 | `chatGroups` / `chatGroupMembers` / `groupMessages` | Nhóm do user tạo: chủ nhóm quản lý, thành viên rời, admin xem/giải tán |
 | `chatHubSync` | Con trỏ backfill một lần cho thread Công tác/Công việc đã có trước hub |
 | `personalReminders` | Nhắc nhở cá nhân theo user + công tác/công việc |
-| `boardingPeriods` | Kỳ bán trú (menu đang ẩn) |
+| `boardingPeriods` | Kỳ bán trú (menu **Bán trú**) |
 | `officeDocuments` | Công việc đã giao, tên, tệp đính kèm tùy chọn |
 | `workItems` | Phân công phòng ban / cá nhân và tiến độ nộp |
 | `personalTasks` | Đầu mục cá nhân, người thực hiện, deadline và trạng thái hoàn thành |
@@ -242,9 +246,9 @@ npx convex env set SITE_URL http://localhost:5173
 ### Đẩy functions + seed + frontend
 
 ```bash
-# Push functions (self-hosted). -y bỏ confirm.
-npx convex deploy -y
-# hoặc: npm run convex:deploy / npm run convex:dev
+# Convex Cloud: key đọc từ ~/projects/LVT-CRM/.convex-cloud-keys.csv (dòng LVT-CRM), không in ra.
+npm run convex:dev -- --once        # dev:decisive-puma-318 (sandbox)
+LVT_CONVEX_CONFIRM_PROD=confident-guanaco-953 npm run convex:deploy -- -y   # prod, cần tree sạch
 
 npx convex run internal.seed.seed
 
@@ -296,7 +300,7 @@ UI: trang **Công tác** — nút *Import Excel* cạnh *Tạo công tác* (`src
 - Chỉ file **`.xlsx`**, tối đa **2 MB**, tối đa **200** dòng. Không CSV.
 - All-or-nothing: một dòng lỗi → không commit; báo lỗi theo dòng.
 - Chỉ khi **mọi dòng hợp lệ** mới hiện xem trước → xác nhận mới tạo công tác.
-- Mỗi dòng tạo một `duties` (không unique lịch). Push thông báo từng dòng giống tạo tay.
+- Mỗi dòng tạo một `duties` (không unique lịch). Công tác của văn thư (admin/mod) vào lịch tuần chờ BGH duyệt; công tác của tổ trưởng push ngay giống tạo tay.
 
 **Cột file mẫu (không dấu)**
 
@@ -304,7 +308,7 @@ UI: trang **Công tác** — nút *Import Excel* cạnh *Tạo công tác* (`src
 
 - Ngày: `YYYY-MM-DD` hoặc `dd/mm/yyyy`.
 - `ca_ngay`: `1`/`0`, `có`/`không`, `true`/`false`; trống = không cả ngày. Khi cả ngày: ngày kết thúc = ngày bắt đầu, giờ mặc định `08:00`–`17:00`.
-- `ma_phong_ban` / `email_tham_gia` / `thanh_phan_khac`: mã phòng và email nhiều giá trị cách nhau dấu phẩy; được để trống từng cột; **phải có ít nhất một** phòng, email, hoặc thành phần khác (tối đa 500 ký tự). Thành phần khác không nhận thông báo nhưng vẫn hiện trên Lịch công tác chung.
+- `ma_phong_ban` / `email_tham_gia` / `thanh_phan_khac`: mã phòng và email nhiều giá trị cách nhau dấu phẩy; được để trống từng cột. Văn thư (admin/mod) được để trống cả ba và bổ sung thành phần sau; tổ trưởng **phải có ít nhất một** email hoặc thành phần khác (tối đa 500 ký tự). Thành phần khác không nhận thông báo nhưng vẫn hiện trên Lịch công tác chung.
 
 **Flow server-first**
 
@@ -313,6 +317,24 @@ UI: trang **Công tác** — nút *Import Excel* cạnh *Tạo công tác* (`src
 3. `dutyImport.commit({ uploadId })` — đọc lại cùng file, validate lần nữa, claim một lần, insert atomic. **Không tin rows từ client.**
 
 **Code chính:** `convex/dutyImport.ts`, `dutyImportParse.ts`, `dutyImportValidate.ts`, `dutyImportSheet.ts`; test `tests/duty-import.test.mjs`.
+
+### Duyệt Lịch công tác chung theo tuần
+
+Quy trình trường yêu cầu (10/2026): văn thư soạn → nộp → BGH duyệt → giáo viên mới thấy.
+
+- **Văn thư** = admin/mod. Soạn lịch tuần (thứ Hai–thứ Bảy) trên trang *Lịch công tác chung*; được nhập 4 cột trước, **Thành phần không bắt buộc**, bổ sung sau. Bấm **Nộp BGH duyệt**.
+- **BGH** = tài khoản đang hoạt động, **không** phải admin/mod, chức vụ cấp **4–5**. **Một** người duyệt là đủ. Duyệt **cả tuần** một lần, hoặc **Trả lại** kèm lý do (bắt buộc, ≤ 500 ký tự).
+- **Giáo viên** (mọi người khác) chỉ thấy bản đã duyệt: trang chung, lịch cá nhân (web + app), điểm danh, trao đổi, nhắc việc, chuông. Tuần chưa duyệt hiện "Lịch tuần này chưa được duyệt".
+- **Sửa sau khi duyệt** (sửa, thêm, xóa, đổi tuần) phải nộp duyệt lại; trong lúc chờ, giáo viên vẫn thấy bản cũ. Văn thư có thể **Hủy thay đổi** để quay về bản đã duyệt. Sửa khi tuần đang *Chờ duyệt* sẽ rút bản nộp về Nháp.
+- **Công tác tổ trưởng/tổ phó (cấp 2–3) giao cho tổ**: không qua duyệt, hiện ngay cho thành viên, **không** lên trang chung.
+
+Kỹ thuật:
+
+- `duties.scope` (`school` | `team`), `approvalTracked`, `published` (bản đã duyệt) + `publishedStartDate/EndDate`. Dòng cũ không có `approvalTracked` được coi là đã duyệt; lần sửa/xóa đầu tiên chụp bản đang hiện vào `published`.
+- Bảng `dutyWeeks` giữ trạng thái tuần (`submitted` / `returned` / `approved` / `draft`). Trạng thái hiển thị (Nháp, Chờ duyệt, Bị trả lại, Đã duyệt, Đã duyệt · có thay đổi) tính từ dữ liệu trong `convex/dutyApproval.ts`.
+- Mutation: `dutyWeeks.submit`, `approve({ weekStart, submittedAt })`, `returnWeek`, `discardChanges`. `submittedAt` ghim đúng bản BGH đã xem; sửa sau đó làm `approve` báo `DUTY_WEEK_CHANGED`.
+- Mọi đường đọc của giáo viên đi qua `projectPublicDuty` / `loadPublicDutiesFromEndDate`.
+- Sau khi deploy lần đầu chạy một lần `dutyWeeks:backfillScope` (internal) để gán `scope` cho dòng cũ.
 
 ### Import user hàng loạt (SYS-011 · chỉ Administrator)
 
@@ -370,8 +392,7 @@ UI: **Thiết lập người dùng** — nút *Tải file nhập liệu mẫu* +
 npm run check          # scripts/check-files.mjs
 npm run build
 git diff --check
-npx convex deploy -y   # cần CONVEX_SELF_HOSTED_*
-# alias: npm run convex:deploy
+LVT_CONVEX_CONFIRM_PROD=confident-guanaco-953 npm run convex:deploy -- -y   # prod, tree sạch
 ```
 
 `npm run typecheck` = `convex codegen --typecheck enable` (cần credentials).
@@ -382,21 +403,23 @@ npx convex deploy -y   # cần CONVEX_SELF_HOSTED_*
 | `npm run build` / `preview` | Build / xem `dist/` |
 | `npm run check` | Kiểm tra file bắt buộc |
 | `npm run typecheck` | Codegen + typecheck Convex |
-| `npm run convex:dev` | `convex dev` |
-| `npm run convex:deploy` | `convex deploy` |
+| `npm run convex:dev` | `convex dev` vào Convex Cloud dev (`decisive-puma-318`) |
+| `npm run convex:deploy` | `convex deploy` vào prod (`confident-guanaco-953`); bắt buộc `LVT_CONVEX_CONFIRM_PROD=confident-guanaco-953` và tree sạch |
 
-## Deploy (self-hosted hiện tại)
+## Deploy (Convex Cloud)
 
-1. Docker Convex up; `.env.local` có URL + admin key.
-2. `JWT_PRIVATE_KEY`, `JWKS`, `SITE_URL` đã set trên deployment.
-3. `npx convex deploy -y`
-4. `npx convex run internal.seed.seed`
-5. Frontend: `npm run dev` (tunnel/domain) hoặc serve `dist/` sau `npm run build`.
+Chi tiết và thứ tự sandbox → prod: xem [`AGENTS.md`](AGENTS.md).
+
+1. `JWT_PRIVATE_KEY`, `JWKS`, `SITE_URL` đã set trên deployment.
+2. Sandbox: `npm run convex:dev -- --once`, rồi `npm run build` và restart `ai.lvt.crm.sandbox-web`.
+3. Prod (sau khi owner duyệt, từ worktree sạch): `LVT_CONVEX_CONFIRM_PROD=confident-guanaco-953 npm run convex:deploy -- -y`, rồi `npm run build:production` trong `~/projects/LVT-CRM`.
+4. Seed (chỉ khi cần, đúng deployment): `npx convex run internal.seed.seed` qua `scripts/lvt-convex-cloud-env.sh`.
 6. Host `lvt.vscgroup.io.vn`: client dùng `window.location.origin` làm Convex URL (xem `src/main.jsx`).
 
-## Backup local
+## Backup
 
-- Volume Docker `infra/convex-local` (`data`) = DB. Sao lưu trước khi reset stack.
+- Prod: zip hằng đêm 00:30 (giữ 7 ngày) — xem [`AGENTS.md`](AGENTS.md). Backup thủ công: `npx convex export --include-file-storage` qua `scripts/lvt-convex-cloud-env.sh`.
+- `infra/convex-local` chỉ còn là cấu hình Docker self-hosted cũ.
 - Không commit dump có PII/hash.
 
 ## Chuyển sang Convex Pro
@@ -414,7 +437,7 @@ npx convex deploy -y   # cần CONVEX_SELF_HOSTED_*
 - [ ] First admin qua internal action; password tạm đã rotate.
 - [ ] Public signup/reset/email verification disabled.
 - [ ] Vai trò chỉ `admin`|`moderator`|`user`; user cũ `manager` đã migrate.
-- [ ] Test: CRUD user/PB/địa điểm/nhóm quyền/chức vụ; gán user; menu ẩn/xem/xem tối cao; profile + đổi MK; self-disable/delete blocked; audit.
+- [ ] Test: CRUD user/PB/nhóm quyền/chức vụ; gán user; menu ẩn/xem/xem tối cao; profile + đổi MK; self-disable/delete blocked; audit.
 - [ ] Test: thông báo (chuông, đọc, click → Công tác/Công việc); thiết lập hiển thị; báo cáo 3 loại.
 - [ ] Hiểu JWT TTL vs session invalidation (beta).
 - [ ] `SITE_URL` / origins khớp domain thật.
