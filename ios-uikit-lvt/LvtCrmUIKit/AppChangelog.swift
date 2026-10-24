@@ -8,6 +8,13 @@ struct AppChangelogEntry: Equatable {
 enum AppChangelog {
     static let entries: [AppChangelogEntry] = [
         AppChangelogEntry(
+            version: "3.1.2",
+            highlights: [
+                "Sửa tiêu đề Việc của tôi / Việc tôi tạo và các mục Lịch công tác bị che phía trên thanh tab.",
+                "Thanh tab tự cao lên khi chữ xuống dòng ở cỡ chữ lớn, không còn biểu tượng bị tràn.",
+            ]
+        ),
+        AppChangelogEntry(
             version: "3.1.1",
             highlights: [
                 "Thanh tab có biểu tượng kèm chữ ở Lớp học, Trao đổi, Lịch công tác và Công việc; các ô chia đều nên không còn tab bị che hay phải vuốt ngang.",
