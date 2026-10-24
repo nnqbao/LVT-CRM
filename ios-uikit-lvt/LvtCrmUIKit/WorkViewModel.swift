@@ -6,6 +6,15 @@ enum WorkListTab: Int, CaseIterable, Equatable {
     case overdue
     case completed
 
+    var systemImage: String {
+        switch self {
+        case .todo: return "tray"
+        case .pendingReview: return "hourglass"
+        case .overdue: return "exclamationmark.triangle"
+        case .completed: return "checkmark.circle"
+        }
+    }
+
     var title: String {
         switch self {
         case .todo: return "Việc cần làm"

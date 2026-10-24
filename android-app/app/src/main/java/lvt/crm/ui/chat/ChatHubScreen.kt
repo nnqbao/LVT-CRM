@@ -2,7 +2,6 @@ package lvt.crm.ui.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,13 +16,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.BusinessCenter
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +38,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -65,15 +66,17 @@ import lvt.crm.data.chat.chatSearchMatch
 import lvt.crm.data.chat.chatThreadKey
 import lvt.crm.data.chat.formatChatListTime
 import lvt.crm.data.convex.ConvexException
+import lvt.crm.ui.components.IconTabBar
+import lvt.crm.ui.components.IconTabItem
 import lvt.crm.ui.components.LvtScreen
 import lvt.crm.ui.components.GuideAnchors
 
 private const val POLL_MS = 8_000L
 private val FILTERS = listOf(
-    null to "Tất cả",
-    ChatKind.Duty to "Công tác",
-    ChatKind.Work to "Công việc",
-    ChatKind.Group to "Nhóm",
+    null to IconTabItem("Tất cả", Icons.Outlined.Forum),
+    ChatKind.Duty to IconTabItem("Công tác", Icons.Outlined.BusinessCenter),
+    ChatKind.Work to IconTabItem("Công việc", Icons.Outlined.TaskAlt),
+    ChatKind.Group to IconTabItem("Nhóm", Icons.Outlined.Group),
 )
 
 @Composable
@@ -222,18 +225,12 @@ fun ChatHubScreen(
                 placeholder = { Text("Tìm cuộc trò chuyện…") },
                 label = { Text("Tìm cuộc trò chuyện") },
             )
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FILTERS.forEach { (kind, label) ->
-                    FilterChip(
-                        selected = filter == kind,
-                        onClick = { filter = kind },
-                        label = { Text(label) },
-                    )
-                }
-            }
+            IconTabBar(
+                items = FILTERS.map { it.second },
+                selectedIndex = FILTERS.indexOfFirst { it.first == filter },
+                onSelect = { index -> filter = FILTERS[index].first },
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
             if (inbox?.backfillPending == true) {
                 Text(
                     "Đang đồng bộ cuộc trò chuyện cũ…",
