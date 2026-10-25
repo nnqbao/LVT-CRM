@@ -39,7 +39,10 @@ test('Android WebView shell: origin-restricted bridge, separate session, nothing
 test('Android: network trouble at start keeps the sign-in and shows Không có kết nối', () => {
   assert.match(src('data/auth/AuthModels.kt'), /data object Offline : AuthState/);
   const repo = src('data/auth/AuthRepository.kt');
-  assert.match(repo, /\/\/ Network trouble: keep the saved sign-in; the app shows "Không có kết nối"\.\n\s+_state\.value = AuthState\.Offline/);
+  assert.match(repo, /_state\.value = if \(isConnectivityFailure\(e\)\) AuthState\.Offline else AuthState\.SignedOut/, 'only real connectivity failures');
+  assert.match(repo, /error is java\.io\.IOException \|\| \(error is ConvexException && error\.code\.startsWith\("HTTP_"\)\)/);
+  // The offline start screen retries only when the network comes back (never in a loop).
+  assert.match(src('ui/web/WebAppShell.kt'), /val cameBack = !wasOnline\n\s+wasOnline = true\n\s+if \(cameBack\) scope\.launch \{ onRetry\(\) \}/);
   assert.match(src('ui/web/WebAppShell.kt'), /title = "Không có kết nối",/);
   assert.match(read('android-app/app/src/main/AndroidManifest.xml'), /android\.permission\.ACCESS_NETWORK_STATE/);
   assert.match(read('android-app/app/src/main/res/xml/file_paths.xml'), /<cache-path name="web_files" path="web-files\/" \/>/);

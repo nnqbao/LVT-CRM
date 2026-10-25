@@ -73,7 +73,8 @@ class AuthRepository(
                         tokenStore.snapshot() == credentials
                     ) {
                         // Network trouble: keep the saved sign-in; the app shows "Không có kết nối".
-                        _state.value = AuthState.Offline
+                        // Any other failure keeps the former behaviour (sign-in screen, tokens kept).
+                        _state.value = if (isConnectivityFailure(e)) AuthState.Offline else AuthState.SignedOut
                     }
                 }
             }
@@ -353,3 +354,7 @@ class AuthRepository(
         val credentialRevision: Long,
     )
 }
+
+/** No network, the server unreachable or not answering: never a reason to sign out. */
+internal fun isConnectivityFailure(error: Throwable): Boolean =
+    error is java.io.IOException || (error is ConvexException && error.code.startsWith("HTTP_"))

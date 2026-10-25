@@ -345,9 +345,18 @@ fun OfflineStartScreen(onRetry: suspend () -> Unit) {
     val scope = rememberCoroutineScope()
     DisposableEffect(Unit) {
         val manager = context.getSystemService(ConnectivityManager::class.java)
+        // Retry only when the network comes back: onAvailable also fires right after registering
+        // while a network exists, which would loop against a server that is down.
+        var wasOnline = isOnline(context)
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                scope.launch { onRetry() }
+                val cameBack = !wasOnline
+                wasOnline = true
+                if (cameBack) scope.launch { onRetry() }
+            }
+
+            override fun onLost(network: Network) {
+                wasOnline = isOnline(context)
             }
         }
         runCatching { manager?.registerDefaultNetworkCallback(callback) }
@@ -355,7 +364,7 @@ fun OfflineStartScreen(onRetry: suspend () -> Unit) {
     }
     MessageScreen(
         title = "Không có kết nối",
-        body = "Hãy bật Wi-Fi hoặc dữ liệu di động. Ứng dụng tự mở lại khi có mạng.",
+        body = "Chưa kết nối được máy chủ của trường. Kiểm tra Wi-Fi hoặc dữ liệu di động rồi bấm Thử lại; khi có mạng lại, ứng dụng tự mở.",
         action = "Thử lại" to { scope.launch { onRetry() }; Unit },
     )
 }
