@@ -290,7 +290,7 @@ actor ConvexHttpClient {
         case "WORK_EVIDENCE_REQUIRED": return "Khi nộp việc phải đính kèm file bằng chứng hoàn thành."
         case "WORK_COMPLETION_REVIEWER_REQUIRED":
             return "Chỉ người tạo công việc mới được đánh dấu hoàn thành hoặc trả về."
-        case "WORK_COMPLETION_NOT_PENDING": return "Task không còn ở trạng thái chờ duyệt hoàn thành."
+        case "WORK_COMPLETION_NOT_PENDING": return "Việc này không còn ở trạng thái chờ duyệt hoàn thành."
         case "INVALID_REJECTION_REASON": return "Vui lòng nhập lý do chưa duyệt (tối đa 500 ký tự)."
         default: return nil
         }

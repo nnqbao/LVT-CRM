@@ -76,6 +76,7 @@ class MainActivity : FragmentActivity() {
                 STATE_NOTIFICATION_KEYS,
                 ArrayList(destinationQueue.map { it.destination.notificationKey.orEmpty() }),
             )
+            outState.putStringArrayList(STATE_MENUS, ArrayList(destinationQueue.map { it.destination.menu }))
         }
         super.onSaveInstanceState(outState)
     }
@@ -96,6 +97,7 @@ class MainActivity : FragmentActivity() {
         val sourceTypes = state.getStringArrayList(STATE_SOURCE_TYPES).orEmpty()
         val sourceIds = state.getStringArrayList(STATE_SOURCE_IDS).orEmpty()
         val notificationKeys = state.getStringArrayList(STATE_NOTIFICATION_KEYS).orEmpty()
+        val menus = state.getStringArrayList(STATE_MENUS).orEmpty()
         return ids.indices.mapNotNull { index ->
             val sourceId = sourceIds.getOrNull(index)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             val id = ids[index]
@@ -107,6 +109,7 @@ class MainActivity : FragmentActivity() {
                     sourceType = sourceTypes.getOrNull(index).orEmpty(),
                     sourceId = sourceId,
                     notificationKey = notificationKeys.getOrNull(index)?.takeIf { it.isNotBlank() },
+                    menu = menus.getOrNull(index).orEmpty(),
                 ),
             )
         }
@@ -129,5 +132,6 @@ class MainActivity : FragmentActivity() {
         private const val STATE_SOURCE_TYPES = "lvt.pending_notification.source_types"
         private const val STATE_SOURCE_IDS = "lvt.pending_notification.source_ids"
         private const val STATE_NOTIFICATION_KEYS = "lvt.pending_notification.keys"
+        private const val STATE_MENUS = "lvt.pending_notification.menus"
     }
 }

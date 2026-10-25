@@ -63,4 +63,17 @@ class NotificationPresentationTest {
         assertNull(plain.second)
         assertEquals("Công việc chờ duyệt", NotificationPresentation.headline("", "work", "approval").first)
     }
+
+    @Test
+    fun peopleNotificationsUseTheWebMenuNames() {
+        assertEquals("Ghi nhận lỗi", NotificationPresentation.kindLabel("people", "staff_fault"))
+        assertEquals("Đánh giá nhân sự", NotificationPresentation.kindLabel("people", "evaluation_text_review"))
+        assertEquals("Ghi nhận lỗi", NotificationPresentation.systemTitle("people", "staff_fault", "Ghi nhận lỗi"))
+        assertEquals("Đánh giá nhân sự · Cần duyệt", NotificationPresentation.systemTitle("people", "evaluation_text_review", "Cần duyệt"))
+        assertTrue(NotificationPresentation.isRejection("evaluation_text_returned"))
+        assertFalse(NotificationPresentation.isRejection("evaluation_text_approved"))
+        assertFalse(NotificationPresentation.isRejection("staff_fault"))
+        assertTrue(NotificationPresentation.showsEventTime("staff_fault"))
+        assertTrue(NotificationPresentation.showsEventTime("evaluation_text_review"))
+    }
 }
