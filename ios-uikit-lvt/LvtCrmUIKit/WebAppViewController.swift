@@ -442,7 +442,7 @@ final class OfflineStartViewController: UIViewController {
 
     override func loadView() {
         let messageView = ConnectionMessageView()
-        messageView.configure(title: "Không có kết nối", message: "Hãy bật Wi-Fi hoặc dữ liệu di động. Ứng dụng tự mở lại khi có mạng.")
+        messageView.configure(title: "Không có kết nối", message: "Chưa kết nối được máy chủ của trường. Kiểm tra Wi-Fi hoặc dữ liệu di động rồi bấm Thử lại; khi có mạng lại, ứng dụng tự mở.")
         messageView.onRetry = { [weak self] in self?.retry() }
         view = messageView
     }
