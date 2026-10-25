@@ -51,12 +51,14 @@ object NotificationCenter {
                     sourceType = item.sourceType,
                     sourceId = item.sourceId,
                     notificationKey = item.key,
+                    menu = item.menu,
                 ),
             )
             putExtra(NotificationDestination.EXTRA_KIND, item.kind)
             putExtra(NotificationDestination.EXTRA_SOURCE_TYPE, item.sourceType)
             putExtra(NotificationDestination.EXTRA_SOURCE_ID, item.sourceId)
             putExtra(NotificationDestination.EXTRA_NOTIFICATION_KEY, item.key)
+            putExtra(NotificationDestination.EXTRA_MENU, item.menu)
         }
         val pendingIntent = PendingIntent.getActivity(
             context,

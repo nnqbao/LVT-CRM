@@ -111,7 +111,7 @@ final class WorkViewController: UITableViewController {
         switch sectionKinds[section] {
         case .tasks:
             return workSectionHeader(
-                title: "Việc của tôi",
+                title: "Việc được giao",
                 tab: viewModel.mineTab,
                 counts: viewModel.mineTabCounts,
                 onChange: { [weak self] tab in
@@ -257,7 +257,7 @@ final class WorkViewController: UITableViewController {
                 } else {
                     detail = emptyCopy(tab: viewModel.mineTab, created: false)
                 }
-                return emptyCell(indexPath, "Việc của tôi", detail)
+                return emptyCell(indexPath, "Việc được giao", detail)
             }
             let item = items[indexPath.row]
             let cell = workCell(at: indexPath)

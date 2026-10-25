@@ -310,6 +310,14 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
     }
 
     func route(_ destination: NotificationDestination, markNotificationRead: Bool = true) {
+        if destination.opensWeb {
+            if let url = URL(string: ConvexConfig.webURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) + destination.webPath) {
+                // Next run loop: a push tap can route before the tab bar is in the window.
+                DispatchQueue.main.async { [weak self] in self?.presentWebPage(url) }
+            }
+            markRead(destination, markNotificationRead)
+            return
+        }
         let tab = destination.route
         guard let navigationController = tabControllers[tab] else { return }
         selectedViewController = navigationController
@@ -335,6 +343,10 @@ final class RootTabBarController: UITabBarController, UITabBarControllerDelegate
                 workViewController?.focus(itemId: destination.sourceId, openChat: destination.opensChat)
             }
         }
+        markRead(destination, markNotificationRead)
+    }
+
+    private func markRead(_ destination: NotificationDestination, _ markNotificationRead: Bool) {
         if markNotificationRead, let key = destination.notificationKey {
             Task { [weak self] in
                 guard let self else { return }

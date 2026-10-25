@@ -17,11 +17,19 @@ extension UIViewController {
 
     func openHelp(_ topic: HelpGuide.Topic) {
         guard let url = HelpGuide.url(for: topic) else { return }
+        presentWebPage(url)
+    }
+
+    /// A page of the web app (the guide, or Ghi nhận lỗi / Đánh giá nhân sự, which have no app screen),
+    /// shown in Safari View Controller on top of whatever is presented.
+    func presentWebPage(_ url: URL) {
         let configuration = SFSafariViewController.Configuration()
         configuration.entersReaderIfAvailable = false
         let safari = SFSafariViewController(url: url, configuration: configuration)
         safari.dismissButtonStyle = .close
         safari.modalPresentationStyle = .pageSheet
-        present(safari, animated: !UIAccessibility.isReduceMotionEnabled)
+        var presenter: UIViewController = self
+        while let presented = presenter.presentedViewController, !presented.isBeingDismissed { presenter = presented }
+        presenter.present(safari, animated: !UIAccessibility.isReduceMotionEnabled)
     }
 }

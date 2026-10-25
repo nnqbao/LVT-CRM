@@ -273,7 +273,7 @@ fun WorkScreen(
             }
             val taskIndex = visibleTasks.indexOfFirst { it.id == focusId || it.documentId == focusId }
             if (taskIndex >= 0) {
-                // Queue rows, then the "Việc của tôi" heading.
+                // Queue rows, then the "Việc được giao" heading.
                 listState.animateScrollToItem(workApprovalQueueRowCount(state, showDecided) + 1 + taskIndex)
             }
         }
@@ -407,7 +407,7 @@ fun WorkScreen(
                         )
                         item(key = "mine-heading") {
                             WorkListSectionHeader(
-                                title = "Việc của tôi",
+                                title = "Việc được giao",
                                 tab = state.mineTab,
                                 onTab = viewModel::setMineTab,
                                 counts = state.mineTabCounts,
@@ -822,7 +822,7 @@ private fun AdminWorkScreen(
                     }
                     item(key = "mine-heading") {
                         WorkListSectionHeader(
-                            title = "Việc của tôi",
+                            title = "Việc được giao",
                             tab = state.mineTab,
                             onTab = onMineTab,
                             counts = state.mineTabCounts,
@@ -1163,7 +1163,7 @@ private fun WorkListEmpty(
     }
     StatePanel(
         icon = if (filtered) Icons.Outlined.Search else Icons.Outlined.TaskAlt,
-        title = if (created) "Việc tôi tạo" else "Việc của tôi",
+        title = if (created) "Việc tôi tạo" else "Việc được giao",
         message = message,
     )
 }

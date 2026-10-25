@@ -50,7 +50,17 @@ object HelpGuide {
      * needed), otherwise in any browser. Never throws.
      */
     fun open(context: Context, anchor: String?, webBaseUrl: String = ConvexConfig.webUrl) {
-        val uri = Uri.parse(embedUrl(webBaseUrl, anchor))
+        WebPage.open(context, embedUrl(webBaseUrl, anchor))
+    }
+}
+
+/** A page of the web app (e.g. Ghi nhận lỗi, which has no app screen), opened like the guide. */
+object WebPage {
+    fun url(path: String, webBaseUrl: String = ConvexConfig.webUrl): String =
+        "${webBaseUrl.trim().trimEnd('/')}/${path.trimStart('/')}"
+
+    fun open(context: Context, url: String) {
+        val uri = Uri.parse(url)
         val intent = Intent(Intent.ACTION_VIEW, uri).apply {
             // Custom Tabs protocol: a session extra (null binder is allowed) asks the browser
             // to show the page as a Custom Tab; browsers without support ignore it.
@@ -60,9 +70,9 @@ object HelpGuide {
         try {
             context.startActivity(intent)
         } catch (error: ActivityNotFoundException) {
-            Log.w("LvtHelp", "No browser to open the guide", error)
+            Log.w("LvtHelp", "No browser to open the web page", error)
         } catch (error: SecurityException) {
-            Log.w("LvtHelp", "Guide intent rejected", error)
+            Log.w("LvtHelp", "Web page intent rejected", error)
         }
     }
 

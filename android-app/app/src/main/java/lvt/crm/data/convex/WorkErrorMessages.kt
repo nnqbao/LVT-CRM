@@ -40,7 +40,7 @@ object WorkErrorMessages {
         "MODERATOR_DEPARTMENT_SCOPE" to "Moderator chỉ được thao tác trong phòng ban được gán.",
         "INVALID_WORK_ASSIGNEE" to "Người thực hiện phải cùng phòng ban và có cấp sao thấp hơn bạn.",
         "WORK_ASSIGNEES_REQUIRED" to "Vui lòng chọn người thực hiện.",
-        "WORK_EXECUTOR_REQUIRED" to "Chỉ người được giao mới được hoàn thành task.",
+        "WORK_EXECUTOR_REQUIRED" to "Chỉ người được giao mới được hoàn thành việc này.",
         "INVALID_QUALITY_PERCENT" to "Mức độ hoàn thành phải từ 0 đến 100%.",
         "INVALID_REJECTION_REASON" to "Vui lòng nhập lý do chưa duyệt (tối đa 500 ký tự).",
         "DOCUMENT_TYPE_REQUIRED" to "Vui lòng chọn loại văn bản cho file đính kèm.",

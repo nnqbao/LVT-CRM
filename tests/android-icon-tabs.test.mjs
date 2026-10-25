@@ -45,11 +45,10 @@ test('Android: Lớp học, Trao đổi, Lịch công tác and Công việc use 
   assert.doesNotMatch(src('ui/duties/DutiesTabHost.kt'), /IconTabBar/);
 });
 
-test('Android: 2.1.1 (52) version bump with icon-tab changelog entry', () => {
+test('Android: 2.1.1 (52) icon-tab changelog entry is kept by later versions', () => {
   const gradle = read('build.gradle.kts');
-  assert.match(gradle, /val lvtVersionCode = 52/);
-  assert.match(gradle, /val lvtVersionName = "2\.1\.1"/);
+  assert.ok(Number(/val lvtVersionCode = (\d+)/.exec(gradle)[1]) >= 52);
   const changelog = src('ui/profile/AppChangelog.kt');
-  assert.match(changelog, /entries: List<AppChangelogEntry> = listOf\(\s*AppChangelogEntry\(\s*"2\.1\.1"/, '2.1.1 is the newest entry');
+  assert.match(changelog, /AppChangelogEntry\(\s*"2\.1\.1"/, '2.1.1 entry is kept');
   assert.match(changelog, /Thanh tab có biểu tượng kèm chữ ở Lớp học, Trao đổi, Lịch công tác, Công việc; không còn tab bị che/);
 });

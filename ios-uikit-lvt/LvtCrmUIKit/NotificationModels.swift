@@ -12,6 +12,8 @@ struct NotificationItem: Identifiable, Equatable, Sendable {
     let milestoneHours: Int
     let milestoneLabel: String
     var read: Bool
+    /// Web menu a kind `people` item opens (`staff-faults` / `people-review`); empty otherwise.
+    var menu: String = ""
 }
 
 struct NotificationSettings: Equatable, Sendable {
@@ -39,6 +41,8 @@ struct NotificationDestination: Equatable, Sendable, Hashable {
     let sourceType: String
     let sourceId: String
     let notificationKey: String?
+    /// Web menu of a kind `people` item (bell feed `menu`); empty when unknown (e.g. an APNs push).
+    var menu: String = ""
 
     var route: AppTab {
         if opensChat { return .chat }
@@ -59,6 +63,19 @@ struct NotificationDestination: Equatable, Sendable, Hashable {
         sourceType == PersonalTodos.notificationSourceType || kind == PersonalTodos.notificationKind
     }
 
+    /// Đánh giá nhân sự / Ghi nhận lỗi (kind `people`) have no app screen: they open that web page.
+    var opensWeb: Bool { kind == "people" }
+
+    var webPath: String { Self.peopleWebPath(menu: menu, sourceType: sourceType) }
+
+    /// Web route of a `people` item: its feed `menu`, else Ghi nhận lỗi for a fault (mirrors web useNotificationFocus.js).
+    static func peopleWebPath(menu: String, sourceType: String) -> String {
+        let target = ["staff-faults", "people-review"].contains(menu)
+            ? menu
+            : (sourceType == "staff_fault" ? "staff-faults" : "people-review")
+        return target == "staff-faults" ? "/ghi-nhan-loi" : "/danh-gia-nhan-su"
+    }
+
     /// Bell items for Trao đổi open the chat hub.
     var opensChat: Bool {
         sourceType == "duty_chat" || sourceType == "work_chat" || sourceType == "group_chat"
@@ -75,7 +92,8 @@ struct NotificationDestination: Equatable, Sendable, Hashable {
             kind: value("kind") ?? "",
             sourceType: value("sourceType") ?? "",
             sourceId: sourceId,
-            notificationKey: value("key")?.notificationValue
+            notificationKey: value("key")?.notificationValue,
+            menu: value("menu") ?? ""
         )
     }
 
@@ -92,8 +110,16 @@ struct NotificationDestination: Equatable, Sendable, Hashable {
                 ?? "",
             sourceId: sourceId,
             notificationKey: (userInfo["key"] as? String)?.notificationValue
-                ?? (userInfo["lvt.notification.key"] as? String)?.notificationValue
+                ?? (userInfo["lvt.notification.key"] as? String)?.notificationValue,
+            menu: (userInfo["menu"] as? String) ?? ""
         )
+    }
+}
+
+/// Labels of kind `people` items (mirrors web peopleNotificationLabel in src/notifications/useNotificationFocus.js).
+enum NotificationPeople {
+    static func label(sourceType: String) -> String {
+        sourceType == "staff_fault" ? "Ghi nhận lỗi" : "Đánh giá nhân sự"
     }
 }
 

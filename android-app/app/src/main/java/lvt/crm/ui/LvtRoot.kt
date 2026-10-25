@@ -64,6 +64,7 @@ import lvt.crm.ui.auth.LoginScreen
 import lvt.crm.ui.auth.LoginViewModel
 import lvt.crm.ui.components.AccountHeaderState
 import lvt.crm.ui.components.LocalAccountHeader
+import lvt.crm.ui.components.WebPage
 import lvt.crm.ui.chat.ChatHubScreen
 import lvt.crm.ui.components.accountInitials
 import lvt.crm.ui.duties.DutiesTabHost
@@ -297,7 +298,12 @@ private fun MainShell(
             sourceType = item.sourceType,
             sourceId = item.sourceId,
             notificationKey = item.key,
+            menu = item.menu,
         )
+        if (destination.opensWeb) {
+            WebPage.open(context, WebPage.url(destination.webPath))
+            return
+        }
         if (destination.opensChat) {
             focusTarget = destination
             selectedTab = Routes.Chat
@@ -314,7 +320,9 @@ private fun MainShell(
 
     LaunchedEffect(notificationDestination) {
         val destination = notificationDestination ?: return@LaunchedEffect
-        if (destination.opensChat) {
+        if (destination.opensWeb) {
+            WebPage.open(context, WebPage.url(destination.webPath))
+        } else if (destination.opensChat) {
             focusTarget = destination
             selectedTab = Routes.Chat
             navController.navigate(Routes.Chat) { launchSingleTop = true }

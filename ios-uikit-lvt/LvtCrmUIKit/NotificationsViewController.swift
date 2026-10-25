@@ -138,7 +138,8 @@ final class NotificationsViewController: UITableViewController {
                     kind: opened.kind,
                     sourceType: opened.sourceType,
                     sourceId: opened.sourceId,
-                    notificationKey: opened.key
+                    notificationKey: opened.key,
+                    menu: opened.menu
                 ))
             }
         default:
@@ -278,6 +279,8 @@ final class NotificationsViewController: UITableViewController {
             ? "Mở trao đổi"
             : item.sourceType == PersonalTodos.notificationSourceType || item.kind == PersonalTodos.notificationKind
             ? "Mở Việc của tôi"
+            : item.kind == "people"
+            ? "Mở \(NotificationPeople.label(sourceType: item.sourceType)) trên bản web"
             : WorkApprovalRules.isDocumentNotification(sourceType: item.sourceType) && item.kind != "duty"
             ? "Mở công việc"
             : "Mở \(item.kind == "duty" ? "tab Lịch CT" : "tab Công việc")"
@@ -291,6 +294,7 @@ final class NotificationsViewController: UITableViewController {
     }
 
     private func kindLabel(_ item: NotificationItem) -> String {
+        if item.kind == "people" { return NotificationPeople.label(sourceType: item.sourceType) }
         if item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat" { return "Trao đổi" }
         if item.sourceType == PersonalTodos.notificationSourceType || item.kind == PersonalTodos.notificationKind { return "Nhắc việc" }
         if item.sourceType == "completion_rejected" { return "Từ chối hoàn thành" }
@@ -303,7 +307,7 @@ final class NotificationsViewController: UITableViewController {
         guard item.dueAt > 0 else { return "" }
         let when = Self.dueFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(item.dueAt) / 1000))
         if item.sourceType == "duty_chat" || item.sourceType == "work_chat" || item.sourceType == "group_chat"
-            || DutyWeekPresentation.isWeekNotification(item.sourceType) { return "Lúc \(when)" }
+            || DutyWeekPresentation.isWeekNotification(item.sourceType) || item.kind == "people" { return "Lúc \(when)" }
         return when
     }
 

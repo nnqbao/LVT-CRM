@@ -22,6 +22,7 @@ enum NotificationCenterService {
             "sourceType": item.sourceType,
             "sourceId": item.sourceId,
             "key": item.key,
+            "menu": item.menu,
         ]
         let request = UNNotificationRequest(identifier: item.key, content: content, trigger: nil)
         do {
@@ -39,6 +40,9 @@ enum NotificationCenterService {
     }
 
     private static func title(for item: NotificationItem) -> String {
+        if item.kind == "people" {
+            return NotificationPeople.label(sourceType: item.sourceType)
+        }
         if item.sourceType == "completion_rejected" {
             return "Hoàn thành bị từ chối"
         }

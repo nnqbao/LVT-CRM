@@ -37,6 +37,24 @@ class NotificationDestinationTest {
     }
 
     @Test
+    fun peopleNotificationsOpenTheirWebPage() {
+        val fault = NotificationDestination("people", "staff_fault", "fault-1", "people:staff_fault:fault-1", menu = "staff-faults")
+        assertTrue(fault.opensWeb)
+        assertFalse(fault.opensChat)
+        assertEquals("/ghi-nhan-loi", fault.webPath)
+        // A person without Ghi nhận lỗi sees the fault in Hồ sơ của tôi (feed menu people-review).
+        assertEquals("/danh-gia-nhan-su", NotificationDestination("people", "staff_fault", "fault-1", null, menu = "people-review").webPath)
+        assertEquals("/ghi-nhan-loi", NotificationDestination.peopleWebPath("", "staff_fault"))
+        listOf("evaluation_text_review", "evaluation_text_approved", "evaluation_text_returned").forEach { sourceType ->
+            val comment = NotificationDestination("people", sourceType, "text-1", "key")
+            assertTrue(comment.opensWeb)
+            assertEquals("/danh-gia-nhan-su", comment.webPath)
+        }
+        assertEquals("/danh-gia-nhan-su", NotificationDestination.peopleWebPath("work", "evaluation_text_review"))
+        assertFalse(NotificationDestination("work", "approval", "doc-1", null).opensWeb)
+    }
+
+    @Test
     fun todoRemindersOpenTheWorkHubTodoList() {
         val push = NotificationDestination("todo", "todo_reminder", "todo-1", "todo:todo_reminder:todo-1:1")
         assertEquals("work", push.route)

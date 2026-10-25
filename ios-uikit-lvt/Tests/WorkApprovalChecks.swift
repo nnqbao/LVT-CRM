@@ -233,6 +233,20 @@ struct WorkApprovalChecks {
             check(WorkApprovalRules.isDocumentNotification(sourceType: sourceType), "Document source \(sourceType)")
         }
 
+        // Ghi nhận lỗi / Đánh giá nhân sự (kind `people`): no app screen, they open the web page.
+        let faultBell = NotificationDestination.from(url: URL(string: "lvtcrm://notification?kind=people&sourceType=staff_fault&sourceId=f1&key=people:staff_fault:f1&menu=people-review")!)
+        check(faultBell?.opensWeb == true && faultBell?.opensChat == false && faultBell?.webPath == "/danh-gia-nhan-su", "Fault bell follows the feed menu")
+        let faultPush = NotificationDestination.from(userInfo: ["kind": "people", "sourceType": "staff_fault", "sourceId": "f1"])
+        check(faultPush?.opensWeb == true && faultPush?.webPath == "/ghi-nhan-loi", "Fault push without menu opens Ghi nhận lỗi")
+        for sourceType in ["evaluation_text_review", "evaluation_text_approved", "evaluation_text_returned"] {
+            let push = NotificationDestination.from(userInfo: ["kind": "people", "sourceType": sourceType, "sourceId": "t1", "menu": "people-review"])
+            check(push?.opensWeb == true && push?.webPath == "/danh-gia-nhan-su", "Push \(sourceType) opens Đánh giá nhân sự")
+            check(NotificationPeople.label(sourceType: sourceType) == "Đánh giá nhân sự", "Label \(sourceType)")
+        }
+        check(NotificationPeople.label(sourceType: "staff_fault") == "Ghi nhận lỗi", "Fault label")
+        check(NotificationDestination.peopleWebPath(menu: "work", sourceType: "evaluation_text_review") == "/danh-gia-nhan-su", "Unknown menu ignored")
+        check(NotificationDestination.from(userInfo: ["kind": "work", "sourceType": "approval", "sourceId": "d"])?.opensWeb == false, "Work stays in the app")
+
         // "?" guide URLs (web GUIDE_ANCHORS + embed).
         check(HelpGuide.url(for: .work)?.absoluteString == "https://lvt.vscgroup.io.vn/huong-dan-su-dung.html?embed=1#menu-cong-viec", "Work guide URL")
         check(HelpGuide.url(for: .overview)?.absoluteString == "https://lvt.vscgroup.io.vn/huong-dan-su-dung.html?embed=1", "Overview guide URL")
