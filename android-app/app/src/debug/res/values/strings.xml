@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Debug / test builds (lvt.crm.debug) sit next to the store app: a different name avoids mix-ups. -->
-    <string name="app_name">CRM LVT (thử)</string>
-</resources>

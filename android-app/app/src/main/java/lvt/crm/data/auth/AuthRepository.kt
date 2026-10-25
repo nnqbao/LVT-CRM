@@ -72,19 +72,12 @@ class AuthRepository(
                         authGeneration.get() == generation &&
                         tokenStore.snapshot() == credentials
                     ) {
-                        // Network trouble: keep the saved sign-in; the app shows "Không có kết nối".
-                        _state.value = AuthState.Offline
+                        // Leave the loading state so the user can retry login.
+                        _state.value = AuthState.SignedOut
                     }
                 }
             }
         }
-    }
-
-    /** "Thử lại" on the Không có kết nối screen, or the network came back. */
-    suspend fun retryRestore() {
-        if (_state.value != AuthState.Offline) return
-        _state.value = AuthState.Loading
-        restoreSession()
     }
 
     override suspend fun signIn(email: String, password: String): Result<UserSession> {

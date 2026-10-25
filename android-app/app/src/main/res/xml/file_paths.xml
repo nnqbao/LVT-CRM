@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="work_documents" path="work-documents/" />
-    <cache-path name="web_files" path="web-files/" />
 </paths>
