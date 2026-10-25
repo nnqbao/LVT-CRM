@@ -24,6 +24,7 @@ import { downloadContentPolicy } from './lib/file-content-policy.mjs';
 import { FileHttpError, classifyFileError } from './lib/file-http-errors.mjs';
 import { matchAvatarFileRoute, matchDriveMutationRoute } from './lib/file-route-policy.mjs';
 import { staticFrameHeaders } from './lib/static-frame-policy.mjs';
+import { parseByteRange, staticEtag } from './lib/static-range.mjs';
 import { wellKnownResponse } from './lib/well-known.mjs';
 import {
   buildAuthorizedSharedSchedulePdf,
@@ -72,6 +73,7 @@ const contentTypes = new Map([
   ['.jpg', 'image/jpeg'],
   ['.js', 'text/javascript; charset=utf-8'],
   ['.json', 'application/json; charset=utf-8'],
+  ['.mp4', 'video/mp4'],
   ['.png', 'image/png'],
   ['.svg', 'image/svg+xml'],
   ['.webp', 'image/webp'],
@@ -513,6 +515,66 @@ async function serveDesignLibrary(request, response) {
   response.end(html);
 }
 
+/**
+ * Guide videos live in Convex File Storage (convex/guideVideos.ts, public fictional content):
+ * /huong-dan/video/<id>.mp4|webp redirects to the published object, which answers byte ranges.
+ * Lookups are cached briefly; an unpublished id falls back to a local dist/ file (sandbox).
+ */
+const GUIDE_MEDIA_ROUTE = /^\/huong-dan\/video\/([a-z0-9-]{2,60})\.(mp4|webp)$/;
+const guideMediaCache = new Map();
+const GUIDE_MEDIA_TTL_MS = 5 * 60 * 1000;
+
+async function guideMediaUrl(videoId, kind) {
+  const key = `${videoId}:${kind}`;
+  const hit = guideMediaCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.url;
+  let url = null;
+  try {
+    url = await new ConvexHttpClient(convexUrl).query(anyApi.guideVideos.url, { videoId, kind });
+  } catch (error) {
+    console.error('LVT guide video lookup failed', { videoId, kind, code: error instanceof Error ? error.message.split('\n')[0] : 'UNKNOWN' });
+    return hit?.url || null;
+  }
+  guideMediaCache.set(key, { url, expires: Date.now() + (url ? GUIDE_MEDIA_TTL_MS : 60 * 1000) });
+  return url;
+}
+
+/** Guide videos: ETag revalidation and single byte ranges (Safari / iOS need 206 to play MP4). */
+async function serveStaticMedia(request, response, filePath) {
+  const info = await stat(filePath);
+  const etag = staticEtag(info);
+  response.setHeader('Accept-Ranges', 'bytes');
+  response.setHeader('ETag', etag);
+  if (request.headers['if-none-match'] === etag) {
+    response.writeHead(304);
+    response.end();
+    return;
+  }
+  const ifRange = request.headers['if-range'];
+  const range = ifRange && ifRange !== etag ? null : parseByteRange(request.headers.range, info.size);
+  if (range?.unsatisfiable) {
+    response.writeHead(416, { 'Content-Range': `bytes */${info.size}` });
+    response.end();
+    return;
+  }
+  const start = range ? range.start : 0;
+  const end = range ? range.end : info.size - 1;
+  response.setHeader('Content-Length', end - start + 1);
+  if (range) response.setHeader('Content-Range', `bytes ${start}-${end}/${info.size}`);
+  response.writeHead(range ? 206 : 200);
+  if (request.method === 'HEAD') {
+    response.end();
+    return;
+  }
+  try {
+    await pipeline(createReadStream(filePath, { start, end }), response);
+  } catch (error) {
+    // Players routinely abort a range request when the viewer seeks; that is not a server error.
+    if (response.destroyed || error?.code === 'ERR_STREAM_PREMATURE_CLOSE') return;
+    throw error;
+  }
+}
+
 async function existingFile(candidate) {
   try {
     const metadata = await stat(candidate);
@@ -618,6 +680,21 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const guideMedia = (request.method === 'GET' || request.method === 'HEAD') ? pathname.match(GUIDE_MEDIA_ROUTE) : null;
+    if (guideMedia) {
+      const target = await guideMediaUrl(guideMedia[1], guideMedia[2] === 'mp4' ? 'video' : 'poster');
+      if (target) {
+        response.writeHead(302, { Location: target, 'Cache-Control': 'public, max-age=300' });
+        response.end();
+        return;
+      }
+      if (!(await existingFile(path.resolve(distRoot, `.${pathname}`)))) {
+        response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        response.end('Video chưa được xuất bản.\n');
+        return;
+      }
+    }
+
     const candidate = path.resolve(distRoot, `.${pathname}`);
     const isInsideDist = candidate === distRoot || candidate.startsWith(`${distRoot}${path.sep}`);
     if (!isInsideDist) {
@@ -637,6 +714,11 @@ const server = createServer(async (request, response) => {
       'Cache-Control',
       isHashedAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
     );
+
+    if (extension === '.mp4') {
+      await serveStaticMedia(request, response, filePath);
+      return;
+    }
 
     if (request.method === 'HEAD') {
       response.writeHead(200);
