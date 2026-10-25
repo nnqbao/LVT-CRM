@@ -93,6 +93,10 @@ import lvt.crm.ui.work.WorkFilePreviewScreen
 import lvt.crm.ui.work.WorkFilePreviewState
 import lvt.crm.ui.work.WorkScreen
 import lvt.crm.ui.work.WorkViewModel
+import lvt.crm.BuildConfig
+import lvt.crm.ui.web.WebAppShell
+import lvt.crm.ui.web.OfflineStartScreen
+import lvt.crm.ui.web.WebShellStorage
 import lvt.crm.data.convex.ConvexException
 import lvt.crm.data.work.WorkApprovalItem
 import kotlinx.coroutines.launch
@@ -118,7 +122,11 @@ fun LvtRoot(
     val authState by container.authRepository.state.collectAsState()
     when (val state = authState) {
         AuthState.Loading -> PlaceholderScreen(title = "CRM Lê Văn Tám", body = "Đang tải…")
+        AuthState.Offline -> OfflineStartScreen(onRetry = { container.authRepository.retryRestore() })
         AuthState.SignedOut -> {
+            // Whatever ended the session, the web app's storage must not outlive it.
+            val context = LocalContext.current
+            LaunchedEffect(Unit) { if (BuildConfig.WEB_SHELL) WebShellStorage.clear(context) }
             val loginVm: LoginViewModel = viewModel(
                 factory = LoginViewModel.factory(container.authRepository, container.deviceAuthRepository),
             )
@@ -135,6 +143,22 @@ fun LvtRoot(
         }
         is AuthState.SignedIn -> {
             NotificationPermissionAndSync(container)
+            if (BuildConfig.WEB_SHELL) {
+                val context = LocalContext.current
+                WebAppShell(
+                    container = container,
+                    session = state.session,
+                    notificationDestination = notificationDestination,
+                    onNotificationDestinationHandled = onNotificationDestinationHandled,
+                    onSignOut = {
+                        WebShellStorage.clear(context)
+                        container.avatarRepository.clearLocal()
+                        container.authRepository.signOut()
+                        container.notificationScheduler.cancel()
+                    },
+                )
+                return
+            }
             MainShell(
                 container = container,
                 sessionUserId = state.session.userId,
