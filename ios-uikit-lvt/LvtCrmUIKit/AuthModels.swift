@@ -97,6 +97,8 @@ extension UserSession {
 enum AuthState: Equatable, Sendable {
     case loading
     case signedOut
+    /// Saved sign-in kept, but the server could not be reached at start: "Không có kết nối" + Thử lại.
+    case offline
     case signedIn(UserSession)
     case mustChangePassword(UserSession)
 

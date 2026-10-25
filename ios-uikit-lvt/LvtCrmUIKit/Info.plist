@@ -32,7 +32,14 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LVTConvexURL</key>
-	<string>https://confident-guanaco-953.convex.cloud</string>
+	<string>$(LVT_CONVEX_URL)</string>
+	<key>LVTWebURL</key>
+	<string>$(LVT_WEB_URL)</string>
+	<key>WKAppBoundDomains</key>
+	<array>
+		<string>lvt.vscgroup.io.vn</string>
+		<string>sandbox.thcslevantam.ai.vn</string>
+	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>vn.lvt.crm.notifications.refresh</string>
