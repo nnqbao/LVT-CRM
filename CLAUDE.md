@@ -96,7 +96,7 @@
 ## Private file and cache invariants
 
 - New work uploads are private Convex Storage objects (`cvx_` keys); a `cvx_` key can be staged only for a fresh (≤10 min), non-empty, ≤20 MiB object no other stage owns (`storedObjectRegistrable`). Convex deletes the object inside the authorized cleanup mutation (staged-upload cleanup / cleanup job), never while an active record references it.
-- Never return Drive links or Convex `storage.getUrl()` to the browser. Preview/download always go through `/api/files/:documentId` after authorization. For `cvx_` objects the gateway fetches bytes from the Convex HTTP route `/lvt-files/object`, which re-runs `authorizeFileDownload` with the user's token; no storage URL is minted.
+- Never return Drive links or Convex `storage.getUrl()` to the browser. Preview/download always go through `/api/files/:documentId` after authorization. Only exception: the public user-guide tutorial videos (`convex/guideVideos.ts`, fictional data, no school records) — `/huong-dan/video/<id>.mp4|webp` redirects to their Convex storage URL; they are published only with the deploy-key CLI (`npm run guide:videos:publish -- <dev|prod>`), never stored in git. For `cvx_` objects the gateway fetches bytes from the Convex HTTP route `/lvt-files/object`, which re-runs `authorizeFileDownload` with the user's token; no storage URL is minted.
 - Files stored in Convex (`cvx_` objects and legacy `fileId` rows) pass through the gateway in memory only and are never written to its disk (no server cache, no upload prewarm); ETag stays the former cache key so client copies remain valid. Only legacy Drive objects still use the 24-hour disk cache.
 - Prefer SHA-256 checksum as `fileVersion`; fallback is Drive identity plus size, or `convex-storage:{fileId}:{size}` for unmigrated files.
 - Shared cache remains authorize-first, atomic, bounded by TTL/size, single-flight, and concurrency-limited.
@@ -157,7 +157,7 @@ Additional rules:
 
 ## Trao đổi hub (web)
 
-- Sidebar **Trao đổi** (`/trao-doi`) sits above Lịch công tác and Công việc and is visible to every active signed-in user. Work/duty threads still use the existing access rules; groups are membership-based. Admin (`role === admin`) may view and dissolve any group.
+- **Trao đổi** (`/trao-doi`) and **Thông báo** open from the header icons (not the left sidebar: `SIDEBAR_HIDDEN_MENUS`); Trao đổi is visible to every active signed-in user. Work/duty threads still use the existing access rules; groups are membership-based. Admin (`role === admin`) may view and dissolve any group.
 - Do not scan `workMessages` / `dutyMessages` to build the conversation list. Maintain `chatThreads` + per-user `chatInbox` (index `by_user_active_activity`) and `chatCounters` on send, recall, and group membership changes. Message history stays paginated on the existing per-entity indexes.
 - Popup Trao đổi on Công tác/Công việc and the hub read the same message tables. Bell items `work_chat` / `duty_chat` / `group_chat` open the hub thread. `chatHubSync` is a one-time backfill cursor for threads that existed before the hub; new messages update the inbox directly.
 - Group owner adds/removes/renames/dissolves. Members may leave (owner leave transfers to the earliest remaining member, or dissolves if nobody remains). Recall window stays 15 minutes.
