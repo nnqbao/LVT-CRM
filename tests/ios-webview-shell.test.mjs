@@ -7,8 +7,8 @@ const ios = (file) => read(`ios-uikit-lvt/LvtCrmUIKit/${file}`);
 
 test('iOS 4.0 (branch only): after the native sign-in the app shows the web app in a WKWebView', () => {
   const pbx = read('ios-uikit-lvt/LvtCrmUIKit.xcodeproj/project.pbxproj');
-  assert.equal((pbx.match(/MARKETING_VERSION = 4\.0\.1;/g) || []).length, 2);
-  assert.equal((pbx.match(/CURRENT_PROJECT_VERSION = 44;/g) || []).length, 2);
+  assert.equal((pbx.match(/MARKETING_VERSION = 4\.0\.2;/g) || []).length, 2);
+  assert.equal((pbx.match(/CURRENT_PROJECT_VERSION = 45;/g) || []).length, 2);
   for (const file of ['WebShellRules.swift', 'WebAppViewController.swift', 'QuickSignInViewController.swift']) {
     assert.equal((pbx.match(new RegExp(`/\\* ${file.replace('.', '\\.')} in Sources \\*/,`, 'g')) || []).length, 1, file);
   }
@@ -17,7 +17,7 @@ test('iOS 4.0 (branch only): after the native sign-in the app shows the web app 
   assert.match(coordinator, /case \.signedIn\(let session\) where AppFeatures\.webShell:/);
   assert.match(coordinator, /case \.offline:\n\s+root = OfflineStartViewController/);
   assert.match(coordinator, /if AppFeatures\.webShell \{ WebShellStorage\.clear\(\) \}/);
-  assert.match(ios('AppChangelog.swift'), /static let entries: \[AppChangelogEntry\] = \[\s*AppChangelogEntry\(\s*version: "4\.0\.1"/);
+  assert.match(ios('AppChangelog.swift'), /static let entries: \[AppChangelogEntry\] = \[\s*AppChangelogEntry\(\s*version: "4\.0\.2"/);
   const plist = read('ios-uikit-lvt/LvtCrmUIKit/Info.plist');
   assert.match(plist, /<key>WKAppBoundDomains<\/key>\s*<array>\s*<string>lvt\.vscgroup\.io\.vn<\/string>/);
   assert.match(plist, /<key>LVTConvexURL<\/key>\s*<string>\$\(LVT_CONVEX_URL\)<\/string>/);
