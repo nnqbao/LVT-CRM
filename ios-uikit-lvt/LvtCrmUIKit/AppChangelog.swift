@@ -8,6 +8,12 @@ struct AppChangelogEntry: Equatable {
 enum AppChangelog {
     static let entries: [AppChangelogEntry] = [
         AppChangelogEntry(
+            version: "4.0.1",
+            highlights: [
+                "Tài khoản minh hoạ dùng dữ liệu mẫu riêng, không bao giờ thấy dữ liệu của trường.",
+            ]
+        ),
+        AppChangelogEntry(
             version: "4.0.0",
             highlights: [
                 "Giao diện mới giống hệt bản web: đủ mọi menu (cả Đánh giá nhân sự, Ghi nhận lỗi, Thiết lập), menu ☰ của web và video hướng dẫn từng bước.",

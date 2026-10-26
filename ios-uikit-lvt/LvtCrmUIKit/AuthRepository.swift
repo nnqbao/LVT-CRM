@@ -76,10 +76,15 @@ final class AuthRepository: ObservableObject {
         guard !normalized.isEmpty, !password.isEmpty else {
             return .failure(ConvexException(code: "EMAIL_PASSWORD_REQUIRED", message: "Nhập email và mật khẩu."))
         }
-        return await signIn(
+        // App Review demo account → demo environment; any other account → the real backend.
+        let wasDemo = DemoEnvironment.isActive
+        DemoEnvironment.setActive(DemoEnvironment.isDemoAccount(normalized))
+        let result = await signIn(
             provider: "password",
             params: ["email": normalized, "password": password, "flow": "signIn"]
         )
+        if case .failure = result, !state.isAuthenticated { DemoEnvironment.setActive(wasDemo) }
+        return result
     }
 
     /// Face ID / Touch ID: the Secure Enclave key signed a single-use `device_login` challenge.

@@ -12,7 +12,9 @@ struct ConvexException: Error, LocalizedError {
 }
 
 actor ConvexHttpClient {
-    private let baseURL: String
+    /// Read per request: the App Review demo account switches the backend (DemoEnvironment) without a restart.
+    private let baseURLProvider: @Sendable () -> String
+    private var baseURL: String { baseURLProvider().trimmingCharacters(in: CharacterSet(charactersIn: "/")) }
     private let tokenProvider: @Sendable () -> String?
     private let refreshCredentialsProvider: @Sendable () -> CredentialSnapshot?
     private let onTokensRefreshed: @Sendable (CredentialSnapshot, String, String) -> Bool
@@ -21,13 +23,13 @@ actor ConvexHttpClient {
     private var inFlightRefresh: Task<String?, Never>?
 
     init(
-        baseURL: String,
+        baseURL: @autoclosure @escaping @Sendable () -> String,
         tokenProvider: @escaping @Sendable () -> String?,
         refreshCredentialsProvider: @escaping @Sendable () -> CredentialSnapshot?,
         onTokensRefreshed: @escaping @Sendable (CredentialSnapshot, String, String) -> Bool,
         sessionOverride: URLSession? = nil
     ) {
-        self.baseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        baseURLProvider = baseURL
         self.tokenProvider = tokenProvider
         self.refreshCredentialsProvider = refreshCredentialsProvider
         self.onTokensRefreshed = onTokensRefreshed

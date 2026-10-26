@@ -35,6 +35,10 @@
 	<string>$(LVT_CONVEX_URL)</string>
 	<key>LVTWebURL</key>
 	<string>$(LVT_WEB_URL)</string>
+	<key>LVTDemoConvexURL</key>
+	<string>https://decisive-puma-318.convex.cloud</string>
+	<key>LVTDemoWebURL</key>
+	<string>https://sandbox.thcslevantam.ai.vn</string>
 	<key>WKAppBoundDomains</key>
 	<array>
 		<string>lvt.vscgroup.io.vn</string>

@@ -29,7 +29,7 @@ final class AppContainer {
             tokenStore.replaceIfCurrent(expected, accessToken: access, refreshToken: refresh)
         }
         let convex = ConvexHttpClient(
-            baseURL: ConvexConfig.url,
+            baseURL: ConvexConfig.url, // re-read per request (DemoEnvironment)
             tokenProvider: tokenProvider,
             refreshCredentialsProvider: refreshCredentialsProvider,
             onTokensRefreshed: onTokensRefreshed
