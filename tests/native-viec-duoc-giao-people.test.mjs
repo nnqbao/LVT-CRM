@@ -54,10 +54,10 @@ test('apps: Ghi nhận lỗi / Đánh giá nhân sự notifications are labelled
   assert.match(routes, /'staff-faults': '\/ghi-nhan-loi'/);
 });
 
-test('apps: Android 2.1.2 (53) and iOS 3.1.3 (42) with changelog entries', () => {
+test('apps: Android 2.1.2 (53) and iOS 3.1.3 (42) changelog entries are kept by later versions', () => {
   const gradle = read('android-app/app/build.gradle.kts');
-  assert.match(gradle, /val lvtVersionCode = 53\nval lvtVersionName = "2\.1\.2"/);
-  assert.match(android('ui/profile/AppChangelog.kt'), /entries: List<AppChangelogEntry> = listOf\(\s*AppChangelogEntry\(\s*"2\.1\.2",[\s\S]*?Việc được giao[\s\S]*?Ghi nhận lỗi/);
+  assert.ok(Number(/val lvtVersionCode = (\d+)/.exec(gradle)[1]) >= 53);
+  assert.match(android('ui/profile/AppChangelog.kt'), /AppChangelogEntry\(\s*"2\.1\.2",[\s\S]*?Việc được giao[\s\S]*?Ghi nhận lỗi/);
   const pbx = read('ios-uikit-lvt/LvtCrmUIKit.xcodeproj/project.pbxproj');
   for (const [, build] of pbx.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)) assert.ok(Number(build) >= 42);
   assert.match(ios('AppChangelog.swift'), /AppChangelogEntry\(\s*version: "3\.1\.3",[\s\S]*?Việc được giao[\s\S]*?Ghi nhận lỗi/);

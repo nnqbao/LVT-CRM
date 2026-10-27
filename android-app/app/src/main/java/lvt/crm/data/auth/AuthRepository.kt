@@ -72,12 +72,20 @@ class AuthRepository(
                         authGeneration.get() == generation &&
                         tokenStore.snapshot() == credentials
                     ) {
-                        // Leave the loading state so the user can retry login.
-                        _state.value = AuthState.SignedOut
+                        // Network trouble: keep the saved sign-in; the app shows "Không có kết nối".
+                        // Any other failure keeps the former behaviour (sign-in screen, tokens kept).
+                        _state.value = if (isConnectivityFailure(e)) AuthState.Offline else AuthState.SignedOut
                     }
                 }
             }
         }
+    }
+
+    /** "Thử lại" on the Không có kết nối screen, or the network came back. */
+    suspend fun retryRestore() {
+        if (_state.value != AuthState.Offline) return
+        _state.value = AuthState.Loading
+        restoreSession()
     }
 
     override suspend fun signIn(email: String, password: String): Result<UserSession> {
@@ -346,3 +354,7 @@ class AuthRepository(
         val credentialRevision: Long,
     )
 }
+
+/** No network, the server unreachable or not answering: never a reason to sign out. */
+internal fun isConnectivityFailure(error: Throwable): Boolean =
+    error is java.io.IOException || (error is ConvexException && error.code.startsWith("HTTP_"))

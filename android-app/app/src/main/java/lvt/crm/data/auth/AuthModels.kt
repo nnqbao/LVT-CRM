@@ -115,6 +115,9 @@ internal fun decodeUserSession(result: JSONObject): UserSession? {
 sealed interface AuthState {
     data object Loading : AuthState
     data object SignedOut : AuthState
+
+    /** Saved sign-in kept, but the server could not be reached at start: "Không có kết nối" + Thử lại. */
+    data object Offline : AuthState
     data class SignedIn(val session: UserSession) : AuthState
     data class MustChangePassword(val session: UserSession) : AuthState
 }
