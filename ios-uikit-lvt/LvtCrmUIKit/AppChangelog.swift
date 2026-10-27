@@ -8,6 +8,21 @@ struct AppChangelogEntry: Equatable {
 enum AppChangelog {
     static let entries: [AppChangelogEntry] = [
         AppChangelogEntry(
+            version: "4.0.2",
+            highlights: [
+                "Tài khoản minh hoạ dùng dữ liệu mẫu riêng, không bao giờ thấy dữ liệu của trường.",
+            ]
+        ),
+        AppChangelogEntry(
+            version: "4.0.0",
+            highlights: [
+                "Giao diện mới giống hệt bản web: đủ mọi menu (cả Đánh giá nhân sự, Ghi nhận lỗi, Thiết lập), menu ☰ của web và video hướng dẫn từng bước.",
+                "Đăng nhập vẫn bằng mật khẩu, Face ID hoặc passkey; bật Face ID / tạo passkey ở Thiết bị đăng nhập.",
+                "Mất mạng: hiện Không có kết nối và tự mở lại khi có mạng.",
+                "Tệp công văn, minh chứng mở bằng Xem nhanh; bấm Chia sẻ để lưu vào Tệp.",
+            ]
+        ),
+        AppChangelogEntry(
             version: "3.1.3",
             highlights: [
                 "Công việc: danh sách việc người khác giao cho bạn đổi tên thành Việc được giao (Việc của tôi là việc riêng của bạn).",

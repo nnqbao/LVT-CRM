@@ -29,6 +29,11 @@ final class AuthFlowCoordinator {
 
     func open(_ destination: NotificationDestination) {
         pendingDestination = destination
+        if let web = window.rootViewController as? WebAppViewController {
+            web.route(destination)
+            pendingDestination = nil
+            return
+        }
         (window.rootViewController as? RootTabBarController)?.route(destination)
         if window.rootViewController is RootTabBarController {
             pendingDestination = nil
@@ -44,6 +49,11 @@ final class AuthFlowCoordinator {
             root = LoadingViewController()
         case .signedOut:
             container.notificationSync.cancel()
+            // Whatever ended the session, the web app's storage must not outlive it.
+            if AppFeatures.webShell { WebShellStorage.clear() }
+            #if DEBUG
+            DebugAutomation.signInIfRequested(container.authRepository)
+            #endif
             root = UINavigationController(
                 rootViewController: LoginViewController(authRepository: container.authRepository, quickSignIn: container.quickSignIn)
             )
@@ -56,6 +66,26 @@ final class AuthFlowCoordinator {
                     allowsCancel: false
                 )
             )
+        case .offline:
+            root = OfflineStartViewController { [container] in await container.authRepository.retryRestore() }
+        case .signedIn(let session) where AppFeatures.webShell:
+            activatePushDelivery()
+            let web = WebAppViewController(
+                session: session,
+                convex: container.convex,
+                notificationsRepository: container.notificationsRepository,
+                quickSignIn: container.quickSignIn,
+                onSignOut: { [container] in
+                    WebShellStorage.clear()
+                    container.authRepository.signOut()
+                }
+            )
+            root = web
+            if let pendingDestination {
+                web.loadViewIfNeeded()
+                web.route(pendingDestination)
+                self.pendingDestination = nil
+            }
         case .signedIn(let session):
             activatePushDelivery()
             let tabBarController = RootTabBarController(

@@ -38,21 +38,37 @@ final class AuthRepository: ObservableObject {
         } catch let error as ConvexException where isAuthenticationFailure(error) {
             _ = clearCurrentCredentialsAndSignOut(credentials, generation: generation)
         } catch {
-            // Fail-open like Android: keep tokens for a later retry, but never stay on .loading.
+            // Network trouble: keep the saved sign-in; the app shows "Không có kết nối" and retries.
+            // Any other failure keeps the former behaviour (sign-in screen with the reason, tokens kept).
             if authGeneration == generation, case .loading = state {
-                bootstrapError = (error as? ConvexException)?.message
-                    ?? "Không kết nối được máy chủ. Kiểm tra mạng rồi đăng nhập lại."
-                state = .signedOut
+                if Self.isConnectivityFailure(error) {
+                    state = .offline
+                } else {
+                    bootstrapError = (error as? ConvexException)?.message
+                        ?? "Không kết nối được máy chủ. Kiểm tra mạng rồi đăng nhập lại."
+                    state = .signedOut
+                }
             }
         }
     }
 
     func failOpenIfStillLoading() {
         guard case .loading = state else { return }
+        if tokenStore.snapshot() != nil {
+            state = .offline
+            return
+        }
         if bootstrapError == nil {
             bootstrapError = "Không kết nối được máy chủ. Kiểm tra mạng rồi đăng nhập lại."
         }
         state = .signedOut
+    }
+
+    /// "Thử lại" on the Không có kết nối screen, or the network came back.
+    func retryRestore() async {
+        guard case .offline = state else { return }
+        state = .loading
+        await restoreSession()
     }
 
     func signIn(email: String, password: String) async -> Result<UserSession, Error> {
@@ -60,10 +76,15 @@ final class AuthRepository: ObservableObject {
         guard !normalized.isEmpty, !password.isEmpty else {
             return .failure(ConvexException(code: "EMAIL_PASSWORD_REQUIRED", message: "Nhập email và mật khẩu."))
         }
-        return await signIn(
+        // App Review demo account → demo environment; any other account → the real backend.
+        let wasDemo = DemoEnvironment.isActive
+        DemoEnvironment.setActive(DemoEnvironment.isDemoAccount(normalized))
+        let result = await signIn(
             provider: "password",
             params: ["email": normalized, "password": password, "flow": "signIn"]
         )
+        if case .failure = result, !state.isAuthenticated { DemoEnvironment.setActive(wasDemo) }
+        return result
     }
 
     /// Face ID / Touch ID: the Secure Enclave key signed a single-use `device_login` challenge.
@@ -245,6 +266,13 @@ final class AuthRepository: ObservableObject {
             defer { group.cancelAll() }
             return try await group.next() ?? nil
         }
+    }
+
+    /// No network, the server unreachable or not answering: never a reason to sign out.
+    static func isConnectivityFailure(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        if let error = error as? ConvexException { return ["SESSION_TIMEOUT", "INVALID_JSON"].contains(error.code) }
+        return (error as NSError).domain == NSURLErrorDomain
     }
 
     private func isAuthenticationFailure(_ error: ConvexException) -> Bool {

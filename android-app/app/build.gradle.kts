@@ -13,14 +13,18 @@ if (localPropertiesFile.exists()) {
     localPropertiesFile.inputStream().use { localProperties.load(it) }
 }
 
+/** Backend URLs: an explicit `-P` (e.g. a sandbox test build) wins over local.properties. */
+fun urlProperty(name: String, fallback: String): String =
+    (project.findProperty(name) as String?)?.trim()?.takeIf { it.isNotEmpty() } ?: localProperty(name) ?: fallback
+
 fun localProperty(name: String): String? {
     val fromFile = localProperties.getProperty(name)?.trim().orEmpty()
     if (fromFile.isNotEmpty()) return fromFile
     return (project.findProperty(name) as String?)?.trim()?.takeIf { it.isNotEmpty() }
 }
 
-val lvtVersionCode = 53
-val lvtVersionName = "2.1.2"
+val lvtVersionCode = 55
+val lvtVersionName = "3.0.1"
 
 android {
     namespace = "lvt.crm"
@@ -34,7 +38,9 @@ android {
         // x.y.z — x new menu, y new feature (no new menu), z bug fix
         versionName = lvtVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
+        // 3.0: after the native sign-in the app shows the web app (ui/web/WebAppShell.kt). false = the
+        // former native screens (kept one release for rollback).
+        buildConfigField("boolean", "WEB_SHELL", "true")
     }
 
     signingConfigs {
@@ -60,12 +66,12 @@ android {
             buildConfigField(
                 "String",
                 "CONVEX_URL",
-                "\"${localProperty("lvt.convex.debug.url") ?: project.findProperty("lvt.convex.debug.url") ?: "https://confident-guanaco-953.convex.cloud"}\"",
+                "\"${urlProperty("lvt.convex.debug.url", "https://confident-guanaco-953.convex.cloud")}\"",
             )
             buildConfigField(
                 "String",
                 "WEB_URL",
-                "\"${localProperty("lvt.web.debug.url") ?: project.findProperty("lvt.web.debug.url") ?: "https://lvt.vscgroup.io.vn"}\"",
+                "\"${urlProperty("lvt.web.debug.url", "https://lvt.vscgroup.io.vn")}\"",
             )
         }
         release {
@@ -82,12 +88,12 @@ android {
             buildConfigField(
                 "String",
                 "CONVEX_URL",
-                "\"${localProperty("lvt.convex.release.url") ?: project.findProperty("lvt.convex.release.url") ?: "https://confident-guanaco-953.convex.cloud"}\"",
+                "\"${urlProperty("lvt.convex.release.url", "https://confident-guanaco-953.convex.cloud")}\"",
             )
             buildConfigField(
                 "String",
                 "WEB_URL",
-                "\"${localProperty("lvt.web.release.url") ?: project.findProperty("lvt.web.release.url") ?: "https://lvt.vscgroup.io.vn"}\"",
+                "\"${urlProperty("lvt.web.release.url", "https://lvt.vscgroup.io.vn")}\"",
             )
         }
     }
@@ -132,6 +138,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.compose.foundation:foundation")
 
     implementation("androidx.compose.ui:ui")

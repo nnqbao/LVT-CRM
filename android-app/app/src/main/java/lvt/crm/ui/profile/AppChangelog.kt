@@ -8,6 +8,21 @@ data class AppChangelogEntry(
 object AppChangelog {
     val entries: List<AppChangelogEntry> = listOf(
         AppChangelogEntry(
+            "3.0.1",
+            listOf(
+                "Sửa lỗi: khi máy chủ tạm không trả lời lúc mở app, màn hình Không có kết nối không còn nháy liên tục; bấm Thử lại hoặc chờ có mạng lại để vào.",
+            ),
+        ),
+        AppChangelogEntry(
+            "3.0.0",
+            listOf(
+                "Giao diện mới giống hệt bản web: đủ mọi menu (cả Đánh giá nhân sự, Ghi nhận lỗi, Thiết lập), menu ☰ của web và video hướng dẫn từng bước.",
+                "Đăng nhập vẫn bằng mật khẩu, vân tay hoặc passkey; bật vân tay / tạo passkey ở Thiết bị đăng nhập.",
+                "Mất mạng: hiện Không có kết nối và tự mở lại khi có mạng.",
+                "Tệp công văn, minh chứng mở bằng ứng dụng trên máy; tải về được lưu vào Tải xuống.",
+            ),
+        ),
+        AppChangelogEntry(
             "2.1.2",
             listOf(
                 "Công việc: danh sách việc người khác giao cho bạn đổi tên thành Việc được giao (Việc của tôi là việc riêng của bạn).",
