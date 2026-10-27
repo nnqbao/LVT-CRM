@@ -227,12 +227,83 @@ export default defineSchema({
     /** Free-text guests; empty/omitted on older rows. Not a push/email recipient. */
     otherParticipants: v.optional(v.string()),
     active: v.boolean(),
+    /**
+     * "school" = văn thư (admin/mod) row on the shared sheet, goes through weekly
+     * BGH approval. "team" = team-lead row for their members, live at once and
+     * never on the shared sheet. Missing on rows written before approval existed.
+     */
+    scope: v.optional(v.union(v.literal("school"), v.literal("team"))),
+    /** Set once a school row follows approval; rows without it count as approved. */
+    approvalTracked: v.optional(v.boolean()),
+    /** Approved copy teachers see while the working fields wait for BGH. */
+    published: v.optional(
+      v.object({
+        startDate: v.string(),
+        endDate: v.string(),
+        startTime: v.string(),
+        endTime: v.string(),
+        allDay: v.boolean(),
+        title: v.optional(v.string()),
+        content: v.string(),
+        locationIds: v.array(v.string()),
+        locationText: v.optional(v.string()),
+        departmentIds: v.array(v.string()),
+        participantUserIds: v.array(v.string()),
+        otherParticipants: v.optional(v.string()),
+        updatedAt: v.number(),
+        publishedAt: v.number(),
+      }),
+    ),
+    publishedStartDate: v.optional(v.string()),
+    publishedEndDate: v.optional(v.string()),
     createdBy: v.string(),
     updatedBy: v.optional(v.string()),
     ...timestamps,
   })
     .index("by_active_end", ["active", "endDate"])
-    .index("by_start", ["startDate"]),
+    .index("by_start", ["startDate"])
+    .index("by_published_start", ["publishedStartDate"])
+    .index("by_published_end", ["publishedEndDate"]),
+  /**
+   * Field-level history of every duty write (create/update/remove/import and
+   * BGH direct edits). Values are display strings (names resolved, dd/MM/yyyy).
+   * Readable by admin/mod, BGH, and the duty creator (`duties.changeHistory`).
+   */
+  dutyChangeLogs: defineTable({
+    dutyId: v.id("duties"),
+    actorUserId: v.string(),
+    actorKind: v.union(v.literal("manager"), v.literal("reviewer"), v.literal("team_lead")),
+    action: v.union(
+      v.literal("create"),
+      v.literal("update"),
+      v.literal("reviewer_edit"),
+      v.literal("remove"),
+      v.literal("import"),
+    ),
+    at: v.number(),
+    changes: v.array(v.object({ field: v.string(), before: v.string(), after: v.string() })),
+  }).index("by_duty_at", ["dutyId", "at"]),
+  /** Weekly BGH approval state for the shared Lịch công tác (Monday `weekStart`). */
+  dutyWeeks: defineTable({
+    weekStart: v.string(),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("submitted"),
+      v.literal("returned"),
+      v.literal("approved"),
+    ),
+    submittedBy: v.optional(v.string()),
+    submittedAt: v.optional(v.number()),
+    returnedBy: v.optional(v.string()),
+    returnedAt: v.optional(v.number()),
+    returnNote: v.optional(v.string()),
+    approvedBy: v.optional(v.string()),
+    approvedAt: v.optional(v.number()),
+    updatedBy: v.string(),
+    updatedAt: v.number(),
+  })
+    .index("by_week", ["weekStart"])
+    .index("by_status", ["status"]),
   dutyAttendances: defineTable({
     dutyId: v.string(),
     userId: v.string(),
@@ -289,6 +360,26 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_kind_source", ["userId", "kind", "sourceId"]),
+  /**
+   * "Việc của tôi": private to-dos. Owner-only (admin/mod included in "others"),
+   * independent of the work menu and work-document approval.
+   */
+  personalTodos: defineTable({
+    userId: v.id("users"),
+    title: v.string(),
+    note: v.optional(v.string()),
+    dueAt: v.optional(v.number()),
+    remindAt: v.optional(v.number()),
+    /** Set by the reminder job when it fires; drives the in-app bell item. */
+    remindedAt: v.optional(v.number()),
+    reminderJobId: v.optional(v.id("_scheduled_functions")),
+    completedAt: v.optional(v.number()),
+    active: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_active_due", ["userId", "active", "dueAt"])
+    .index("by_user_active_completed", ["userId", "active", "completedAt"]),
   /** FCM registration tokens, one row per Android app installation. */
   pushTokens: defineTable({
     userId: v.string(),
@@ -336,6 +427,27 @@ export default defineSchema({
     approvedByUserIds: v.array(v.string()),
     rejectedByUserIds: v.optional(v.array(v.string())),
     status: v.string(), // pending | approved | rejected
+    /**
+     * True when created by admin/moderator: Ban giám hiệu must approve before
+     * release. Missing on legacy rows (fallback: creator's current role).
+     */
+    requiresApproval: v.optional(v.boolean()),
+    /** Last time the document was (re)submitted for approval. */
+    submittedAt: v.optional(v.number()),
+    /** Per-approver decisions of the current submission; reset on edit. */
+    approvalDecisions: v.optional(
+      v.array(
+        v.object({
+          userId: v.string(),
+          decision: v.string(), // approved | rejected
+          at: v.number(),
+          reason: v.optional(v.string()),
+        }),
+      ),
+    ),
+    /** Last successful edit ("Đã chỉnh sửa bởi …"); not set on create/approve/reject. */
+    lastEditedBy: v.optional(v.string()),
+    lastEditedAt: v.optional(v.number()),
     active: v.boolean(),
     createdBy: v.string(),
     updatedBy: v.optional(v.string()),
@@ -626,8 +738,20 @@ export default defineSchema({
   personnelEvaluationTexts: defineTable({
     fileId: v.string(),
     targetUserId: v.string(),
+    /** The writer: a BGH member, or admin/mod writing on behalf of BGH. */
     evaluatorUserId: v.string(),
     content: v.string(),
+    /**
+     * BGH approval (`convex/peopleReviewPolicy.ts`). Missing = legacy, counts as
+     * approved. Admin/mod-written comments start `pending`; only `approved`
+     * ones lock the file and count, and only those reach the evaluated person.
+     */
+    status: v.optional(v.union(v.literal("pending"), v.literal("approved"), v.literal("returned"))),
+    writtenOnBehalf: v.optional(v.boolean()),
+    submittedAt: v.optional(v.number()),
+    reviewedByUserId: v.optional(v.string()),
+    reviewedAt: v.optional(v.number()),
+    returnReason: v.optional(v.string()),
     active: v.boolean(),
     createdBy: v.string(),
     updatedBy: v.optional(v.string()),
@@ -635,8 +759,10 @@ export default defineSchema({
   })
     .index("by_file", ["fileId", "active"])
     .index("by_target", ["targetUserId", "active"])
-    .index("by_file_evaluator", ["fileId", "evaluatorUserId"]),
-  /** Trusted cleanup queue for Drive objects superseded by an atomic metadata update. */
+    .index("by_file_evaluator", ["fileId", "evaluatorUserId"])
+    .index("by_evaluator", ["evaluatorUserId", "active"])
+    .index("by_status", ["status", "active"]),
+  /** Trusted cleanup queue for file objects (Convex `cvx_` keys or legacy Drive ids) superseded by an atomic metadata update. */
   driveCleanupJobs: defineTable({
     driveFileId: v.string(),
     purpose: v.string(),
@@ -657,7 +783,20 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_cleanup_token", ["cleanupToken"]),
+    .index("by_cleanup_token", ["cleanupToken"])
+    .index("by_drive_file", ["driveFileId"]),
+  /**
+   * Public user-guide tutorial videos (fictional data) published from the Mac mini with
+   * `npm run guide:videos:publish`; served by redirect from /huong-dan/video/<id>.mp4|webp.
+   */
+  guideVideos: defineTable({
+    videoId: v.string(),
+    kind: v.string(), // "video" (mp4) | "poster" (webp)
+    storageId: v.id("_storage"),
+    sha256: v.string(),
+    size: v.number(),
+    updatedAt: v.number(),
+  }).index("by_video_kind", ["videoId", "kind"]),
   /** Idempotency receipts for atomic multi-section personnel-review saves. */
   peopleReviewSaveRequests: defineTable({
     userId: v.string(),
@@ -671,6 +810,8 @@ export default defineSchema({
     startDate: v.string(),
     endDate: v.string(),
     attendanceUploadDueTime: v.string(),
+    /** First day of Học kỳ II (YYYY-MM-DD). Học bạ uses it to default each score's semester. */
+    semester2StartDate: v.optional(v.string()),
     active: v.boolean(),
     lockedAt: v.optional(v.number()),
     createdBy: v.string(),
@@ -862,6 +1003,35 @@ export default defineSchema({
     .index("by_year_status_date", ["schoolYearId", "effectiveStatus", "attendanceDate"])
     .index("by_class_status_date", ["classId", "effectiveStatus", "attendanceDate"])
     .index("by_import", ["sourceImportId"]),
+  /**
+   * One row per class per school day once Giám thị (or admin/mod) saved its attendance on the
+   * Điểm danh menu. No row = "Chưa điểm danh". Per-student facts stay in studentAttendanceDays.
+   */
+  attendanceClassDays: defineTable({
+    schoolYearId: v.string(),
+    classId: v.string(),
+    attendanceDate: v.string(),
+    savedBy: v.string(),
+    savedAt: v.number(),
+    source: v.union(v.literal("manual"), v.literal("import")),
+    presentCount: v.number(),
+    absentCount: v.number(),
+  })
+    .index("by_class_date", ["classId", "attendanceDate"])
+    .index("by_year_date", ["schoolYearId", "attendanceDate"]),
+  /** Staged Giám thị Excel imports (Lớp học / Tên học sinh / Vắng); purged after 1 hour. */
+  supervisorAttendanceUploads: defineTable({
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    fileSize: v.number(),
+    uploadedBy: v.string(),
+    schoolYearId: v.string(),
+    attendanceDate: v.string(),
+    status: v.string(), // uploaded | committing | committed | expired
+    classCount: v.optional(v.number()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  }).index("by_expiresAt", ["expiresAt"]),
   studentAttendanceCorrections: defineTable({
     attendanceDayId: v.string(),
     studentId: v.string(),
@@ -878,4 +1048,131 @@ export default defineSchema({
   })
     .index("by_day", ["attendanceDayId"])
     .index("by_student_date", ["studentId", "attendanceDate"]),
+  /**
+   * Single-use, short-lived challenges for device-key (vân tay / Face ID) and passkey
+   * sign-in / registration. `userId` is set for registration challenges only.
+   */
+  authChallenges: defineTable({
+    purpose: v.string(), // device_login | device_register | passkey_login | passkey_register
+    challenge: v.string(), // base64url, 32 random bytes
+    userId: v.optional(v.string()),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_expires", ["expiresAt"]),
+  /**
+   * Sign-in credentials bound to a device: `device_key` = P-256 key in Secure Enclave /
+   * Android Keystore unlocked by biometrics; `passkey` = WebAuthn credential. Public keys only.
+   */
+  /** Single-use app → WebView sign-in codes (convex/appHandoff.ts); only the SHA-256 is stored, 60 s TTL. */
+  appWebHandoffs: defineTable({
+    userId: v.id("users"),
+    codeHash: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_code_hash", ["codeHash"])
+    .index("by_user", ["userId"])
+    .index("by_expires", ["expiresAt"]),
+  deviceCredentials: defineTable({
+    userId: v.string(),
+    kind: v.string(), // device_key | passkey
+    credentialId: v.string(), // base64url
+    publicKey: v.string(), // device_key: base64 SPKI DER; passkey: base64url COSE key
+    counter: v.optional(v.number()),
+    transports: v.optional(v.array(v.string())),
+    deviceName: v.string(),
+    platform: v.string(), // ios | android
+    active: v.boolean(),
+    createdAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    revokedReason: v.optional(v.string()),
+  })
+    .index("by_credential", ["credentialId"])
+    .index("by_user", ["userId"]),
+  /** Thiết lập Môn học: seeded with the GDPT 2018 THCS subjects; soft-deleted. */
+  subjects: defineTable({
+    name: v.string(),
+    code: v.string(),
+    sortOrder: v.number(),
+    active: v.boolean(),
+    ...timestamps,
+  }).index("by_code", ["code"]),
+  /** Thiết lập Loại kiểm tra: name + hệ số điểm (weight in the semester average). */
+  testTypes: defineTable({
+    name: v.string(),
+    coefficient: v.number(),
+    sortOrder: v.number(),
+    active: v.boolean(),
+    ...timestamps,
+  }),
+  /** Môn giảng dạy of one teacher in one school year (Thiết lập Giáo viên). */
+  teacherYearProfiles: defineTable({
+    schoolYearId: v.string(),
+    userId: v.string(),
+    subjectIds: v.array(v.string()),
+    /**
+     * Lớp giảng dạy chosen by the admin. Absent on older rows: the classes the teacher has
+     * in the current timetable count instead (teachingData.effectiveTeachingClassIds).
+     */
+    teachingClassIds: v.optional(v.array(v.string())),
+    updatedBy: v.string(),
+    ...timestamps,
+  })
+    .index("by_year_user", ["schoolYearId", "userId"])
+    .index("by_user", ["userId"]),
+  /**
+   * Weekly timetable cell (Thứ 2–6 × buổi sáng/chiều × tiết 1–5) valid from `effectiveFrom`
+   * until `effectiveTo` (inclusive, open-ended when absent). A mid-year change ends the old row
+   * the day before and inserts a new one, so past lessons keep their teacher.
+   */
+  timetableSlots: defineTable({
+    schoolYearId: v.string(),
+    classId: v.string(),
+    weekday: v.number(), // 1 = Thứ 2 … 5 = Thứ 6
+    session: v.string(), // morning | afternoon
+    period: v.number(), // 1 … 5
+    teacherId: v.string(),
+    subjectId: v.string(),
+    effectiveFrom: v.string(),
+    effectiveTo: v.optional(v.string()),
+    createdBy: v.string(),
+    ...timestamps,
+  })
+    .index("by_class", ["classId"])
+    .index("by_teacher_year", ["teacherId", "schoolYearId"])
+    .index("by_year", ["schoolYearId"]),
+  /** Sổ đầu bài: one rating per taught period (class + date + buổi + tiết). */
+  lessonLogs: defineTable({
+    schoolYearId: v.string(),
+    classId: v.string(),
+    date: v.string(),
+    session: v.string(),
+    period: v.number(),
+    teacherId: v.string(),
+    subjectId: v.string(),
+    rating: v.number(),
+    comment: v.string(),
+    ...timestamps,
+  })
+    .index("by_class_date", ["classId", "date"])
+    .index("by_teacher_date", ["teacherId", "date"]),
+  /** Học bạ: one score. testTypeName/coefficient are snapshots so later catalog edits keep history. */
+  gradeEntries: defineTable({
+    schoolYearId: v.string(),
+    classId: v.string(),
+    studentId: v.string(),
+    subjectId: v.string(),
+    semester: v.number(), // 1 | 2
+    testTypeId: v.string(),
+    testTypeName: v.string(),
+    coefficient: v.number(),
+    score: v.number(),
+    enteredBy: v.string(),
+    updatedBy: v.optional(v.string()),
+    ...timestamps,
+  })
+    .index("by_student", ["studentId"])
+    .index("by_class_subject", ["classId", "subjectId"]),
 });

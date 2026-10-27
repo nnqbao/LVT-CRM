@@ -49,6 +49,79 @@ data class DutiesSnapshot(
     val canViewAll: Boolean = false,
 )
 
+/** One row of the shared Lịch công tác (approved copy for teachers, working copy for văn thư/BGH). */
+data class SharedDutyEvent(
+    val id: String,
+    val title: String,
+    val content: String,
+    val startDate: String,
+    val endDate: String,
+    val startTime: String,
+    val endTime: String,
+    val allDay: Boolean,
+    val locationText: String,
+    val departmentIds: List<String>,
+    val participantUserIds: List<String>,
+    val departmentNames: List<String>,
+    val participantNames: List<String>,
+    val otherParticipants: String,
+    val canManage: Boolean,
+    /** "added" | "changed" | null — only for văn thư/BGH. */
+    val approvalChange: String?,
+)
+
+data class DutyWeekChange(val id: String, val kind: String, val title: String)
+
+data class DutyWeekState(
+    val weekStart: String,
+    /** empty | draft | submitted | returned | approved | approved_changed */
+    val status: String,
+    val changeCount: Int,
+    val changes: List<DutyWeekChange>,
+    val missingParticipants: Int,
+    val hasApprovedVersion: Boolean,
+    val submittedAt: Double?,
+    val submittedByName: String,
+    val returnedAt: Double?,
+    val returnedByName: String,
+    val returnNote: String,
+    val approvedAt: Double?,
+    val approvedByName: String,
+)
+
+data class SharedDutyWeek(
+    /** manager (văn thư) | reviewer (BGH) | public (giáo viên) */
+    val viewer: String,
+    val canSubmit: Boolean,
+    val canReview: Boolean,
+    val events: List<SharedDutyEvent>,
+    val week: DutyWeekState?,
+)
+
+data class DutyFormOption(val id: String, val label: String, val detail: String = "")
+
+data class DutyFormOptions(
+    val isOps: Boolean,
+    val departments: List<DutyFormOption>,
+    val users: List<DutyFormOption>,
+)
+
+/** Fields `duties:update` takes; the server validates and re-checks permission. */
+data class DutyDraft(
+    val id: String,
+    val title: String,
+    val content: String,
+    val startDate: String,
+    val endDate: String,
+    val startTime: String,
+    val endTime: String,
+    val allDay: Boolean,
+    val locationText: String,
+    val departmentIds: List<String>,
+    val participantUserIds: List<String>,
+    val otherParticipants: String,
+)
+
 data class SharedSchedulePdf(
     val file: File,
     val fileName: String,
@@ -127,6 +200,126 @@ class DutiesRepository(
         )
     }
 
+    /** Monday-to-Saturday sheet plus the week's approval state. */
+    suspend fun sharedWeek(weekStart: String, weekEnd: String): SharedDutyWeek {
+        val result = convex.query(
+            "duties:sharedSchedule",
+            JSONObject().put("startDate", weekStart).put("endDate", weekEnd),
+        )
+        val events = buildList {
+            val array = result.optJSONArray("events")
+            if (array != null) {
+                for (i in 0 until array.length()) {
+                    val e = array.optJSONObject(i) ?: continue
+                    add(
+                        SharedDutyEvent(
+                            id = e.optString("_id"),
+                            title = e.optString("title"),
+                            content = e.optString("content"),
+                            startDate = e.optString("startDate"),
+                            endDate = e.optString("endDate"),
+                            startTime = e.optString("startTime"),
+                            endTime = e.optString("endTime"),
+                            allDay = e.optBoolean("allDay", false),
+                            locationText = e.optString("locationText").ifBlank { e.optString("location") },
+                            departmentIds = e.optJSONArray("departmentIds").toStringList(),
+                            participantUserIds = e.optJSONArray("participantUserIds").toStringList(),
+                            departmentNames = e.optJSONArray("departmentNames").toStringList(),
+                            participantNames = e.optJSONArray("participantNames").toStringList(),
+                            otherParticipants = e.optString("otherParticipants"),
+                            canManage = e.optBoolean("canManage", false),
+                            approvalChange = e.optString("approvalChange").takeIf { it == "added" || it == "changed" },
+                        ),
+                    )
+                }
+            }
+        }
+        val weeks = result.optJSONArray("weeks")
+        val week = (0 until (weeks?.length() ?: 0))
+            .mapNotNull { weeks?.optJSONObject(it) }
+            .firstOrNull { it.optString("weekStart") == weekStart }
+            ?.let { w ->
+                val changes = w.optJSONArray("changes")
+                DutyWeekState(
+                    weekStart = w.optString("weekStart"),
+                    status = w.optString("status", "empty"),
+                    changeCount = w.optInt("changeCount", 0),
+                    changes = (0 until (changes?.length() ?: 0)).mapNotNull { changes?.optJSONObject(it) }.map {
+                        DutyWeekChange(it.optString("id"), it.optString("kind"), it.optString("title"))
+                    },
+                    missingParticipants = w.optInt("missingParticipants", 0),
+                    hasApprovedVersion = w.optBoolean("hasApprovedVersion", false),
+                    submittedAt = w.optNumber("submittedAt"),
+                    submittedByName = w.optString("submittedByName"),
+                    returnedAt = w.optNumber("returnedAt"),
+                    returnedByName = w.optString("returnedByName"),
+                    returnNote = w.optString("returnNote"),
+                    approvedAt = w.optNumber("approvedAt"),
+                    approvedByName = w.optString("approvedByName"),
+                )
+            }
+        return SharedDutyWeek(
+            viewer = result.optString("viewer", "public"),
+            canSubmit = result.optBoolean("canSubmit", false),
+            canReview = result.optBoolean("canReview", false),
+            events = events,
+            week = week,
+        )
+    }
+
+    suspend fun submitWeek(weekStart: String) {
+        convex.mutation("dutyWeeks:submit", JSONObject().put("weekStart", weekStart))
+    }
+
+    suspend fun approveWeek(weekStart: String, submittedAt: Double) {
+        convex.mutation(
+            "dutyWeeks:approve",
+            JSONObject().put("weekStart", weekStart).put("submittedAt", submittedAt.toLong()),
+        )
+    }
+
+    suspend fun returnWeek(weekStart: String, submittedAt: Double, note: String) {
+        convex.mutation(
+            "dutyWeeks:returnWeek",
+            JSONObject().put("weekStart", weekStart).put("submittedAt", submittedAt.toLong()).put("note", note),
+        )
+    }
+
+    suspend fun formOptions(): DutyFormOptions {
+        val result = convex.query("duties:formOptions")
+        fun options(key: String, label: (JSONObject) -> String, detail: (JSONObject) -> String) = buildList {
+            val array = result.optJSONArray(key) ?: return@buildList
+            for (i in 0 until array.length()) {
+                val row = array.optJSONObject(i) ?: continue
+                add(DutyFormOption(row.optString("_id"), label(row), detail(row)))
+            }
+        }
+        return DutyFormOptions(
+            isOps = result.optBoolean("isOps", false),
+            departments = options("departments", { it.optString("name") }, { it.optString("code") }),
+            users = options("users", { it.optString("name").ifBlank { it.optString("email") } }, { it.optString("email") }),
+        )
+    }
+
+    suspend fun updateDuty(draft: DutyDraft) {
+        convex.mutation(
+            "duties:update",
+            JSONObject()
+                .put("id", draft.id)
+                .put("title", draft.title)
+                .put("content", draft.content)
+                .put("startDate", draft.startDate)
+                .put("endDate", draft.endDate)
+                .put("startTime", draft.startTime)
+                .put("endTime", draft.endTime)
+                .put("allDay", draft.allDay)
+                .put("locationText", draft.locationText)
+                .put("departmentIds", org.json.JSONArray(draft.departmentIds))
+                .put("participantUserIds", org.json.JSONArray(draft.participantUserIds))
+                .put("otherParticipants", draft.otherParticipants),
+        )
+    }
+
     suspend fun downloadSharedSchedulePdf(mode: String, anchorIso: String): SharedSchedulePdf = withContext(Dispatchers.IO) {
         val token = tokenProvider()?.takeIf { it.isNotBlank() }
             ?: throw ConvexException("UNAUTHORIZED", "Bạn cần đăng nhập để xem lịch công tác chung.")
@@ -180,6 +373,9 @@ private fun dispositionFileName(header: String?): String? {
     val plain = Regex("filename=\"?([^\";]+)\"?", RegexOption.IGNORE_CASE).find(value)?.groupValues?.getOrNull(1)
     return plain?.trim()?.takeIf { it.isNotBlank() }
 }
+
+private fun JSONObject.optNumber(key: String): Double? =
+    if (has(key) && !isNull(key)) optDouble(key).takeIf { !it.isNaN() } else null
 
 private fun org.json.JSONArray?.toStringList(): List<String> {
     if (this == null) return emptyList()

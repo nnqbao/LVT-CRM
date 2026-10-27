@@ -172,14 +172,24 @@ test('ca_ngay dùng ngày bắt đầu và giờ mặc định 08:00-17:00', () 
   assert.equal(result.preview[0].endTime, '17:00');
 });
 
-test('thiếu người tham gia thì all-or-nothing', () => {
+test('tổ trưởng thiếu người tham gia thì all-or-nothing', () => {
   const result = validateDutyImportRows(
     [baseRow({ ma_phong_ban: '', email_tham_gia: '', thanh_phan_khac: '' })],
-    { actor: opsActor, departments, users },
+    { actor: leadActor, departments, users },
   );
   assert.equal(result.ok, false);
   assert.equal(result.preview.length, 0);
   assert.equal(result.errors.some((item) => item.message === DUTY_IMPORT_MESSAGES.participantsRequired), true);
+});
+
+test('văn thư nhập lịch 4 cột trước, chưa cần thành phần', () => {
+  const result = validateDutyImportRows(
+    [baseRow({ ma_phong_ban: '', email_tham_gia: '', thanh_phan_khac: '' })],
+    { actor: opsActor, departments, users },
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.preview[0].departmentIds, []);
+  assert.deepEqual(result.preview[0].participantUserIds, []);
 });
 
 test('chỉ thành phần khác vẫn hợp lệ', () => {
@@ -209,6 +219,26 @@ test('thành phần khác quá 500 ký tự bị chặn', () => {
   );
   assert.equal(result.ok, false);
   assert.equal(result.errors.some((item) => item.message === DUTY_IMPORT_MESSAGES.otherParticipantsInvalid), true);
+});
+
+test('địa điểm là chữ gõ tự do: không tra danh mục, chỉ bắt buộc và tối đa 200 ký tự', () => {
+  const free = validateDutyImportRows(
+    [baseRow({ dia_diem: '  UBND phường 5, số 12 đường A  ' })],
+    { actor: opsActor, departments, users },
+  );
+  assert.equal(free.ok, true);
+  assert.equal(free.preview[0].locationText, 'UBND phường 5, số 12 đường A');
+
+  const longest = validateDutyImportRows([baseRow({ dia_diem: 'x'.repeat(200) })], { actor: opsActor, departments, users });
+  assert.equal(longest.ok, true);
+
+  const tooLong = validateDutyImportRows([baseRow({ dia_diem: 'x'.repeat(201) })], { actor: opsActor, departments, users });
+  assert.equal(tooLong.ok, false);
+  assert.equal(tooLong.errors.some((item) => item.message === DUTY_IMPORT_MESSAGES.locationInvalid), true);
+
+  const empty = validateDutyImportRows([baseRow({ dia_diem: '   ' })], { actor: opsActor, departments, users });
+  assert.equal(empty.ok, false);
+  assert.equal(empty.errors.some((item) => item.message === DUTY_IMPORT_MESSAGES.locationRequired), true);
 });
 
 test('mã phòng ban và email sai bị chặn', () => {
@@ -290,6 +320,13 @@ test('evaluateDutyRefs giữ rule tạo tay', () => {
       departments,
       users,
     }),
+    null,
+  );
+  assert.equal(
+    evaluateDutyRefs({ departmentIds: [], participantUserIds: [] }, leadActor, {
+      departments,
+      users,
+    }),
     'DUTY_PARTICIPANTS_REQUIRED',
   );
   assert.equal(
@@ -323,8 +360,18 @@ test('UI Công tác có nút Import Excel và gọi dutyImport', () => {
   const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
   const calendar = readFileSync(new URL('../src/reports/DutyReportsView.jsx', import.meta.url), 'utf8');
   const ui = readFileSync(new URL('../src/duties/DutyBulkImport.jsx', import.meta.url), 'utf8');
+  const head = readFileSync(new URL('../src/duties/DutyWorkspaceTabs.jsx', import.meta.url), 'utf8');
+  const shared = readFileSync(new URL('../src/duties/SharedDutyScheduleView.jsx', import.meta.url), 'utf8');
   assert.match(main, /DutyBulkImport/);
-  assert.match(calendar, /DutyCreateToolbarActions/);
+  // Page-level actions live in the Lịch công tác head on both tabs, not inside a tab.
+  assert.match(head, /Import Excel/);
+  assert.match(head, /Tạo công tác/);
+  assert.match(head, /work-primary-button/);
+  assert.doesNotMatch(calendar, /DutyCreateToolbarActions|Import Excel|Tạo công tác/);
+  assert.doesNotMatch(shared, /\+ Tạo công tác/);
+  assert.match(shared, /DutyBulkImport/);
+  assert.match(shared, /canCreate=\{canCreate\}/);
+  assert.equal((main.match(/canCreate=\{canCreateDuties\}/g) || []).length, 3);
   assert.match(ui, /Import Excel/);
   assert.match(ui, /anyApi\.dutyImport\.generateUploadUrl/);
   assert.match(ui, /anyApi\.dutyImport\.validateUpload/);

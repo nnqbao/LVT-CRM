@@ -34,6 +34,10 @@ class ConvexHttpClient(
         .readTimeout(45, TimeUnit.SECONDS)
         .writeTimeout(45, TimeUnit.SECONDS)
         .build()
+    private val importHttp = http.newBuilder().retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build()
+
+    suspend fun importCall(kind: String, path: String, args: JSONObject): JSONObject =
+        call(kind, path, args, authenticated = true, noRetry = true)
 
     override suspend fun query(path: String, args: JSONObject, authenticated: Boolean): JSONObject =
         call("query", path, args, authenticated)
@@ -57,6 +61,7 @@ class ConvexHttpClient(
         authenticated: Boolean,
         retried: Boolean = false,
         accessTokenOverride: String? = null,
+        noRetry: Boolean = false,
     ): JSONObject = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("path", path)
@@ -78,9 +83,9 @@ class ConvexHttpClient(
             }
         }
 
-        http.newCall(builder.build()).execute().use { response ->
+        (if (noRetry) importHttp else http).newCall(builder.build()).execute().use { response ->
             val raw = response.body?.string().orEmpty()
-            if (authenticated && accessTokenOverride == null && response.code == 401 && !retried) {
+            if (!noRetry && authenticated && accessTokenOverride == null && response.code == 401 && !retried) {
                 val refreshedToken = tryRefresh(requestToken)
                 if (refreshedToken != null) {
                     return@withContext call(
@@ -98,6 +103,10 @@ class ConvexHttpClient(
             }
 
             if (json.optString("status") == "success") {
+                if (noRetry) validateImportEnvelope(path, json, response.isSuccessful)
+                if (kind == "mutation" && path in setOf("students:updateContacts", "students:removeGuardian", "students:upsertGuardian", "studentAttendance:setDisposition")) {
+                    validateHomeroomAcknowledgment(path, json, response.isSuccessful)
+                }
                 val value = json.opt("value")
                 return@withContext when (value) {
                     null, JSONObject.NULL -> JSONObject()
@@ -109,14 +118,17 @@ class ConvexHttpClient(
                 }
             }
 
-            val errorMessage = json.optString("errorMessage").ifBlank {
+            val baseErrorMessage = (if (noRetry) json.opt("errorData") as? String else null)?.takeIf { it.isNotBlank() } ?: json.optString("errorMessage").ifBlank {
                 json.optString("error").ifBlank { "CONVEX_ERROR" }
             }
+            // ConvexError(code) (e.g. the device-key / passkey sign-in providers) carries the code in errorData.
+            val errorData = (json.opt("errorData") as? String)?.takeIf { it.isNotBlank() && !baseErrorMessage.contains(it) }
+            val errorMessage = if (errorData != null) "$baseErrorMessage $errorData" else baseErrorMessage
             val unauthorized = response.code == 401 ||
                 errorMessage.contains("Unauthenticated", ignoreCase = true) ||
                 errorMessage.contains("Authentication", ignoreCase = true)
 
-            if (authenticated && accessTokenOverride == null && unauthorized && !retried) {
+            if (!noRetry && authenticated && accessTokenOverride == null && unauthorized && !retried) {
                 val refreshedToken = tryRefresh(requestToken)
                 if (refreshedToken != null) {
                     return@withContext call(
@@ -130,7 +142,7 @@ class ConvexHttpClient(
                 }
             }
 
-            throw ConvexException(extractCode(errorMessage), humanize(errorMessage))
+            throw ConvexException(if (noRetry) extractImportCode(errorMessage) else extractCode(errorMessage), if (noRetry) humanizeImport(errorMessage) else humanize(errorMessage))
         }
     }
 
@@ -171,8 +183,48 @@ class ConvexHttpClient(
     }
 
     companion object {
+        fun validateImportEnvelope(path: String, envelope: JSONObject, successful: Boolean) {
+            val strings = setOf("studentRosterImport:generateUploadUrl", "homeroomClasses:create", "homeroomClasses:assignUser", "homeroomClasses:transferStudent", "students:create")
+            val nulls = setOf("homeroomClasses:update", "homeroomClasses:archive", "homeroomClasses:restore", "homeroomClasses:withdrawStudent")
+            val correct = when (path) {
+                in strings -> envelope.opt("value") is String
+                in nulls -> envelope.has("value") && envelope.opt("value") === JSONObject.NULL
+                else -> envelope.opt("value") is JSONObject
+            }
+            if (!successful || envelope.opt("status") != "success" || !correct) throw ConvexException("IMPORT_UNCERTAIN")
+        }
+        internal fun validateHomeroomAcknowledgment(path: String, envelope: JSONObject, successfulHttp: Boolean) {
+            require(successfulHttp && envelope.opt("status") == "success" && envelope.has("value")) { "INVALID_MUTATION_ACK" }
+            when (path) {
+                "students:updateContacts", "students:removeGuardian" -> require(envelope.get("value") == JSONObject.NULL) { "INVALID_MUTATION_ACK" }
+                "students:upsertGuardian" -> require(envelope.get("value") is String && envelope.getString("value").isNotBlank()) { "INVALID_MUTATION_ACK" }
+                else -> require(envelope.get("value") is JSONObject) { "INVALID_MUTATION_ACK" }
+            }
+        }
+        fun extractImportCode(message: String): String {
+            val management = listOf("CLASS_CODE_TAKEN", "INVALID_CLASS_CODE", "INVALID_GRADE_LEVEL", "SCHOOL_YEAR_LOCKED", "STUDENT_CODE_EXISTS", "INVALID_STUDENT_CODE", "ENROLLMENT_NOT_FOUND", "ENROLLMENT_NOT_ACTIVE", "ENROLLMENT_YEAR_MISMATCH", "DUPLICATE_ACTIVE_ENROLLMENT", "TRANSFER_BEFORE_START", "WITHDRAW_BEFORE_START", "INVALID_TRANSFER", "INVALID_REASON", "HOMEROOM_TEACHER_OVERLAP", "HOMEROOM_TEACHER_ALREADY_ASSIGNED", "ASSIGNMENT_BEFORE_START", "INVALID_ASSIGNMENT_TYPE", "INVALID_ASSIGNMENT_SCOPE", "USER_NOT_FOUND", "IMPORT_VALIDATION_FAILED", "IMPORT_UPLOAD_ALREADY_COMMITTED", "IMPORT_UPLOAD_IN_PROGRESS", "STUDENT_ENROLLED_OTHER_CLASS")
+            management.firstOrNull { message.contains(it) }?.let { return it }
+            val known = listOf("ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_DATE_IN_FUTURE", "INVALID_IMPORT_FILE", "IMPORT_FILE_TOO_LARGE", "IMPORT_FILE_EMPTY", "IMPORT_TOO_MANY_ROWS", "IMPORT_UPLOAD_EXPIRED", "IMPORT_UPLOAD_NOT_FOUND", "SCHOOL_YEAR_NOT_FOUND", "INVALID_DATE", "SUPERVISOR_REQUIRED", "HOMEROOM_MENU_HIDDEN", "HOMEROOM_SCOPE_FORBIDDEN")
+            return known.firstOrNull { message.contains(it) } ?: extractCode(message)
+        }
+        /** Staged roster import (studentRosterImport). The camera attendance import is retired. */
+        fun humanizeImport(message: String): String = when (extractImportCode(message)) {
+            "INVALID_IMPORT_FILE", "IMPORT_FILE_EMPTY", "IMPORT_FILE_TOO_LARGE" -> "File Excel không hợp lệ, rỗng hoặc quá 2 MB. Chỉ nhận file .xlsx theo mẫu."
+            "IMPORT_TOO_MANY_ROWS" -> "File có quá nhiều dòng; chuẩn bị file nhỏ hơn."
+            "IMPORT_UPLOAD_EXPIRED" -> "File import đã hết hạn (giữ tối đa 1 giờ). Vui lòng tải lại."
+            "IMPORT_UPLOAD_NOT_FOUND" -> "Không tìm thấy file import đã tải lên; không tự gửi lại file."
+            "ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_DATE_IN_FUTURE", "SCHOOL_YEAR_NOT_FOUND", "INVALID_DATE" -> "Năm/ngày học không hợp lệ hoặc ngày ở tương lai; chọn lại ngữ cảnh."
+            "SUPERVISOR_REQUIRED", "HOMEROOM_MENU_HIDDEN" -> "Bạn không có quyền thực hiện thao tác này."
+            else -> humanize(message)
+        }
         fun extractCode(message: String): String {
+            WorkErrorMessages.codeIn(message)?.let { return it }
+            TeachingAuthErrorMessages.codeIn(message)?.let { return it }
+            lvt.crm.data.boarding.BoardingErrorMessages.codeIn(message)?.let { return it }
             val known = listOf(
+                "ATTENDANCE_CAMERA_IMPORT_RETIRED", "ATTENDANCE_DATE_TODAY_ONLY", "ATTENDANCE_DATE_IN_FUTURE", "ATTENDANCE_DATE_OUTSIDE_YEAR", "ATTENDANCE_STUDENT_NOT_IN_CLASS", "ATTENDANCE_TOO_MANY_ABSENT", "SUPERVISOR_REQUIRED", "DISPOSITION_FORBIDDEN", "SCHOOL_YEAR_NOT_FOUND",
+                "INVALID_TODO_TITLE", "INVALID_TODO_NOTE", "INVALID_TODO_TIME", "TODO_REMIND_IN_PAST", "TODO_NOT_FOUND",
+                "INVALID_PHONE", "INVALID_NAME", "INVALID_TEXT", "INVALID_DISPOSITION_NOTE", "INVALID_DISPOSITION", "CORRECTION_REASON_REQUIRED", "GUARDIAN_LIMIT", "ATTENDANCE_DAY_NOT_FOUND", "CLASS_NOT_FOUND", "STUDENT_NOT_FOUND", "GUARDIAN_NOT_FOUND", "CLASS_ARCHIVED", "DISPOSITION_NOT_ABSENT",
                 "InvalidAccountId",
                 "InvalidSecret",
                 "Invalid credentials",
@@ -194,6 +246,23 @@ class ConvexHttpClient(
                 "PUBLIC_SIGNUP_DISABLED",
                 "INVALID_EMAIL",
                 "INVALID_AUTH_FLOW",
+                "DUTY_WEEK_MANAGER_REQUIRED",
+                "DUTY_WEEK_REVIEWER_REQUIRED",
+                "DUTY_WEEK_ALREADY_SUBMITTED",
+                "DUTY_WEEK_NOTHING_TO_SUBMIT",
+                "DUTY_WEEK_NOT_SUBMITTED",
+                "DUTY_WEEK_CHANGED",
+                "DUTY_WEEK_RETURN_NOTE_REQUIRED",
+                "DUTY_WEEK_RETURN_NOTE_TOO_LONG",
+                "DUTY_UPDATE_FORBIDDEN",
+                "DUTY_NOT_FOUND",
+                "INVALID_DUTY_TITLE",
+                "INVALID_CONTENT",
+                "INVALID_LOCATION",
+                "INVALID_OTHER_PARTICIPANTS",
+                "INVALID_PARTICIPANT",
+                "INVALID_DEPARTMENT",
+                "END_BEFORE_START",
                 "DUTY_CHAT_EMPTY",
                 "WORK_CHAT_EMPTY",
                 "DUTY_CHAT_TOO_LONG",
@@ -216,8 +285,52 @@ class ConvexHttpClient(
         }
 
         fun humanize(message: String): String {
+            WorkErrorMessages.messageFor(message)?.let { return it }
+            TeachingAuthErrorMessages.messageFor(message)?.let { return it }
+            lvt.crm.data.boarding.BoardingErrorMessages.messageFor(message)?.let { return it }
             val code = extractCode(message)
             return when {
+                code == "ATTENDANCE_CAMERA_IMPORT_RETIRED" -> "Nhập file điểm danh camera đã ngừng sử dụng. Giám thị điểm danh tại menu Điểm danh."
+                code == "ATTENDANCE_DATE_TODAY_ONLY" -> "Giám thị chỉ được điểm danh cho ngày hôm nay."
+                code == "ATTENDANCE_DATE_IN_FUTURE" -> "Không thể điểm danh cho ngày trong tương lai."
+                code == "ATTENDANCE_DATE_OUTSIDE_YEAR" -> "Ngày điểm danh nằm ngoài thời gian của năm học."
+                code == "ATTENDANCE_STUDENT_NOT_IN_CLASS" -> "Có học sinh không thuộc lớp này vào ngày điểm danh. Vui lòng tải lại rồi lưu lại."
+                code == "ATTENDANCE_TOO_MANY_ABSENT" -> "Số học sinh vắng vượt quá giới hạn của một lớp."
+                code == "SUPERVISOR_REQUIRED" -> "Chỉ Giám thị hoặc Admin/Mod mới được điểm danh."
+                code == "DISPOSITION_FORBIDDEN" -> "Chỉ GVCN của lớp trong ngày đó hoặc Admin/Mod mới được đánh dấu vắng không phép."
+                code == "DISPOSITION_NOT_ABSENT" -> "Chỉ đánh dấu được học sinh đang Vắng."
+                code == "INVALID_DISPOSITION" -> "Phân loại vắng không hợp lệ."
+                code == "SCHOOL_YEAR_NOT_FOUND" -> "Không tìm thấy năm học."
+                code == "CLASS_NOT_FOUND" -> "Không tìm thấy lớp."
+                code == "CLASS_ARCHIVED" -> "Lớp đã lưu trữ. Không thể điểm danh hay đánh dấu vắng."
+                code == "INVALID_TODO_TITLE" -> "Vui lòng nhập tên việc (tối đa 200 ký tự)."
+                code == "INVALID_TODO_NOTE" -> "Ghi chú tối đa 2000 ký tự."
+                code == "INVALID_TODO_TIME" -> "Thời gian không hợp lệ."
+                code == "TODO_REMIND_IN_PAST" -> "Giờ nhắc phải ở tương lai."
+                code == "TODO_NOT_FOUND" -> "Việc này không còn tồn tại."
+                code == "DUTY_WEEK_MANAGER_REQUIRED" -> "Chỉ văn thư (admin/mod) được nộp lịch tuần."
+                code == "DUTY_WEEK_REVIEWER_REQUIRED" -> "Chỉ Ban Giám hiệu được duyệt hoặc trả lại lịch tuần."
+                code == "DUTY_WEEK_ALREADY_SUBMITTED" -> "Lịch tuần này đang chờ Ban Giám hiệu duyệt."
+                code == "DUTY_WEEK_NOTHING_TO_SUBMIT" -> "Lịch tuần này không có thay đổi nào cần duyệt."
+                code == "DUTY_WEEK_NOT_SUBMITTED" -> "Lịch tuần này không còn ở trạng thái chờ duyệt."
+                code == "DUTY_WEEK_CHANGED" -> "Văn thư vừa sửa lịch tuần này. Hãy xem lại trước khi duyệt."
+                code == "DUTY_WEEK_RETURN_NOTE_REQUIRED" -> "Vui lòng ghi lý do trả lại."
+                code == "DUTY_WEEK_RETURN_NOTE_TOO_LONG" -> "Lý do trả lại tối đa 500 ký tự."
+                code == "DUTY_UPDATE_FORBIDDEN" -> "Bạn không thể sửa công tác này."
+                code == "DUTY_NOT_FOUND" -> "Công tác không còn tồn tại."
+                code == "INVALID_DUTY_TITLE" -> "Tên công tác bắt buộc, tối đa 200 ký tự."
+                code == "INVALID_CONTENT" -> "Nội dung công tác bắt buộc, tối đa 200 ký tự."
+                code == "INVALID_LOCATION" -> "Địa điểm bắt buộc, tối đa 200 ký tự."
+                code == "INVALID_OTHER_PARTICIPANTS" -> "Thành phần khác tối đa 500 ký tự."
+                code == "INVALID_PARTICIPANT" -> "Có người tham gia không còn hoạt động."
+                code == "INVALID_DEPARTMENT" -> "Có phòng ban không còn hoạt động."
+                code == "END_BEFORE_START" -> "Thời gian kết thúc phải sau thời gian bắt đầu."
+                code == "INVALID_PHONE" -> "Số điện thoại không hợp lệ (6–20 ký tự)."
+                code == "INVALID_NAME" -> "Họ tên phải có 1–120 ký tự."
+                code == "INVALID_TEXT" -> "Ghi chú liên hệ tối đa 300 ký tự."
+                code == "INVALID_DISPOSITION_NOTE" -> "Ghi chú phân loại tối đa 500 ký tự."
+                code == "CORRECTION_REASON_REQUIRED" -> "Cần lý do hoặc ghi chú."
+                code == "GUARDIAN_LIMIT" -> "Tối đa 6 người giám hộ đang hoạt động."
                 code == "INVALID_AVATAR_FILE" -> "Ảnh đại diện phải là PNG, JPG hoặc WEBP."
                 code == "AVATAR_FILE_TOO_LARGE" -> "Ảnh đại diện không được vượt quá 2MB."
                 code == "AVATAR_UPLOAD_NOT_FOUND" -> "Không tìm thấy ảnh vừa tải lên. Vui lòng chọn lại."

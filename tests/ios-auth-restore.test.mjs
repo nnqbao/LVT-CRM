@@ -7,13 +7,16 @@ const coordinator = readFileSync(new URL('../ios-uikit-lvt/LvtCrmUIKit/AuthFlowC
 const login = readFileSync(new URL('../ios-uikit-lvt/LvtCrmUIKit/LoginViewController.swift', import.meta.url), 'utf8');
 const changelog = readFileSync(new URL('../ios-uikit-lvt/LvtCrmUIKit/AppChangelog.swift', import.meta.url), 'utf8');
 
-test('iOS cold-start restore fail-opens to login instead of retrying forever', () => {
+test('iOS cold-start restore never retries forever: no network → Không có kết nối, other failures → login', () => {
   assert.doesNotMatch(auth, /scheduleRestoreRetry/);
   assert.doesNotMatch(auth, /restoreRetryScheduled/);
-  assert.match(auth, /Fail-open like Android/);
-  assert.match(auth, /case \.loading = state \{\s*bootstrapError =/s);
+  assert.match(auth, /if Self\.isConnectivityFailure\(error\) \{\s*state = \.offline\s*\} else \{\s*bootstrapError =/s);
   assert.match(auth, /state = \.signedOut/);
   assert.match(auth, /guard let credentials else \{\s*if authGeneration == generation \{ state = \.signedOut \}/s);
+  // Offline retries only on "Thử lại" or when the network comes back (never on the first path update).
+  assert.match(auth, /func retryRestore\(\) async \{\s*guard case \.offline = state else \{ return \}/s);
+  const web = readFileSync(new URL('../ios-uikit-lvt/LvtCrmUIKit/WebAppViewController.swift', import.meta.url), 'utf8');
+  assert.match(web, /guard online, wasOnline == false else \{ return \}/);
 });
 
 test('iOS session fetch timeout does not hop back onto MainActor via self.loadSessionContext', () => {

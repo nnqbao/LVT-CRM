@@ -38,19 +38,31 @@ final class ProfileViewController: UITableViewController {
     private let authRepository: AuthRepository
     private let sessionsRepository: SessionsRepository
     private let avatarRepository: AvatarRepository
+    private let quickSignIn: QuickSignInService
     private var avatarImage: UIImage?
     private var avatarBusy = false
+    private var biometricBusy = false
+    private var passkeyBusy = false
+
+    private enum AccountRow: Int, CaseIterable {
+        case devices
+        case changePassword
+        case biometric
+        case passkey
+    }
 
     init(
         session: UserSession,
         authRepository: AuthRepository,
         sessionsRepository: SessionsRepository,
-        avatarRepository: AvatarRepository
+        avatarRepository: AvatarRepository,
+        quickSignIn: QuickSignInService
     ) {
         self.session = session
         self.authRepository = authRepository
         self.sessionsRepository = sessionsRepository
         self.avatarRepository = avatarRepository
+        self.quickSignIn = quickSignIn
         super.init(style: .insetGrouped)
         title = "Cá nhân"
     }
@@ -73,7 +85,7 @@ final class ProfileViewController: UITableViewController {
         switch Section(rawValue: section) {
         case .identity: return 2
         case .work: return 3
-        case .account: return 2
+        case .account: return AccountRow.allCases.count
         case .appearance: return 1
         case .changelog: return 1
         case .signOut: return 2
@@ -102,8 +114,11 @@ final class ProfileViewController: UITableViewController {
         content.secondaryTextProperties.numberOfLines = 0
         content.imageProperties.maximumSize = CGSize(width: 44, height: 44)
         cell.accessoryType = .none
+        cell.accessoryView = nil
         cell.selectionStyle = .none
         cell.accessibilityTraits = []
+        cell.accessibilityLabel = nil
+        cell.accessibilityHint = nil
 
         switch Section(rawValue: indexPath.section) {
         case .identity:
@@ -125,7 +140,7 @@ final class ProfileViewController: UITableViewController {
             } else {
                 content.text = "Vai trò"
                 content.secondaryText = session.roleLabel
-                cell.accessibilityLabel = "Vai trò, (session.roleLabel)"
+                cell.accessibilityLabel = "Vai trò, \(session.roleLabel)"
             }
         case .work:
             let values = [
@@ -135,7 +150,20 @@ final class ProfileViewController: UITableViewController {
             ]
             content.text = values[indexPath.row].0
             content.secondaryText = values[indexPath.row].1
-            cell.accessibilityLabel = "(values[indexPath.row].0), (values[indexPath.row].1)"
+            cell.accessibilityLabel = "\(values[indexPath.row].0), \(values[indexPath.row].1)"
+        case .account where AccountRow(rawValue: indexPath.row) == .biometric:
+            configureBiometricRow(cell, content: &content)
+        case .account where AccountRow(rawValue: indexPath.row) == .passkey:
+            content.text = "Tạo passkey"
+            content.secondaryText = passkeyBusy
+                ? "Đang tạo passkey…"
+                : "Đăng nhập bằng passkey trên màn hình đăng nhập, không cần mật khẩu."
+            content.image = UIImage(systemName: "person.badge.key")
+            content.imageProperties.tintColor = .systemIndigo
+            cell.selectionStyle = passkeyBusy ? .none : .default
+            cell.accessibilityTraits = .button
+            cell.accessibilityLabel = passkeyBusy ? "Tạo passkey, đang xử lý" : "Tạo passkey"
+            cell.accessibilityHint = "Tạo passkey cho tài khoản này trên thiết bị"
         case .account:
             let isDevices = indexPath.row == 0
             content.text = isDevices ? "Thiết bị đã đăng nhập" : "Đổi mật khẩu"
@@ -196,13 +224,15 @@ final class ProfileViewController: UITableViewController {
         switch Section(rawValue: indexPath.section) {
         case .identity where indexPath.row == 0:
             showAvatarActions()
-        case .account where indexPath.row == 0:
+        case .account where indexPath.row == AccountRow.devices.rawValue:
             navigationController?.pushViewController(
                 DevicesViewController(sessionsRepository: sessionsRepository),
                 animated: true
             )
-        case .account:
+        case .account where indexPath.row == AccountRow.changePassword.rawValue:
             showChangePassword()
+        case .account where indexPath.row == AccountRow.passkey.rawValue:
+            createPasskey()
         case .appearance:
             showAppearancePicker()
         case .changelog:
@@ -343,6 +373,97 @@ final class ProfileViewController: UITableViewController {
     private func apply(appearance: Appearance) {
         AppAppearance.persist(rawValue: appearance.rawValue, style: appearance.interfaceStyle)
         tableView.reloadSections(IndexSet(integer: Section.appearance.rawValue), with: .none)
+    }
+
+    // MARK: Đăng nhập nhanh (Face ID / Touch ID, passkey)
+
+    private var biometricIndexPath: IndexPath { IndexPath(row: AccountRow.biometric.rawValue, section: Section.account.rawValue) }
+    private var passkeyIndexPath: IndexPath { IndexPath(row: AccountRow.passkey.rawValue, section: Section.account.rawValue) }
+
+    /// Switch "Đăng nhập bằng Face ID" (label from LAContext.biometryType). On only for the account that enabled it
+    /// on this device; disabled with an explanation when the device cannot hold a biometric key (e.g. simulator).
+    private func configureBiometricRow(_ cell: UITableViewCell, content: inout UIListContentConfiguration) {
+        let availability = quickSignIn.availability
+        let enabled = quickSignIn.isDeviceKeyEnabled(for: session)
+        let title = availability.kind.switchTitle
+        content.text = title
+        content.image = UIImage(systemName: availability.kind.symbol)
+        content.imageProperties.tintColor = .systemIndigo
+        if biometricBusy {
+            content.secondaryText = "Đang xử lý…"
+        } else if let reason = availability.unavailableReason, !enabled {
+            content.secondaryText = reason
+        } else if enabled {
+            content.secondaryText = "Đang bật trên máy này. Đăng xuất vẫn giữ để lần sau đăng nhập nhanh."
+        } else if let record = quickSignIn.deviceRecord {
+            content.secondaryText = "Máy này đang dùng cho \(record.email). Bật để chuyển sang tài khoản của bạn."
+        } else {
+            content.secondaryText = "Đăng nhập trên máy này mà không cần nhập mật khẩu."
+        }
+        let toggle = UISwitch()
+        toggle.isOn = enabled
+        toggle.isEnabled = !biometricBusy && (enabled || availability.unavailableReason == nil)
+        toggle.accessibilityLabel = title
+        toggle.accessibilityHint = content.secondaryText
+        toggle.addTarget(self, action: #selector(biometricSwitchChanged(_:)), for: .valueChanged)
+        cell.accessoryView = toggle
+        cell.selectionStyle = .none
+    }
+
+    @objc private func biometricSwitchChanged(_ sender: UISwitch) {
+        guard !biometricBusy else { return }
+        let turnOn = sender.isOn
+        biometricBusy = true
+        tableView.reloadRows(at: [biometricIndexPath], with: .none)
+        Task { [weak self] in
+            guard let self else { return }
+            var failure: Error?
+            if turnOn {
+                do { try await quickSignIn.enableDeviceKey(for: session) } catch { failure = error }
+            } else {
+                await quickSignIn.disableDeviceKey(for: session)
+            }
+            biometricBusy = false
+            tableView.reloadRows(at: [biometricIndexPath], with: .none)
+            let label = quickSignIn.availability.kind.label
+            if let failure {
+                if let message = QuickSignInService.message(for: failure) {
+                    presentQuickSignInAlert(title: "Chưa bật được \(label)", message: message)
+                }
+            } else {
+                UIAccessibility.post(notification: .announcement, argument: turnOn ? "Đã bật đăng nhập bằng \(label)" : "Đã tắt đăng nhập bằng \(label)")
+            }
+        }
+    }
+
+    private func createPasskey() {
+        guard !passkeyBusy, let anchor = view.window else { return }
+        passkeyBusy = true
+        tableView.reloadRows(at: [passkeyIndexPath], with: .none)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await quickSignIn.createPasskey(anchor: anchor)
+                passkeyBusy = false
+                tableView.reloadRows(at: [passkeyIndexPath], with: .none)
+                presentQuickSignInAlert(
+                    title: "Đã tạo passkey",
+                    message: "Lần sau bấm “Đăng nhập bằng passkey” trên màn hình đăng nhập."
+                )
+            } catch {
+                passkeyBusy = false
+                tableView.reloadRows(at: [passkeyIndexPath], with: .none)
+                if let message = QuickSignInService.message(for: error) {
+                    presentQuickSignInAlert(title: "Chưa tạo được passkey", message: message)
+                }
+            }
+        }
+    }
+
+    private func presentQuickSignInAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Đóng", style: .default))
+        present(alert, animated: true)
     }
 
     private func showChangePassword() {

@@ -1,22 +1,31 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { copyFile, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import { promisify } from 'node:util';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ConvexHttpClient } from 'convex/browser';
 import { anyApi } from 'convex/server';
 import { DriveUploadStages } from './lib/drive-upload-stages.mjs';
 import { AsyncSemaphore, DriveFileCache, DRIVE_CACHE_TTL_MS, workFileCacheIdentity, workFileVersion } from './lib/drive-file-cache.mjs';
 import { retryDriveDownload } from './lib/drive-download-retry.mjs';
-import { canonicalUploadMime, downloadContentPolicy } from './lib/file-content-policy.mjs';
+import {
+  convexSiteUrl,
+  isConvexObjectKey,
+  readConvexObject,
+  storeConvexObject,
+} from './lib/convex-file-objects.mjs';
+import { downloadContentPolicy } from './lib/file-content-policy.mjs';
 import { FileHttpError, classifyFileError } from './lib/file-http-errors.mjs';
 import { matchAvatarFileRoute, matchDriveMutationRoute } from './lib/file-route-policy.mjs';
+import { staticFrameHeaders } from './lib/static-frame-policy.mjs';
+import { parseByteRange, staticEtag } from './lib/static-range.mjs';
+import { wellKnownResponse } from './lib/well-known.mjs';
 import {
   buildAuthorizedSharedSchedulePdf,
   parseSharedScheduleQuery,
@@ -24,17 +33,20 @@ import {
 import {
   assertStagedUploadOwner,
   settleClaimedUpload,
-  throwUploadRegistrationError,
 } from './lib/staged-upload-cleanup.mjs';
 import { authorizeUpload, uploadApiForPurpose } from './lib/upload-authorization.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distRoot = path.join(projectRoot, 'dist');
+// Kept outside dist/ so it is never served as a public static file.
+const designLibraryFile = path.join(projectRoot, 'design', 'component-library', 'index.html');
 const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT || 3007);
 const convexUrl = process.env.CONVEX_URL
   || process.env.CONVEX_SELF_HOSTED_URL
   || 'http://127.0.0.1:3210';
+const convexSite = convexSiteUrl(convexUrl, process.env.CONVEX_SITE_URL);
+// Legacy Drive objects (uploaded before files moved to Convex Storage) are still read/deleted via gog.
 const driveAccount = process.env.LVT_DRIVE_ACCOUNT || 'bemiagent@gmail.com';
 const maxFileSize = 20 * 1024 * 1024;
 const acceptedExtensions = new Set(['pdf', 'docx', 'xlsx', 'xls', 'png', 'jpg', 'jpeg']);
@@ -61,6 +73,7 @@ const contentTypes = new Map([
   ['.jpg', 'image/jpeg'],
   ['.js', 'text/javascript; charset=utf-8'],
   ['.json', 'application/json; charset=utf-8'],
+  ['.mp4', 'video/mp4'],
   ['.png', 'image/png'],
   ['.svg', 'image/svg+xml'],
   ['.webp', 'image/webp'],
@@ -102,15 +115,6 @@ function applyPrivateDownloadHeaders(response, fileName, size, etag, cacheStatus
   response.setHeader('X-Cache', cacheStatus);
 }
 
-function driveFolderId() {
-  if (process.env.LVT_DRIVE_FOLDER_ID) return process.env.LVT_DRIVE_FOLDER_ID;
-  return execFileSync(
-    '/usr/bin/security',
-    ['find-generic-password', '-s', 'lvt-crm-drive-folder-id', '-a', driveAccount, '-w'],
-    { encoding: 'utf8' },
-  ).trim();
-}
-
 async function authorizedClient(request) {
   const token = bearerToken(request);
   if (!token) throw new Error('UNAUTHORIZED');
@@ -126,6 +130,11 @@ function uploadApi(stage, name) {
 async function deleteDriveFile(driveFileId) {
   if (!driveFileId || !/^[a-zA-Z0-9_-]+$/.test(driveFileId)) {
     throw new FileHttpError(400, 'INVALID_FILE');
+  }
+  if (isConvexObjectKey(driveFileId)) {
+    // Convex deletes the object itself inside the authorized cleanup mutation that follows.
+    await driveFileCache.invalidateDriveFile(driveFileId);
+    return;
   }
   try {
     await execFileAsync(
@@ -224,7 +233,7 @@ async function handleCleanupJob(request, response, cleanupJobId, purpose) {
   response.end();
 }
 
-async function uploadToDrive(request, response) {
+async function uploadPrivateFile(request, response) {
   const fileName = safeFileName(request);
   const declaredSize = Number(request.headers['content-length'] || 0);
   // Content-Length can be absent when proxies use chunked transfer; allow and count bytes instead.
@@ -249,9 +258,8 @@ async function uploadToDrive(request, response) {
     ? 'people-review'
     : 'work';
   const actor = await authorizeUpload(client, purpose);
-  await collectStaleUploads(client, actor?.userId);
 
-  const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'lvt-drive-upload-'));
+  const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'lvt-file-upload-'));
   const temporaryFile = path.join(temporaryDirectory, 'upload.bin');
   const hash = createHash('sha256');
   let received = 0;
@@ -271,87 +279,48 @@ async function uploadToDrive(request, response) {
     await pipeline(request, limiter, createWriteStream(temporaryFile, { mode: 0o600 }));
     if (received <= 0) throw new Error('INVALID_FILE');
     if (declaredSize > 0 && received !== declaredSize) throw new Error('WORK_FILE_SIZE_MISMATCH');
+    const driveChecksum = hash.digest('hex');
 
-    let stdout;
-    try {
-      ({ stdout } = await execFileAsync(
-        '/opt/homebrew/bin/gog',
-        [
-        'drive',
-        'upload',
-        temporaryFile,
-        '--account',
-        driveAccount,
-        '--parent',
-        driveFolderId(),
-        '--name',
-        fileName,
-        '--mime-type',
-        canonicalUploadMime(fileName),
-        '--json',
-        '--no-input',
-        ],
-        { maxBuffer: 1024 * 1024 },
-      ));
-    } catch (error) {
-      throw new FileHttpError(502, 'DRIVE_UPLOAD_FAILED', error);
-    }
-    const result = JSON.parse(stdout);
-    const uploaded = result.file || result.upload || result;
-    if (!uploaded?.id) throw new Error('DRIVE_UPLOAD_INVALID_RESPONSE');
-    const cleanupToken = randomUUID();
+    // Convex stores the object and registers its staged-upload row (owner = this user) atomically
+    // per request; a failed registration discards the object there.
+    const uploaded = await storeConvexObject({
+      siteUrl: convexSite,
+      token: bearerToken(request),
+      filePath: temporaryFile,
+      fileName,
+      purpose,
+      checksum: driveChecksum,
+    });
+    const { cleanupToken } = uploaded;
     const stage = {
-      driveFileId: uploaded.id,
+      driveFileId: uploaded.driveFileId,
       purpose,
       userId: String(actor?.userId || ''),
       createdAt: Date.now(),
+      driveChecksum,
     };
-    try {
-      await client.mutation(uploadApi(stage, 'registerDriveUpload'), {
-        cleanupToken,
-        driveFileId: uploaded.id,
-      });
-      await uploadStages.add(cleanupToken, stage);
-      const driveChecksum = hash.digest('hex');
-      stage.driveChecksum = driveChecksum;
-      try {
-        await driveFileCache.getOrCreate(
-          workFileCacheIdentity({ driveFileId: uploaded.id, driveChecksum, fileSize: received }),
-          (destination) => copyFile(temporaryFile, destination),
-        );
-      } catch (cacheError) {
-        console.error('LVT Drive upload prewarm failed', {
-          code: cacheError instanceof Error ? cacheError.message : 'UNKNOWN',
-        });
-      }
-    } catch (error) {
-      await throwUploadRegistrationError({
-        registrationError: error,
-        settleStage: () => settleClaimedStage(client, cleanupToken, stage),
-        deleteDriveFile: () => deleteDriveFile(uploaded.id),
-        onCleanupFailure: ({ stageCleanupError, driveCleanupError }) => {
-          console.error('LVT failed upload cleanup also failed', {
-            cleanupToken,
-            stageCode: stageCleanupError instanceof Error ? stageCleanupError.message : 'UNKNOWN',
-            driveCode: driveCleanupError instanceof Error ? driveCleanupError.message : 'UNKNOWN',
-          });
-        },
-      });
-    }
+    await uploadStages.add(cleanupToken, stage);
 
     response.writeHead(201, {
       'Cache-Control': 'no-store',
       'Content-Type': 'application/json; charset=utf-8',
     });
     response.end(`${JSON.stringify({
-      driveFileId: uploaded.id,
+      driveFileId: uploaded.driveFileId,
       cleanupToken,
-      driveChecksum: stage.driveChecksum,
+      driveChecksum,
       fileSize: received,
     })}\n`);
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
+
+  // Optional maintenance: never a prerequisite for (or a delay before) the upload itself.
+  collectStaleUploads(client, actor?.userId).catch((error) => {
+    console.error('LVT stale upload sweep failed', {
+      code: error instanceof Error ? error.message : 'UNKNOWN',
+    });
+  });
 }
 
 async function downloadDriveFile(destination, file, requestLabel) {
@@ -383,22 +352,48 @@ async function downloadDriveFile(destination, file, requestLabel) {
   ));
 }
 
-async function downloadLegacyStorageFile(destination, file) {
+async function readLegacyStorageFile(file) {
   if (!file.storageUrl) throw new Error('WORK_FILE_NOT_FOUND');
   const response = await fetch(file.storageUrl);
   if (!response.ok) throw new Error('WORK_FILE_NOT_FOUND');
   const bytes = Buffer.from(await response.arrayBuffer());
   if (!bytes.length) throw new Error('EMPTY_FILE');
-  await writeFile(destination, bytes);
+  return bytes;
 }
 
-async function serveAuthorizedDriveFile(request, response, file, requestLabel) {
+/**
+ * Files stored in Convex (`cvx_` objects and legacy `fileId` rows) pass through memory only: the
+ * gateway never writes school files to its disk. Legacy Drive objects keep the 24-hour disk cache
+ * because `gog` downloads to a file.
+ */
+async function serveAuthorizedDriveFile(request, response, file, requestLabel, convexQuery) {
   const sourceIdentity = workFileCacheIdentity(file);
+  if (!file.driveFileId || isConvexObjectKey(file.driveFileId)) {
+    // Same ETag as the former cache entry, so browser/app copies stay valid.
+    const etag = `"${driveFileCache.keyFor(sourceIdentity)}"`;
+    response.setHeader('Vary', 'Authorization');
+    if (request.headers['if-none-match'] === etag) {
+      applyPrivateDownloadHeaders(response, file.fileName, undefined, etag, 'REVALIDATED');
+      response.writeHead(304);
+      response.end();
+      return;
+    }
+    const bytes = await driveDownloadSemaphore.run(() => (file.driveFileId
+      ? readConvexObject({
+        siteUrl: convexSite,
+        token: bearerToken(request),
+        query: convexQuery,
+        expectedChecksum: file.driveChecksum || null,
+      })
+      : readLegacyStorageFile(file)));
+    applyPrivateDownloadHeaders(response, file.fileName, bytes.length, etag, 'BYPASS');
+    response.writeHead(200);
+    response.end(bytes);
+    return;
+  }
   const entry = await driveFileCache.getOrCreate(
     sourceIdentity,
-    (destination) => file.driveFileId
-      ? downloadDriveFile(destination, file, requestLabel)
-      : downloadLegacyStorageFile(destination, file),
+    (destination) => downloadDriveFile(destination, file, requestLabel),
   );
   applyPrivateDownloadHeaders(response, file.fileName, entry.size, entry.etag, entry.cacheStatus);
   response.setHeader('Vary', 'Authorization');
@@ -415,7 +410,11 @@ async function serveAuthorizedDriveFile(request, response, file, requestLabel) {
 async function downloadPeopleReviewFile(request, response, kind, fileId) {
   const client = await authorizedClient(request);
   const file = await client.query(anyApi.peopleReview.authorizeFileDownload, { kind, fileId });
-  await serveAuthorizedDriveFile(request, response, file, `people-review:${kind}:${fileId}`);
+  await serveAuthorizedDriveFile(request, response, file, `people-review:${kind}:${fileId}`, {
+    purpose: 'people-review',
+    kind,
+    fileId,
+  });
 }
 
 async function workFileMetadata(request, response, documentId) {
@@ -435,7 +434,10 @@ async function workFileMetadata(request, response, documentId) {
 async function downloadFromDrive(request, response, documentId) {
   const client = await authorizedClient(request);
   const file = await client.query(anyApi.work.authorizeFileDownload, { documentId });
-  await serveAuthorizedDriveFile(request, response, file, `work:${documentId}`);
+  await serveAuthorizedDriveFile(request, response, file, `work:${documentId}`, {
+    purpose: 'work',
+    documentId,
+  });
 }
 
 async function avatarFileMetadata(request, response) {
@@ -492,6 +494,87 @@ async function downloadSharedDutySchedulePdf(request, response) {
   response.end(bytes);
 }
 
+async function serveDesignLibrary(request, response) {
+  const client = await authorizedClient(request);
+  try {
+    await client.query(anyApi.designLibrary.authorizeView, {});
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/ACCOUNT_LOCKED|USER_NOT_ACTIVE|PASSWORD_CHANGE_REQUIRED/.test(message)) {
+      throw new FileHttpError(403, 'FILE_ACCESS_DENIED', error);
+    }
+    throw error;
+  }
+  const html = await readFile(designLibraryFile);
+  response.setHeader('Cache-Control', 'private, no-store');
+  response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+  response.setHeader('Content-Type', 'text/html; charset=utf-8');
+  response.setHeader('Content-Length', html.length);
+  response.setHeader('Vary', 'Authorization');
+  response.writeHead(200);
+  response.end(html);
+}
+
+/**
+ * Guide videos live in Convex File Storage (convex/guideVideos.ts, public fictional content):
+ * /huong-dan/video/<id>.mp4|webp redirects to the published object, which answers byte ranges.
+ * Lookups are cached briefly; an unpublished id falls back to a local dist/ file (sandbox).
+ */
+const GUIDE_MEDIA_ROUTE = /^\/huong-dan\/video\/([a-z0-9-]{2,60})\.(mp4|webp)$/;
+const guideMediaCache = new Map();
+const GUIDE_MEDIA_TTL_MS = 5 * 60 * 1000;
+
+async function guideMediaUrl(videoId, kind) {
+  const key = `${videoId}:${kind}`;
+  const hit = guideMediaCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.url;
+  let url = null;
+  try {
+    url = await new ConvexHttpClient(convexUrl).query(anyApi.guideVideos.url, { videoId, kind });
+  } catch (error) {
+    console.error('LVT guide video lookup failed', { videoId, kind, code: error instanceof Error ? error.message.split('\n')[0] : 'UNKNOWN' });
+    return hit?.url || null;
+  }
+  guideMediaCache.set(key, { url, expires: Date.now() + (url ? GUIDE_MEDIA_TTL_MS : 60 * 1000) });
+  return url;
+}
+
+/** Guide videos: ETag revalidation and single byte ranges (Safari / iOS need 206 to play MP4). */
+async function serveStaticMedia(request, response, filePath) {
+  const info = await stat(filePath);
+  const etag = staticEtag(info);
+  response.setHeader('Accept-Ranges', 'bytes');
+  response.setHeader('ETag', etag);
+  if (request.headers['if-none-match'] === etag) {
+    response.writeHead(304);
+    response.end();
+    return;
+  }
+  const ifRange = request.headers['if-range'];
+  const range = ifRange && ifRange !== etag ? null : parseByteRange(request.headers.range, info.size);
+  if (range?.unsatisfiable) {
+    response.writeHead(416, { 'Content-Range': `bytes */${info.size}` });
+    response.end();
+    return;
+  }
+  const start = range ? range.start : 0;
+  const end = range ? range.end : info.size - 1;
+  response.setHeader('Content-Length', end - start + 1);
+  if (range) response.setHeader('Content-Range', `bytes ${start}-${end}/${info.size}`);
+  response.writeHead(range ? 206 : 200);
+  if (request.method === 'HEAD') {
+    response.end();
+    return;
+  }
+  try {
+    await pipeline(createReadStream(filePath, { start, end }), response);
+  } catch (error) {
+    // Players routinely abort a range request when the viewer seeks; that is not a server error.
+    if (response.destroyed || error?.code === 'ERR_STREAM_PREMATURE_CLOSE') return;
+    throw error;
+  }
+}
+
 async function existingFile(candidate) {
   try {
     const metadata = await stat(candidate);
@@ -512,7 +595,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'POST' && request.url === '/api/files/upload') {
-      await uploadToDrive(request, response);
+      await uploadPrivateFile(request, response);
       return;
     }
 
@@ -557,6 +640,11 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === 'GET' && privatePath === '/api/design-library') {
+      await serveDesignLibrary(request, response);
+      return;
+    }
+
     if (request.method === 'GET' && privatePath === '/api/duties/shared-schedule.pdf') {
       await downloadSharedDutySchedulePdf(request, response);
       return;
@@ -576,10 +664,37 @@ const server = createServer(async (request, response) => {
       response.end();
       return;
     }
+    const wellKnown = request.method === 'GET' || request.method === 'HEAD' ? wellKnownResponse(pathname) : null;
+    if (wellKnown) {
+      response.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=3600',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      response.end(request.method === 'HEAD' ? undefined : wellKnown);
+      return;
+    }
     if (pathname.startsWith('/api/')) {
       response.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
       response.end('{"error":"FILE_NOT_FOUND"}\n');
       return;
+    }
+
+    const guideMedia = (request.method === 'GET' || request.method === 'HEAD') ? pathname.match(GUIDE_MEDIA_ROUTE) : null;
+    if (guideMedia) {
+      const target = await guideMediaUrl(guideMedia[1], guideMedia[2] === 'mp4' ? 'video' : 'poster');
+      if (target) {
+        // no-store: Cloudflare would otherwise keep the redirect for hours, pointing at an object a
+        // republish already deleted. Viewers keep the media itself 24 h (public/huong-dan-sw.js).
+        response.writeHead(302, { Location: target, 'Cache-Control': 'no-store' });
+        response.end();
+        return;
+      }
+      if (!(await existingFile(path.resolve(distRoot, `.${pathname}`)))) {
+        response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        response.end('Video chưa được xuất bản.\n');
+        return;
+      }
     }
 
     const candidate = path.resolve(distRoot, `.${pathname}`);
@@ -595,10 +710,19 @@ const server = createServer(async (request, response) => {
     const isHashedAsset = filePath.startsWith(`${path.join(distRoot, 'assets')}${path.sep}`);
 
     response.setHeader('Content-Type', contentTypes.get(extension) || 'application/octet-stream');
+    const servedPath = `/${path.relative(distRoot, filePath).split(path.sep).join('/')}`;
+    for (const header of staticFrameHeaders(servedPath)) response.setHeader(header.name, header.value);
+    // The guide's service worker must reach viewers at once: Cloudflare keeps a no-cache .js for
+    // 4 hours, so a worker fix would lag behind; no-store makes it bypass the edge.
     response.setHeader(
       'Cache-Control',
-      isHashedAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
+      isHashedAsset ? 'public, max-age=31536000, immutable' : servedPath === '/huong-dan-sw.js' ? 'no-store' : 'no-cache',
     );
+
+    if (extension === '.mp4') {
+      await serveStaticMedia(request, response, filePath);
+      return;
+    }
 
     if (request.method === 'HEAD') {
       response.writeHead(200);

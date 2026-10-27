@@ -14,10 +14,56 @@ export function workReminderSourceType(item) {
 }
 
 const COMPLETED_STATUSES = new Set(['completed', 'completed_late']);
-const PENDING_REVIEW_STATUSES = new Set(['pending_completion', 'pending_approval']);
+/** `awaiting_approval` = document waiting for Ban giám hiệu (Việc tôi tạo of văn thư). */
+const PENDING_REVIEW_STATUSES = new Set(['pending_completion', 'pending_approval', 'awaiting_approval']);
 
 export function vietnamToday(now = Date.now()) {
   return new Date(now + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** dd/mm/yyyy HH:mm in Vietnam time (approval decisions, submissions). */
+export function formatWorkDateTime(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const shifted = new Date(value + 7 * 60 * 60 * 1000).toISOString();
+  const [date, time] = shifted.split('T');
+  const [year, month, day] = date.split('-');
+  return `${day}/${month}/${year} ${time.slice(0, 5)}`;
+}
+
+/** Approver chip label: "Đã duyệt 22/10/2026 14:05", "Trả lại …", or "Chờ duyệt". */
+export function workApproverDecisionLabel(approver) {
+  const when = formatWorkDateTime(approver?.decidedAt);
+  if (approver?.approved) return when ? `Đã duyệt ${when}` : 'Đã duyệt';
+  if (approver?.rejected) return when ? `Trả lại ${when}` : 'Trả lại';
+  return 'Chờ duyệt';
+}
+
+/**
+ * A document that needs Ban giám hiệu approval and is not approved yet has not
+ * been handed to anyone: its assignments read "Chờ duyệt (chưa giao)" instead
+ * of the task progress (which would say "Đang thực hiện · Chưa hoàn thành").
+ */
+export function isWorkDocumentUnreleased(document) {
+  return Boolean(document?.requiresApproval) && document?.status !== 'approved';
+}
+
+export function workAssignmentDisplayStatus(document, assignment) {
+  if (isWorkDocumentUnreleased(document)) return 'unreleased';
+  return assignment?.status || 'unassigned';
+}
+
+/** Role-neutral creator label: admin is "Quản trị viên", moderator "Văn thư". */
+export function workCreatorRoleLabel(role) {
+  if (role === 'admin') return 'Quản trị viên';
+  if (role === 'moderator') return 'Văn thư';
+  return '';
+}
+
+export function workCreatorLabel(document) {
+  const name = document?.creatorName || '—';
+  const role = workCreatorRoleLabel(document?.creatorRole);
+  return `Người tạo: ${name}${role ? ` (${role})` : ''}`;
 }
 
 export function formatWorkDate(value) {
@@ -58,6 +104,56 @@ export function assignmentsFromDocument(document) {
     }];
   });
 }
+
+/**
+ * Mirrors `isSelfOnlyWorkAssignment` (convex/workDocumentPolicy.ts): every
+ * assignment row is individual and holds only the creator. A văn thư document
+ * assigned only to its creator is released without Ban giám hiệu approval.
+ */
+export function isSelfOnlyWorkAssignment(assignments, creatorId) {
+  const creator = String(creatorId || '').trim();
+  const rows = assignments || [];
+  if (!creator || !rows.length) return false;
+  return rows.every((row) => {
+    if (row?.type !== 'individual') return false;
+    const userIds = (row.userIds || []).map((id) => String(id).trim()).filter(Boolean);
+    return userIds.length > 0 && userIds.every((id) => id === creator);
+  });
+}
+
+/** Client mirror of `workDocumentNeedsApproval`; the server re-decides on save. */
+export function workFormRequiresApproval({ followsApprovalFlow, assignments, creatorId }) {
+  return Boolean(followsApprovalFlow) && !isSelfOnlyWorkAssignment(assignments, creatorId);
+}
+
+/**
+ * Client mirror of `workEditNeedsApproval` (convex/workDocumentPolicy.ts).
+ * An admin edit of an approved/released document (`editRequiresReapproval`)
+ * goes back to Ban giám hiệu unless the editing admin is the only assignee;
+ * other edits follow the creator-based rule. The server re-decides on save.
+ */
+export function workEditFormRequiresApproval({ document, assignments, editorId }) {
+  if (document?.editRequiresReapproval) return !isSelfOnlyWorkAssignment(assignments, editorId);
+  return workFormRequiresApproval({
+    followsApprovalFlow: document?.approvalFlow ?? document?.requiresApproval,
+    assignments,
+    creatorId: document?.createdBy,
+  });
+}
+
+/** "Đã chỉnh sửa bởi {Họ tên} lúc HH:mm dd/MM/yyyy" (Vietnam time); empty when never edited. */
+export function workLastEditedLabel(item) {
+  const name = String(item?.lastEditedByName || '').trim();
+  const at = Number(item?.lastEditedAt);
+  if (!name || !Number.isFinite(at) || at <= 0) return '';
+  const [date, time] = formatWorkDateTime(at).split(' ');
+  return `Đã chỉnh sửa bởi ${name} lúc ${time} ${date}`;
+}
+
+/** Read-only note when an assignee already submitted (server: `hasSubmissions`). */
+export const WORK_HAS_SUBMISSIONS_NOTE = 'Đã có người nộp kết quả — công việc chỉ xem.';
+
+export const WORK_REAPPROVAL_WARNING = 'Công việc đã được duyệt. Sau khi lưu, công việc sẽ phải gửi Ban giám hiệu duyệt lại và tạm ẩn với người được giao.';
 
 export function workAssignmentPayload(assignments) {
   return (assignments || []).map((item) => (

@@ -1,5 +1,28 @@
 import Foundation
 
+enum MenuAccess: String, Equatable, Sendable {
+    case hidden
+    case view
+    case viewAll = "view_all"
+    case supervisor
+
+    static func decode(_ value: Any?) -> MenuAccess {
+        guard let raw = value as? String else { return .hidden }
+        if raw == "edit" { return .view }
+        return MenuAccess(rawValue: raw) ?? .hidden
+    }
+
+    /// Mirrors `effectiveMenuAccessLevel` (convex/menuAccess.ts): Giám thị (`supervisor`) is valid only on
+    /// the `attendance` menu, and that menu accepts only `hidden` or `supervisor`. Anything else is hidden.
+    static func decode(_ value: Any?, menu: String) -> MenuAccess {
+        let access = decode(value)
+        if menu == attendanceMenu { return access == .supervisor ? .supervisor : .hidden }
+        return access == .supervisor ? .hidden : access
+    }
+
+    static let attendanceMenu = "attendance"
+}
+
 struct UserSession: Equatable, Sendable {
     let userId: String
     let email: String
@@ -12,10 +35,27 @@ struct UserSession: Equatable, Sendable {
     let positionLevel: Int?
     let hasAvatar: Bool
     let avatarVersion: String?
+    let menuAccess: [String: MenuAccess]
 
     var isOperationalManager: Bool {
         role == "admin" || role == "moderator"
     }
+
+    /// Active account without a pending mandatory password change.
+    var canWork: Bool { status == "active" && !mustChangePassword }
+
+    var homeroomAccess: MenuAccess { menuAccess["homeroom"] ?? .hidden }
+    var canSeeHomeroom: Bool {
+        canWork && (isOperationalManager || homeroomAccess != .hidden)
+    }
+
+    /// Điểm danh menu: Giám thị (`attendance` = `supervisor`) or admin/mod. The backend re-checks every call.
+    var attendanceAccess: MenuAccess { menuAccess[MenuAccess.attendanceMenu] ?? .hidden }
+    var isAttendanceSupervisor: Bool { !isOperationalManager && attendanceAccess == .supervisor }
+    var canSeeAttendance: Bool { canWork && (isOperationalManager || attendanceAccess == .supervisor) }
+
+    /// Web WorkHub `workHidden`: ordinary users whose `work` menu is hidden see only "Việc của tôi".
+    var isWorkMenuHidden: Bool { !isOperationalManager && (menuAccess["work"] ?? .hidden) == .hidden }
 
     var roleLabel: String {
         switch role {
@@ -32,6 +72,10 @@ extension UserSession {
         let department = result["department"] as? [String: Any]
         let position = result["position"] as? [String: Any]
         let email = (user["email"] as? String) ?? ""
+        let rawMenuAccess = result["menuAccess"] as? [String: Any] ?? [:]
+        let menuAccess = rawMenuAccess.reduce(into: [String: MenuAccess]()) { result, entry in
+            result[entry.key] = MenuAccess.decode(entry.value, menu: entry.key)
+        }
         let rawName = (user["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.init(
             userId: (user["_id"] as? String) ?? "",
@@ -44,7 +88,8 @@ extension UserSession {
             positionName: position?["name"] as? String,
             positionLevel: position?["level"] as? Int,
             hasAvatar: (user["hasAvatar"] as? Bool) ?? false,
-            avatarVersion: user["avatarVersion"] as? String
+            avatarVersion: user["avatarVersion"] as? String,
+            menuAccess: menuAccess
         )
     }
 }
@@ -52,6 +97,8 @@ extension UserSession {
 enum AuthState: Equatable, Sendable {
     case loading
     case signedOut
+    /// Saved sign-in kept, but the server could not be reached at start: "Không có kết nối" + Thử lại.
+    case offline
     case signedIn(UserSession)
     case mustChangePassword(UserSession)
 

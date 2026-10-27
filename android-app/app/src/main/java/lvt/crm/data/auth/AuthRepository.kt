@@ -16,6 +16,13 @@ import org.json.JSONObject
 interface SignInGateway {
     suspend fun signIn(email: String, password: String): Result<UserSession>
     suspend fun requestPasswordReset(email: String): Result<Unit>
+
+    /**
+     * Sign in with another `auth:signIn` provider (`device-key`, `passkey`). Runs exactly the same
+     * post-token steps as the password sign-in.
+     */
+    suspend fun signInWithProvider(provider: String, params: JSONObject): Result<UserSession> =
+        Result.failure(UnsupportedOperationException("SIGN_IN_PROVIDER_UNSUPPORTED"))
 }
 
 class AuthRepository(
@@ -65,12 +72,20 @@ class AuthRepository(
                         authGeneration.get() == generation &&
                         tokenStore.snapshot() == credentials
                     ) {
-                        // Leave the loading state so the user can retry login.
-                        _state.value = AuthState.SignedOut
+                        // Network trouble: keep the saved sign-in; the app shows "Không có kết nối".
+                        // Any other failure keeps the former behaviour (sign-in screen, tokens kept).
+                        _state.value = if (isConnectivityFailure(e)) AuthState.Offline else AuthState.SignedOut
                     }
                 }
             }
         }
+    }
+
+    /** "Thử lại" on the Không có kết nối screen, or the network came back. */
+    suspend fun retryRestore() {
+        if (_state.value != AuthState.Offline) return
+        _state.value = AuthState.Loading
+        restoreSession()
     }
 
     override suspend fun signIn(email: String, password: String): Result<UserSession> {
@@ -78,6 +93,27 @@ class AuthRepository(
         if (normalized.isEmpty() || password.isEmpty()) {
             return Result.failure(IllegalArgumentException("EMAIL_PASSWORD_REQUIRED"))
         }
+        return completeSignIn(
+            "password",
+            JSONObject()
+                .put("email", normalized)
+                .put("password", password)
+                .put("flow", "signIn"),
+        )
+    }
+
+    override suspend fun signInWithProvider(provider: String, params: JSONObject): Result<UserSession> {
+        if (provider !in QUICK_SIGN_IN_PROVIDERS) {
+            return Result.failure(IllegalArgumentException("SIGN_IN_PROVIDER_UNSUPPORTED"))
+        }
+        return completeSignIn(provider, params)
+    }
+
+    /**
+     * Shared by every sign-in provider: `auth:signIn` → save tokens (generation/revision guarded) →
+     * `users:sessionContext` → publish (mustChangePassword gate) → register the device session.
+     */
+    private suspend fun completeSignIn(provider: String, params: JSONObject): Result<UserSession> {
         val (previousCredentials, previousState, generation, credentialRevision) =
             synchronized(credentialTransitionLock) {
                 val credentials = tokenStore.snapshot()
@@ -93,14 +129,8 @@ class AuthRepository(
         var issuedCredentials: CredentialSnapshot? = null
         return try {
             val args = JSONObject()
-                .put("provider", "password")
-                .put(
-                    "params",
-                    JSONObject()
-                        .put("email", normalized)
-                        .put("password", password)
-                        .put("flow", "signIn"),
-                )
+                .put("provider", provider)
+                .put("params", params)
             val result = convex.action("auth:signIn", args, authenticated = false)
             val tokens = result.optJSONObject("tokens")
                 ?: throw ConvexException("NO_TOKENS", "Đăng nhập không trả về token.")
@@ -272,21 +302,7 @@ class AuthRepository(
 
     private suspend fun fetchSession(): UserSession? {
         val result = convex.query("users:sessionContext")
-        val user = result.optJSONObject("user") ?: return null
-        if (user.length() == 0) return null
-        return UserSession(
-            userId = user.optString("_id"),
-            email = user.optString("email"),
-            name = user.optString("name").ifBlank { user.optString("email") },
-            role = user.optString("role", "user"),
-            status = user.optString("status", "active"),
-            mustChangePassword = user.optBoolean("mustChangePassword", false),
-            departmentName = result.optJSONObject("department")?.optString("name"),
-            positionName = result.optJSONObject("position")?.optString("name"),
-            positionLevel = result.optJSONObject("position")?.optInt("level"),
-            hasAvatar = user.optBoolean("hasAvatar", false),
-            avatarVersion = user.optString("avatarVersion").takeIf { it.isNotBlank() },
-        )
+        return decodeUserSession(result)
     }
 
     private fun ConvexException.invalidatesCredentials(): Boolean =
@@ -327,6 +343,10 @@ class AuthRepository(
     private fun CredentialSnapshot.hasSameTokens(other: CredentialSnapshot): Boolean =
         accessToken == other.accessToken && refreshToken == other.refreshToken
 
+    companion object {
+        val QUICK_SIGN_IN_PROVIDERS = setOf("device-key", "passkey")
+    }
+
     private data class SignInAttempt(
         val previousCredentials: CredentialSnapshot?,
         val previousState: AuthState,
@@ -334,3 +354,7 @@ class AuthRepository(
         val credentialRevision: Long,
     )
 }
+
+/** No network, the server unreachable or not answering: never a reason to sign out. */
+internal fun isConnectivityFailure(error: Throwable): Boolean =
+    error is java.io.IOException || (error is ConvexException && error.code.startsWith("HTTP_"))

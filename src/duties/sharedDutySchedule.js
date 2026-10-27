@@ -31,16 +31,24 @@ export function startOfWeekMonday(date) {
   return addDays(new Date(date.getFullYear(), date.getMonth(), date.getDate()), day === 0 ? -6 : 1 - day);
 }
 
+/** dd/MM (DESIGN.md §5: dates show as dd/mm/yyyy). */
 export function formatVnDayMonth(isoDate) {
   const [, month, day] = String(isoDate || '').split('-');
   if (!month || !day) return '';
-  return `${day}/${Number(month)}`;
+  return `${day}/${month}`;
 }
 
+/** dd/MM/yyyy. */
 export function formatVnDate(isoDate) {
   const [year, month, day] = String(isoDate || '').split('-');
   if (!year || !month || !day) return '';
-  return `${day}/${Number(month)}/${year}`;
+  return `${day}/${month}/${year}`;
+}
+
+/** "07/09/2026" or "07/09/2026 → 09/09/2026" for a duty's date span. */
+export function formatVnDateSpan(startIso, endIso) {
+  if (!endIso || endIso === startIso) return formatVnDate(startIso);
+  return `${formatVnDate(startIso)} → ${formatVnDate(endIso)}`;
 }
 
 export function formatDayCell(isoDate) {
@@ -100,6 +108,12 @@ export function scheduleRange(mode, anchorIso) {
     endIso,
     title: `LỊCH CÔNG TÁC TỪ NGÀY ${formatVnDate(startIso)} ĐẾN ${formatVnDate(endIso)}`,
   };
+}
+
+/** Period heading above a week sheet: same Mon–Sat range as the sheet title, dd/MM/yyyy. */
+export function weekPeriodHeading(anchorIso) {
+  const range = scheduleRange('week', anchorIso);
+  return `${formatVnDate(range.startIso)} – ${formatVnDate(range.endIso)}`;
 }
 
 export function datesInSchedule(range) {
@@ -184,8 +198,10 @@ export function buildSharedScheduleRows(mode, anchorIso, events) {
         rowSpan: 1,
         eventId: null,
         canManage: false,
+        canReviewerEdit: false,
         canChat: false,
         edited: false,
+        approvalChange: null,
       });
       continue;
     }
@@ -201,8 +217,10 @@ export function buildSharedScheduleRows(mode, anchorIso, events) {
         rowSpan: index === 0 ? list.length : 0,
         eventId: event._id || null,
         canManage: Boolean(event.canManage),
+        canReviewerEdit: Boolean(event.canReviewerEdit),
         canChat: event.canChat !== false,
         edited: isEditedDuty(event),
+        approvalChange: event.approvalChange || null,
       });
     });
   }
@@ -210,12 +228,52 @@ export function buildSharedScheduleRows(mode, anchorIso, events) {
   return { range, rows };
 }
 
+/** Manager/creator edit unless only the BGH direct-edit right applies. */
+export function dutyEditModeFor(duty) {
+  if (duty?.canManage) return 'manager';
+  if (duty?.canReviewerEdit) return 'reviewer';
+  return null;
+}
+
+/**
+ * Delete from the sheet editor: only the manager editor (văn thư / admin / the
+ * creator, mirrored from `canMutateDuty` on the server). The BGH reviewer edit
+ * never deletes. `duties.remove` re-checks authorization server-side.
+ */
+export function canDeleteDutyFromEditor(duty, mode) {
+  return mode === 'manager' && duty?.canManage === true && duty?.active !== false;
+}
+
+/** Văn thư/creator edit, or BGH direct edit of a school row. */
 export function canOpenDutyContentEditor(row) {
-  return Boolean(row?.eventId) && row?.canManage === true;
+  return Boolean(row?.eventId) && (row?.canManage === true || row?.canReviewerEdit === true);
+}
+
+export const SHARED_SCHEDULE_DRAFT_MARK = 'BẢN NHÁP – CHƯA DUYỆT';
+
+/**
+ * True when the sheet shows the managers' working copy and something in it is
+ * not approved yet (văn thư / admin / BGH). Teachers ("public") only ever get
+ * the approved copy, so their sheet and PDF are never marked.
+ */
+export function sharedScheduleIsDraft(data) {
+  if (!data || !data.viewer || data.viewer === 'public') return false;
+  const pendingWeek = (data.weeks || []).some((week) => week.status && week.status !== 'approved' && week.status !== 'empty');
+  return pendingWeek || (data.events || []).some((event) => Boolean(event.approvalChange));
+}
+
+/** Payload for the official sheet / PDF (browser and server share it). */
+export function buildSharedSchedulePayload(mode, anchorIso, data) {
+  return { ...buildSharedScheduleRows(mode, anchorIso, data?.events || []), draft: sharedScheduleIsDraft(data) };
 }
 
 export function sharedScheduleFilename(range) {
-  const start = formatVnDayMonth(range.startIso).replace('/', '.');
-  const end = formatVnDayMonth(range.endIso).replace('/', '.');
+  // File name keeps the Word template's short form: "LCT tu 07.9-12.9.pdf".
+  const short = (iso) => {
+    const [, month, day] = String(iso || '').split('-');
+    return month && day ? `${day}.${Number(month)}` : '';
+  };
+  const start = short(range.startIso);
+  const end = short(range.endIso);
   return `LCT tu ${start}-${end}.pdf`;
 }

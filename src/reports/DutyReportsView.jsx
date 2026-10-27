@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { anyApi } from 'convex/server';
-import { DutyCreateToolbarActions } from '../duties/DutyBulkImport';
 import DutyListSummary from '../duties/DutyListSummary';
 import { DutyListEmpty, DutyListSearch, DutyListTabs } from '../duties/DutyListFilters';
 import {
@@ -11,7 +10,8 @@ import {
   filterDutiesByTab,
   tabForDuty,
 } from '../duties/dutyDisplay';
-import DutyEditModal from '../duties/DutyEditModal';
+import DutyEditModal, { dutyEditModeFor } from '../duties/DutyEditModal';
+import DutyChangeHistory from '../duties/DutyChangeHistory';
 import DutyScheduleTable from '../duties/DutyScheduleTable';
 import { DutyChatButton, DutyChatModal } from '../duties/DutyChatButton';
 import {
@@ -23,6 +23,8 @@ import {
 import {
   buildSharedScheduleRows,
   toIsoDate as toSharedIsoDate,
+  formatVnDateSpan,
+  weekPeriodHeading,
 } from '../duties/sharedDutySchedule.js';
 import { dutyListDateWindow } from '../duties/dutyListRange.js';
 import { refreshCachedDutyCalendar } from '../duties/dutyScheduleCache.js';
@@ -90,15 +92,11 @@ function viewRange(mode, anchor) {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();
   if (mode === 'week') {
-    const start = startOfWeek(anchor);
-    const end = endOfWeek(anchor);
-    const sameMonth = start.getMonth() === end.getMonth();
+    // Data window stays Mon–Sun; the heading matches the Mon–Sat duty sheet title.
     return {
-      start,
-      end,
-      title: sameMonth
-        ? `${start.getDate()}–${end.getDate()} tháng ${end.getMonth() + 1}, ${end.getFullYear()}`
-        : `${start.getDate()}/${start.getMonth() + 1}–${end.getDate()}/${end.getMonth() + 1}, ${end.getFullYear()}`,
+      start: startOfWeek(anchor),
+      end: endOfWeek(anchor),
+      title: weekPeriodHeading(toSharedIsoDate(anchor)),
     };
   }
   if (mode === 'month') {
@@ -228,16 +226,19 @@ function EventDetail({
         </span>
       ) : null}
       <h3>{event.title || event.content}</h3>
+      {event.awaitingApproval ? (
+        <p className="report-detail-approval">Chưa được Ban Giám hiệu duyệt. Giáo viên chưa thấy thay đổi này.</p>
+      ) : null}
       <dl>
         <div><dt>Nhân sự</dt><dd>{personName}</dd></div>
         <div><dt>Thời gian</dt><dd>{eventTime(event)}</dd></div>
-        <div><dt>Ngày</dt><dd>{event.startDate === event.endDate ? event.startDate : `${event.startDate} → ${event.endDate}`}</dd></div>
+        <div><dt>Ngày</dt><dd>{formatVnDateSpan(event.startDate, event.endDate)}</dd></div>
         <div><dt>Địa điểm</dt><dd>{event.locationNames?.length ? event.locationNames.join(', ') : 'Chưa chỉ định'}</dd></div>
         {event.content ? (
           <div>
             <dt>Nội dung</dt>
             <dd>
-              {event.canManage && onEdit ? (
+              {(event.canManage || event.canReviewerEdit) && onEdit ? (
                 <button
                   type="button"
                   className="report-content-edit"
@@ -327,10 +328,10 @@ function EventDetail({
       ) : null}
       <div className="report-detail-actions">
         <DutyChatButton dutyId={event._id} title={event.title || event.content} />
-        {event.canManage && onEdit ? (
+        {(event.canManage || event.canReviewerEdit) && onEdit ? (
           <CardIconButton
             className="work-edit-button"
-            title="Sửa"
+            title={event.canManage ? 'Sửa' : 'Sửa (Ban Giám hiệu)'}
             disabled={Boolean(pending)}
             onClick={() => onEdit(event)}
           >
@@ -348,6 +349,7 @@ function EventDetail({
           </CardIconButton>
         ) : null}
       </div>
+      {event.canViewHistory ? <DutyChangeHistory key={event._id} dutyId={event._id} /> : null}
     </aside>
   );
 }
@@ -362,8 +364,6 @@ export default function DutyReportsView(props) {
 
 function DutyReportsViewBody({
   currentUserId = '',
-  onCreate = null,
-  onImport = null,
   onEdit = null,
   focusDutyId = null,
   openChat = false,
@@ -492,7 +492,7 @@ function DutyReportsViewBody({
     [mode, anchor, events],
   );
   const openDutyEditor = (event) => {
-    if (!event?.canManage) return;
+    if (!dutyEditModeFor(event)) return;
     setEditingEvent(event);
   };
   const deleteDuty = (event) => {
@@ -602,9 +602,6 @@ function DutyReportsViewBody({
                 <h3>{mode === 'list' ? 'Danh sách' : calendarRange.title}</h3>
               </div>
               <div className="report-toolbar-actions">
-                {data.canCreate && onCreate && onImport ? (
-                  <DutyCreateToolbarActions onCreate={onCreate} onImport={onImport} />
-                ) : null}
                 {mode !== 'list' ? (
                   <div className="report-period-nav">
                     <button type="button" onClick={() => movePeriod(-1)} aria-label="Kỳ trước">‹</button>
@@ -669,6 +666,16 @@ function DutyReportsViewBody({
                         </PersonalReminderLayout>
                         <div className="row-actions duty-actions">
                           <DutyChatButton dutyId={event._id} title={event.title || event.content} />
+                          {!event.canManage && event.canReviewerEdit ? (
+                            <CardIconButton
+                              className="work-edit-button"
+                              title="Sửa (Ban Giám hiệu)"
+                              disabled={Boolean(pending)}
+                              onClick={() => openDutyEditor(event)}
+                            >
+                              <PencilIcon />
+                            </CardIconButton>
+                          ) : null}
                           {event.canManage ? (
                             <>
                               <CardIconButton
@@ -753,7 +760,11 @@ function DutyReportsViewBody({
             onClose={() => setSelectedEvent(null)}
           />
           {editingEvent ? (
-            <DutyEditModal duty={editingEvent} onClose={() => setEditingEvent(null)} />
+            <DutyEditModal
+              duty={editingEvent}
+              mode={dutyEditModeFor(editingEvent) || 'manager'}
+              onClose={() => setEditingEvent(null)}
+            />
           ) : null}
         </div>
       )}

@@ -161,7 +161,7 @@ export default function WorkAssignmentRows({
                       options={userOptions}
                       value={row.userIds?.[0] || ''}
                       onChange={(nextId) => updateRow(index, { userIds: nextId ? [nextId] : [] })}
-                      getLabel={(user) => `${user.name}${user.departmentName ? ` · ${user.departmentName}` : ''}`}
+                      getLabel={(user) => `${user.name}${user.isSelf ? ' (bạn)' : ''}${user.departmentName ? ` · ${user.departmentName}` : ''}`}
                       placeholder="Chọn người nhận"
                       searchPlaceholder="Tìm theo tên, email…"
                     />
@@ -220,7 +220,7 @@ export default function WorkAssignmentRows({
           <span>⌁</span>
           <p>
             {showDepartments
-              ? 'Bấm ＋ Phòng ban hoặc ＋ Cá nhân để thêm row nhận việc.'
+              ? 'Bấm ＋ Phòng ban hoặc ＋ Cá nhân để thêm người hoặc phòng ban nhận việc.'
               : 'Bấm ＋ Cá nhân để thêm người nhận việc.'}
           </p>
         </div>

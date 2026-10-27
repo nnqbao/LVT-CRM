@@ -7,23 +7,73 @@ const MENU_PATHS = Object.freeze({
   chat: '/trao-doi',
   work: '/cong-viec',
   homeroom: '/lop-chu-nhiem',
+  attendance: '/diem-danh',
   'people-review': '/danh-gia-nhan-su',
   'staff-faults': '/ghi-nhan-loi',
   profile: '/thong-tin-ca-nhan',
   'change-password': '/doi-mat-khau',
   devices: '/quan-ly-thiet-bi-dang-nhap',
   'duties-management': '/quan-ly-cong-tac',
-  boarding: '/quan-ly-ban-tru',
+  boarding: '/ban-tru',
   'work-management': '/quan-ly-cong-viec',
   users: '/thiet-lap-nguoi-dung',
   departments: '/thiet-lap-phong-ban',
-  locations: '/thiet-lap-dia-diem',
   roles: '/thiet-lap-nhom-quyen',
   positions: '/thiet-lap-chuc-vu',
   'document-types': '/thiet-lap-loai-van-ban',
   'school-years': '/thiet-lap-nam-hoc',
+  teachers: '/thiet-lap-giao-vien',
+  timetable: '/thiet-lap-lich-day',
+  subjects: '/thiet-lap-mon-hoc',
+  'test-types': '/thiet-lap-loai-kiem-tra',
   'display-settings': '/thiet-lap-hien-thi',
+  'design-library': '/thu-vien-giao-dien',
 });
+
+/** Left-sidebar "Chức năng chính" in display order. */
+const PRIMARY_MENUS = Object.freeze([
+  ['reports', 'Báo cáo'],
+  ['notifications', 'Thông báo'],
+  ['chat', 'Trao đổi'],
+  ['duties', 'Lịch công tác'],
+  ['work', 'Công việc'],
+  ['homeroom', 'Lớp học'],
+  ['attendance', 'Điểm danh'],
+  ['boarding', 'Bán trú'],
+  ['people-review', 'Đánh giá nhân sự'],
+  ['staff-faults', 'Ghi nhận lỗi'],
+]);
+
+/** "Thiết lập tối cao" (Administrator only). */
+const SUPREME_SETTINGS = Object.freeze([
+  ['users', 'Thiết lập người dùng'],
+  ['departments', 'Thiết lập phòng ban'],
+  ['roles', 'Thiết lập nhóm quyền'],
+  ['positions', 'Thiết lập chức vụ'],
+  ['document-types', 'Thiết lập loại văn bản'],
+  ['school-years', 'Thiết lập năm học'],
+  ['teachers', 'Thiết lập giáo viên'],
+  ['timetable', 'Thiết lập lịch dạy'],
+  ['subjects', 'Thiết lập môn học'],
+  ['test-types', 'Thiết lập loại kiểm tra'],
+  ['display-settings', 'Thiết lập hiển thị'],
+  ['design-library', 'Thư viện giao diện'],
+]);
+
+/**
+ * Sidebar visibility (UX only; every Convex query re-checks on the server).
+ * - Trao đổi and Công việc ("Việc của tôi") are open to every active account.
+ * - Bán trú has its own matrix row (`boarding`); groups saved before it existed
+ *   inherit their Báo cáo level on the server (convex/lib.ts resolveUserMenuAccess).
+ * @param {string} menuId
+ * @param {{ canManageOperations?: boolean, menuAccess?: Record<string, string> | null }} [options]
+ */
+export function isPrimaryMenuVisible(menuId, { canManageOperations = false, menuAccess = {} } = {}) {
+  if (canManageOperations) return true;
+  if (menuId === 'chat' || menuId === 'work') return true;
+  const level = menuAccess?.[menuId];
+  return Boolean(level) && level !== 'hidden';
+}
 
 const REPORT_PATHS = Object.freeze({
   work: '/bao-cao/cong-viec',
@@ -60,9 +110,9 @@ export function titleForAccountMenu(menuId) {
 const HIDDEN_MENU_ALIASES = Object.freeze({
   '/quan-ly-cong-tac': { menu: 'duties' },
   '/quan-ly-cong-viec': { menu: 'work' },
-  '/quan-ly-ban-tru': { menu: 'reports', reportSection: 'work' },
-  '/bao-cao/ban-tru': { menu: 'reports', reportSection: 'work' },
+  '/quan-ly-ban-tru': { menu: 'boarding' },
   '/bao-cao/cong-tac': { menu: 'duties', dutyPath: '/cong-tac/chung' },
+  // Thiết lập địa điểm was removed: duty locations are free text now.
   '/thiet-lap-dia-diem': { menu: 'departments' },
   '/ho-so-noi-bo': { menu: 'profile' },
 });
@@ -81,11 +131,37 @@ function normalizePathname(pathname) {
   return `/${raw.replace(/^\/+|\/+$/g, '')}`;
 }
 
+/** Settings pages with their own sub-pages (/thiet-lap-giao-vien/..., /thiet-lap-lich-day/...). */
+const SETTINGS_WITH_SUBROUTES = Object.freeze(['teachers', 'timetable']);
+
+export function settingsSubPathname(menu, ...parts) {
+  const base = MENU_PATHS[menu];
+  const rest = parts.filter(Boolean).map((part) => encodeURIComponent(part));
+  return rest.length ? `${base}/${rest.join('/')}` : base;
+}
+
+/** Path segments after the settings base path (decoded). */
+export function settingsSubPath(menu, pathname) {
+  const base = MENU_PATHS[menu];
+  const normalized = normalizePathname(pathname);
+  if (!base || (normalized !== base && !normalized.startsWith(`${base}/`))) return [];
+  return normalized.slice(base.length).split('/').filter(Boolean).map((part) => decodeURIComponent(part));
+}
+
+/** Lớp học tabs: /lop-chu-nhiem/{tab}. Path keeps the old prefix so existing links keep working. */
+export const HOMEROOM_TABS = Object.freeze({
+  homeroom: 'chu-nhiem',
+  teaching: 'giang-day',
+  schedule: 'lich-day',
+  gradebook: 'hoc-ba',
+});
+
 export function homeroomPathname(args = {}) {
+  if (args.gradebookStudentId) return `/lop-chu-nhiem/hoc-ba/hoc-sinh/${encodeURIComponent(args.gradebookStudentId)}`;
+  if (args.gradebookClassId) return `/lop-chu-nhiem/hoc-ba/lop/${encodeURIComponent(args.gradebookClassId)}`;
+  if (args.section && HOMEROOM_TABS[args.section]) return `/lop-chu-nhiem/${HOMEROOM_TABS[args.section]}`;
   if (args.studentId) return `/lop-chu-nhiem/hoc-sinh/${encodeURIComponent(args.studentId)}`;
   if (args.manageClasses) return '/lop-chu-nhiem/quan-ly-lop';
-  if (args.pendingAbsences) return '/lop-chu-nhiem/vang-cho-xu-ly';
-  if (args.importAttendance) return '/lop-chu-nhiem/nhap-diem-danh';
   if (args.classId && args.tab) {
     return `/lop-chu-nhiem/lop/${encodeURIComponent(args.classId)}/${args.tab}`;
   }
@@ -146,6 +222,9 @@ export function routeForPathname(pathname) {
       dutyPath: parsed?.dutyPath || DUTY_MENU_PATH,
     };
   }
+  for (const menu of SETTINGS_WITH_SUBROUTES) {
+    if (normalized.startsWith(`${MENU_PATHS[menu]}/`)) return { menu, reportSection: undefined };
+  }
   const alias = HIDDEN_MENU_ALIASES[normalized];
   if (alias) {
     return {
@@ -168,7 +247,68 @@ export function pathnameForReportSection(reportSection) {
   return REPORT_PATHS[reportSection] || REPORT_PATHS.work;
 }
 
+// ---------------------------------------------------------------- in-app guide
+
+/** Static guide built by `npm run guide:build` (public/huong-dan-su-dung.html). */
+export const GUIDE_PATH = '/huong-dan-su-dung.html';
+
+/**
+ * Menu id -> topic id in docs/guide/outline.json, shown by the "?" button.
+ * tests/page-help.test.mjs checks every sidebar, settings and account page.
+ */
+const GUIDE_ANCHORS = Object.freeze({
+  reports: 'menu-bao-cao',
+  notifications: 'tb-thong-bao',
+  chat: 'td-trao-doi',
+  duties: 'menu-lich-cong-tac',
+  work: 'menu-cong-viec',
+  homeroom: 'menu-lop-chu-nhiem',
+  attendance: 'menu-diem-danh',
+  boarding: 'bt-ban-tru',
+  'people-review': 'menu-danh-gia-nhan-su',
+  'staff-faults': 'ln-ghi-nhan-loi',
+  profile: 'tai-khoan-ca-nhan',
+  settings: 'tai-khoan-ca-nhan',
+  'change-password': 'doi-mat-khau',
+  devices: 'thiet-bi-dang-nhap',
+  users: 'tl-nguoi-dung',
+  departments: 'tl-phong-ban',
+  roles: 'tl-nhom-quyen',
+  positions: 'tl-chuc-vu',
+  'document-types': 'tl-loai-van-ban',
+  'school-years': 'nh-thiet-lap-nam-hoc',
+  teachers: 'tl-giao-vien',
+  timetable: 'tl-lich-day',
+  subjects: 'tl-mon-hoc',
+  'test-types': 'tl-loai-kiem-tra',
+  'display-settings': 'tl-hien-thi',
+  'design-library': 'menu-thiet-lap',
+});
+
+export function guideAnchorForMenu(menuId) {
+  return GUIDE_ANCHORS[menuId] || '';
+}
+
+/** Compact guide (no hero, sidebar or search) showing only that topic. */
+export function guideEmbedUrl(anchor) {
+  return `${GUIDE_PATH}?embed=1${anchor ? `#${anchor}` : ''}`;
+}
+
+export function guideFullUrl(anchor) {
+  return `${GUIDE_PATH}${anchor ? `#${anchor}` : ''}`;
+}
+
+/** Plain menu name for labels ("Hướng dẫn: Bán trú"). */
+export function menuLabel(menuId) {
+  if (menuId === 'settings') return ACCOUNT_MENU_TITLES.profile;
+  if (isAccountMenu(menuId)) return titleForAccountMenu(menuId);
+  return [...PRIMARY_MENUS, ...SUPREME_SETTINGS].find(([id]) => id === menuId)?.[1] || '';
+}
+
 export {
+  GUIDE_ANCHORS,
+  PRIMARY_MENUS,
+  SUPREME_SETTINGS,
   ACCOUNT_MENU_IDS,
   ACCOUNT_MENU_TITLES,
   MENU_PATHS,

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { anyApi } from 'convex/server';
 import './boarding.css';
+import { boardingPeriodLabel } from './boardingLabels.js';
 
 function schoolYearOptions() {
   const now = new Date();
@@ -70,8 +71,13 @@ function TeacherPicker({ users, selectedIds, onComplete, onClose }) {
             placeholder="Tìm theo tên, email, phòng ban…"
           />
           <div>
-            <button type="button" onClick={() => setDraftIds(users.map((user) => user._id))}>Chọn tất cả</button>
-            <button type="button" onClick={() => setDraftIds([])}>Bỏ chọn</button>
+            {/* With a search, both act on the people shown only and keep the other selections. */}
+            <button type="button" onClick={() => setDraftIds([...new Set([...draftIds, ...filteredUsers.map((user) => user._id)])])}>
+              {search.trim() ? `Chọn ${filteredUsers.length} người đang hiện` : 'Chọn tất cả'}
+            </button>
+            <button type="button" onClick={() => setDraftIds(search.trim() ? draftIds.filter((id) => !filteredUsers.some((user) => user._id === id)) : [])}>
+              {search.trim() ? 'Bỏ chọn người đang hiện' : 'Bỏ chọn'}
+            </button>
           </div>
         </div>
         <div className="boarding-teacher-grid">
@@ -167,7 +173,7 @@ export default function BoardingManagement() {
   };
 
   const deletePeriod = async (period) => {
-    if (!window.confirm(`Xóa Học kỳ ${period.semester} · ${period.schoolYear}?`)) return;
+    if (!window.confirm(`Xóa ${boardingPeriodLabel(period)}?`)) return;
     setPending(`delete-${period._id}`);
     setFeedback({ type: '', text: '' });
     try {
@@ -291,7 +297,7 @@ export default function BoardingManagement() {
           <div className="boarding-period-grid">
             {data.periods.map((period) => (
               <article className="boarding-period-card" key={period._id}>
-                <div className="boarding-period-ribbon">HK {period.semester}</div>
+                <div className="boarding-period-ribbon">{boardingPeriodLabel(period, { short: true })}</div>
                 <span className="boarding-school-year">Năm học</span>
                 <h3>{period.schoolYear}</h3>
                 <div className="boarding-teacher-count">

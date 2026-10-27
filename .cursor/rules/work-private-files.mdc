@@ -10,17 +10,28 @@ Full text: `CLAUDE.md` sections **Work-document** / **Private file and cache** /
 
 ## Work documents
 
-- Creator may edit/delete until an assignee has submitted (nộp); admin/mod may always. Use `convex/workDocumentPolicy.ts`
-- Document approval is disabled (`WORK_APPROVAL_DISABLED`); work is live on create (`status: "approved"`)
+- Creator-based approval: admin/mod-created work needs ≥1 Ban giám hiệu approver (`WORK_APPROVER_REQUIRED`), stays `pending` until all approve; everyone else's work is released on create (`status: "approved"`)
+- Exception: admin/mod work assigned only to the creator (no other person, no department) is released with no approvers (`workDocumentNeedsApproval`)
+- Creators: admin/mod + any non-ops level ≥ 2 (`canCreateWorkDocuments`); BGH (4+) assigns any department / lower level, others same department / lower level
+- Released = `active && status === "approved"` (`isWorkReleased`); pending/returned work is hidden from assignees (list, chat, file, bell, push)
+- First approval locks edit/delete forever for moderators and every non-admin — do **not** lock only on `status === "approved"`; use `workDocumentEditPolicy` in `convex/workDocumentPolicy.ts`
+- Admin exception: `role === "admin"` may edit any active document (any creator/department, even approval-locked); editing an approved/released or approval-locked document (`editRequiresReapproval`) resets decisions, requires ≥1 BGH approver and returns it to `pending` (hidden from assignees) unless the admin is the only assignee. Admin edits skip `WORK_ASSIGNEE_OPS_FORBIDDEN` (not on create); BGH rule stays. Delete of approval-locked documents stays forbidden for admin too
+- Any submission (pending_approval / completed work item or personal task) makes the document read-only for everyone: `WORK_HAS_SUBMISSIONS` on update and delete; reviewing those submissions still works
+- Updates store `lastEditedBy`/`lastEditedAt`; payloads expose `canEdit`, `canDelete`, `editRequiresReapproval`, `hasSubmissions`, `lastEditedByName`, `lastEditedAt`
+- Reject (Trả lại, reason required) only while nobody has approved (`canRejectWorkDocument`); edit resets decisions and resubmits
+- Approvers = active level 4+ **users**, never admin/moderator
+- Admin/mod never assign work individually to Ban giám hiệu (level 4+): `WORK_ASSIGNEE_BGH_FORBIDDEN`; department assignments and duty participants unaffected
+- Admin/mod may assign themselves; other admin/mod only with the same non-empty department, else `WORK_ASSIGNEE_OPS_FORBIDDEN` (an admin editing is exempt)
+- Otherwise creator or in-scope admin/mod may edit/delete until an assignee has submitted (nộp)
 - Completions: assignee **Nộp** (web requires evidence file); only the **creator** marks complete / returns
 - Soft-delete first; inactive docs must deny access even if Drive cleanup lags
 - File replace is staged: publish DB only after new upload validates; never delete old Drive object before DB success
 
 ## Private files / cache
 
-- New uploads = private Drive; Convex keeps identity/checksum/metadata, not public links
-- Never return Drive or Convex Storage URLs to the browser; always `/api/files/:documentId` after auth
-- Legacy `fileId` uses the same gateway + 24-hour server cache as Drive
+- New uploads = private Convex File Storage (`cvx_<storageId>` in `driveFileId`) via gateway → Convex HTTP `/lvt-files/upload` (re-authorized, staged atomically); legacy Drive ids and `fileId` rows stay readable
+- Never return Drive or Convex Storage URLs to the browser; always `/api/files/:documentId` after auth (gateway reads `cvx_` bytes from `/lvt-files/object`, no `getUrl`)
+- Convex-stored files (`cvx_` + legacy `fileId`) are relayed in memory, never written to the gateway disk; only legacy Drive objects use the 24-hour disk cache
 - Authorize before serving shared cache or client local cache; metadata `private, no-store`
 - Version via SHA-256 `fileVersion` when possible; stale local content must not bypass auth/version failure
 - Purpose-scoped cleanup (`work` vs `people-review`); no cross-module auth fallback

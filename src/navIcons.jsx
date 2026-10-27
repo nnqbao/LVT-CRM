@@ -45,6 +45,20 @@ const NAV_ICONS = {
       <path d="M10 20.5v-5h4v5" />
     </NavGlyph>
   ),
+  attendance: () => (
+    <NavGlyph>
+      <rect x="5" y="4.5" width="14" height="16.5" rx="2" />
+      <path d="M9 3h6v3H9z" />
+      <path d="m8.8 13.2 2.2 2.2 4.4-4.6" />
+    </NavGlyph>
+  ),
+  boarding: () => (
+    <NavGlyph>
+      <path d="M3.5 12h17a8.5 8.5 0 0 1-17 0z" />
+      <path d="M9 20.5h6" />
+      <path d="M9 4.5c-.8 1 .8 2-.1 3.2M12.5 3.8c-.8 1 .8 2-.1 3.2M16 4.5c-.8 1 .8 2-.1 3.2" />
+    </NavGlyph>
+  ),
   'people-review': () => (
     <NavGlyph>
       <circle cx="9" cy="8.2" r="3" />
@@ -100,11 +114,44 @@ const NAV_ICONS = {
       <path d="m12 12.4.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2-1.45-1.4 2-.3z" />
     </NavGlyph>
   ),
+  teachers: () => (
+    <NavGlyph>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.5 19.5c.6-3.3 2.8-5.2 5.5-5.2s4.9 1.9 5.5 5.2" />
+      <path d="M14.5 5.5h6v6.5h-4" />
+    </NavGlyph>
+  ),
+  timetable: () => (
+    <NavGlyph>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+      <path d="M3.5 9.5h17M9.2 9.5v10M14.8 9.5v10M3.5 14.5h17" />
+    </NavGlyph>
+  ),
+  subjects: () => (
+    <NavGlyph>
+      <path d="M4.5 5.5c2.5-1 5-1 7.5.5v13c-2.5-1.5-5-1.5-7.5-.5z" />
+      <path d="M19.5 5.5c-2.5-1-5-1-7.5.5v13c2.5-1.5 5-1.5 7.5-.5z" />
+    </NavGlyph>
+  ),
+  'test-types': () => (
+    <NavGlyph>
+      <rect x="5" y="3.5" width="14" height="17" rx="2" />
+      <path d="M9 8.5h6M9 12h6M9 15.5h3" />
+    </NavGlyph>
+  ),
   'display-settings': () => (
     <NavGlyph>
       <path d="M4 8h16M4 16h16" />
       <circle cx="9" cy="8" r="2.1" />
       <circle cx="15" cy="16" r="2.1" />
+    </NavGlyph>
+  ),
+  'design-library': () => (
+    <NavGlyph>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <circle cx="17" cy="17" r="3.5" />
     </NavGlyph>
   ),
 };

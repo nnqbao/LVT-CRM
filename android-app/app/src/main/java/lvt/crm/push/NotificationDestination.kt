@@ -8,6 +8,8 @@ data class NotificationDestination(
     val sourceType: String,
     val sourceId: String,
     val notificationKey: String?,
+    /** Web menu of a kind `people` item (bell feed `menu`); empty when unknown. */
+    val menu: String = "",
 ) {
     val route: String
         get() = if (opensChat) "chat" else routeForKind(kind)
@@ -15,6 +17,20 @@ data class NotificationDestination(
     /** Bell items for Trao đổi open the chat hub. Other kinds still select their tab. */
     val opensChat: Boolean
         get() = opensChat(sourceType)
+
+    /** "Việc của tôi" reminders (kind `todo`, sourceType `todo_reminder`) open the todo list under Công việc. */
+    val opensTodos: Boolean
+        get() = !opensChat && isTodo(kind, sourceType)
+
+    /**
+     * Đánh giá nhân sự / Ghi nhận lỗi (kind `people`) have no app screen: they open that web page
+     * (the signed-in web session decides what is shown there).
+     */
+    val opensWeb: Boolean
+        get() = kind == "people"
+
+    val webPath: String
+        get() = peopleWebPath(menu, sourceType)
 
     val chatKind: String
         get() = when (sourceType) {
@@ -28,6 +44,7 @@ data class NotificationDestination(
         const val EXTRA_SOURCE_TYPE = "lvt.notification.source_type"
         const val EXTRA_SOURCE_ID = "lvt.notification.source_id"
         const val EXTRA_NOTIFICATION_KEY = "lvt.notification.key"
+        const val EXTRA_MENU = "lvt.notification.menu"
 
         fun fromIntent(intent: Intent?): NotificationDestination? {
             val data = intent?.data?.takeIf {
@@ -45,6 +62,8 @@ data class NotificationDestination(
                 sourceId = sourceId,
                 notificationKey = intent?.getStringExtra(EXTRA_NOTIFICATION_KEY)
                     ?: data?.getQueryParameter(QUERY_NOTIFICATION_KEY),
+                menu = intent?.getStringExtra(EXTRA_MENU)
+                    ?: data?.getQueryParameter(QUERY_MENU).orEmpty(),
             )
         }
 
@@ -59,11 +78,23 @@ data class NotificationDestination(
                     destination.notificationKey?.let {
                         appendQueryParameter(QUERY_NOTIFICATION_KEY, it)
                     }
+                    if (destination.menu.isNotBlank()) appendQueryParameter(QUERY_MENU, destination.menu)
                 }
                 .build()
 
+        /** Duty items open Lịch công tác; work items and todo reminders open the Công việc hub. */
         fun routeForKind(kind: String): String =
             if (kind == "duty") "duties" else "work"
+
+        fun isTodo(kind: String, sourceType: String): Boolean =
+            kind == "todo" || sourceType == "todo_reminder"
+
+        /** Web route of a `people` item: its feed `menu`, else Ghi nhận lỗi for a fault (mirrors web useNotificationFocus.js). */
+        fun peopleWebPath(menu: String, sourceType: String): String {
+            val target = menu.takeIf { it == "staff-faults" || it == "people-review" }
+                ?: if (sourceType == "staff_fault") "staff-faults" else "people-review"
+            return if (target == "staff-faults") "/ghi-nhan-loi" else "/danh-gia-nhan-su"
+        }
 
         fun opensChat(sourceType: String): Boolean =
             sourceType == "duty_chat" || sourceType == "work_chat" || sourceType == "group_chat"
@@ -74,5 +105,6 @@ data class NotificationDestination(
         private const val QUERY_SOURCE_TYPE = "sourceType"
         private const val QUERY_SOURCE_ID = "sourceId"
         private const val QUERY_NOTIFICATION_KEY = "key"
+        private const val QUERY_MENU = "menu"
     }
 }

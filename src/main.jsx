@@ -9,16 +9,37 @@ import './styles.css';
 import WorkReportsView from './reports/WorkReportsView';
 import DutyReportsView from './reports/DutyReportsView';
 import SharedDutyScheduleView from './duties/SharedDutyScheduleView';
+import { isDutyWeekNotification } from './duties/dutyWeekApproval.js';
 import DutyWorkspaceTabs from './duties/DutyWorkspaceTabs';
-import { WorkUserView } from './work/WorkViews';
+import WorkHub from './work/WorkHub';
 import DocumentTypeSettings from './settings/DocumentTypeSettings';
 import SchoolYearSettings from './settings/SchoolYearSettings';
+import TeacherSettings from './teaching/TeacherSettings';
+import TimetableSettings from './teaching/TimetableSettings';
+import { SubjectSettings, TestTypeSettings } from './teaching/CatalogSettings';
 import DisplaySettings from './settings/DisplaySettings';
+import DesignLibraryView from './settings/DesignLibraryView';
 import UserBulkImport from './settings/UserBulkImport';
 import './settings/userBulkImport.css';
 import NotificationsView from './notifications/NotificationsView';
-import { DUTY_NOTIFICATION_FOCUS_TYPES, menuForNotification, useNotificationFocus } from './notifications/useNotificationFocus';
-import { ACCOUNT_MENU_IDS, isAccountMenu, isSidebarPrimaryMenu, pathnameForMenu, pathnameForReportSection, routeForPathname, dutiesPathname, chatPathname, titleForAccountMenu } from './navigationRoutes';
+import { DUTY_NOTIFICATION_FOCUS_TYPES, menuForNotification, peopleNotificationLabel, useNotificationFocus } from './notifications/useNotificationFocus';
+import {
+  ACCOUNT_MENU_IDS,
+  PRIMARY_MENUS,
+  SUPREME_SETTINGS,
+  isAccountMenu,
+  isPrimaryMenuVisible,
+  isSidebarPrimaryMenu,
+  pathnameForMenu,
+  pathnameForReportSection,
+  routeForPathname,
+  dutiesPathname,
+  chatPathname,
+  titleForAccountMenu,
+} from './navigationRoutes';
+import PageHelpButton from './help/PageHelpButton.jsx';
+import BoardingPage from './boarding/BoardingPage.jsx';
+import BoardingReportsView from './boarding/BoardingReportsView.jsx';
 import { parseDutyPath } from './duties/dutyRoutes';
 import AccountDeletionPage from './privacy/AccountDeletionPage';
 import PrivacyPolicyPage from './privacy/PrivacyPolicyPage';
@@ -26,6 +47,7 @@ import { isPublicAccountDeletionPath, isPublicPrivacyPath } from './privacy/priv
 import PeopleReviewView from './peopleReview/PeopleReviewView';
 import StaffFaultsView from './peopleReview/StaffFaultsView';
 import HomeroomRouter from './homeroom/HomeroomRouter';
+import AttendancePage from './attendance/AttendancePage';
 import DevicesPanel from './profile/DevicesPanel';
 import { describeWebDevice } from './profile/deviceSession';
 import { convexErrorText, messageFor } from './lib/appErrorMessage';
@@ -38,6 +60,7 @@ import { ChatAutoOpenProvider } from './lib/chatAutoOpen.jsx';
 import './management/managementTheme.css';
 import './duties/duties.css';
 import DutyBulkImport from './duties/DutyBulkImport';
+import DutyChangeHistory from './duties/DutyChangeHistory';
 import DutyCreatePreview from './duties/DutyCreatePreview';
 import { EditActionConfirm } from './lib/ConfirmActionModal';
 import DutyEditorFields from './duties/DutyEditorFields';
@@ -56,6 +79,15 @@ import './settings/displaySettings.css';
 import './notifications/notifications.css';
 import { navIconFor } from './navIcons';
 import ChatHub from './chat/ChatHub';
+import {
+  appSignOutRequested,
+  installAppBridge,
+  isInApp,
+  markAppSignOut,
+  onAppMessage,
+  postToApp,
+  requestAppHandoff,
+} from './lib/appBridge';
 
 const configuredConvexUrl = import.meta.env.VITE_CONVEX_URL;
 const publicConvexUrl =
@@ -63,26 +95,9 @@ const publicConvexUrl =
   (window.location.hostname === 'lvt.vscgroup.io.vn' ? window.location.origin : null);
 const convex = publicConvexUrl ? new ConvexReactClient(publicConvexUrl) : null;
 
-const PRIMARY_MENUS = [
-  ['reports', 'Báo cáo'],
-  ['notifications', 'Thông báo'],
-  ['chat', 'Trao đổi'],
-  ['duties', 'Lịch công tác'],
-  ['work', 'Công việc'],
-  ['homeroom', 'Lớp chủ nhiệm'],
-  ['people-review', 'Đánh giá nhân sự'],
-  ['staff-faults', 'Ghi nhận lỗi'],
-];
 const SYSTEM_MANAGEMENT_MENUS = [];
-const SUPREME_SETTINGS = [
-  ['users', 'Thiết lập người dùng'],
-  ['departments', 'Thiết lập phòng ban'],
-  ['roles', 'Thiết lập nhóm quyền'],
-  ['positions', 'Thiết lập chức vụ'],
-  ['document-types', 'Thiết lập loại văn bản'],
-  ['school-years', 'Thiết lập năm học'],
-  ['display-settings', 'Thiết lập hiển thị'],
-];
+/** Menus stored in permission groups (Trao đổi has no matrix key; the backend list wins once loaded). */
+const MATRIX_MENUS = PRIMARY_MENUS.filter(([id]) => id !== 'chat');
 const ROLE_LABELS = { admin: 'Administrator', moderator: 'Moderator', user: 'User' };
 const ACCESS_LABELS = {
   hidden: 'Ẩn',
@@ -92,6 +107,11 @@ const ACCESS_LABELS = {
   edit: 'Xem',
 };
 const MATRIX_ACCESS_LEVELS = ['hidden', 'view', 'view_all', 'supervisor'];
+/** Giám thị chỉ có ở menu Điểm danh; menu Điểm danh chỉ có Ẩn / Giám thị (backend kiểm tra lại). */
+function isMatrixLevelAvailable(menuId, level) {
+  if (menuId === 'attendance') return level === 'hidden' || level === 'supervisor';
+  return level !== 'supervisor';
+}
 
 function signInMessageFor(error) {
   const raw = convexErrorText(error);
@@ -105,9 +125,11 @@ function AuthenticatedApp() {
   const session = useQuery(anyApi.users.sessionContext);
   const registerDevice = useMutation(anyApi.sessions.registerCurrent);
   const touchSession = useMutation(anyApi.sessions.touchCurrent);
+  const { signOut } = useAuthActions();
 
+  // In the app shell the app's own session is the phone's row in Thiết bị đăng nhập.
   useEffect(() => {
-    if (!session?.user || session.user.status !== 'active') return;
+    if (!session?.user || session.user.status !== 'active' || isInApp()) return;
     const device = describeWebDevice();
     void registerDevice(device).catch(() => {});
     const timer = window.setInterval(() => {
@@ -115,6 +137,17 @@ function AuthenticatedApp() {
     }, 5 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, [session?.user?._id, session?.user?.status, registerDevice, touchSession]);
+
+  // The app signed out (its own session ended): end this WebView session too.
+  useEffect(
+    () =>
+      onAppMessage((message) => {
+        if (message.type !== 'sign-out') return;
+        markAppSignOut();
+        void signOut();
+      }),
+    [signOut],
+  );
 
   if (session === undefined) return <LoadingView label="Đang kiểm tra quyền truy cập…" />;
   if (!session?.user) return <AccessDeniedView message="Phiên đăng nhập không gắn với hồ sơ người dùng hợp lệ." />;
@@ -142,6 +175,8 @@ function AppShell({ session }) {
   const { signOut } = useAuthActions();
   const { user, isAdmin, isModerator, isOperationalManager, menuAccess } = session;
   const canManageOperations = Boolean(isOperationalManager || isAdmin || isModerator);
+  // UX hint for the Lịch công tác page actions; duties.create re-checks on the server.
+  const canCreateDuties = canManageOperations || Boolean(session.canCreateDuties);
   const workBadge = useQuery(anyApi.work.badge, canManageOperations || menuAccess?.work !== 'hidden' ? {} : 'skip');
   const chatUnread = useQuery(anyApi.chatHub.unreadTotal, {});
   const canUseNotifications = canManageOperations || menuAccess?.notifications !== 'hidden';
@@ -149,11 +184,12 @@ function AppShell({ session }) {
     anyApi.notifications.feed,
     canUseNotifications ? {} : 'skip',
   );
-  const visiblePrimaryMenus = useMemo(() => {
-    if (canManageOperations) return PRIMARY_MENUS;
-    return PRIMARY_MENUS.filter(([id]) => id === 'chat' || (menuAccess?.[id] && menuAccess[id] !== 'hidden'));
-  }, [canManageOperations, menuAccess]);
+  const visiblePrimaryMenus = useMemo(
+    () => PRIMARY_MENUS.filter(([id]) => isPrimaryMenuVisible(id, { canManageOperations, menuAccess })),
+    [canManageOperations, menuAccess],
+  );
   const canUseChat = visiblePrimaryMenus.some(([id]) => id === 'chat');
+  const canSeeBoarding = visiblePrimaryMenus.some(([id]) => id === 'boarding');
   const sidebarPrimaryMenus = useMemo(
     () => visiblePrimaryMenus.filter(([id]) => isSidebarPrimaryMenu(id)),
     [visiblePrimaryMenus],
@@ -177,6 +213,7 @@ function AppShell({ session }) {
   );
   const [focusTarget, setFocusTarget] = useState(null);
   const dutyRoute = parseDutyPath(dutyPath) || { view: 'personal', dutyId: undefined };
+  const dutyListViewRef = useRef(dutyRoute.view === 'shared' ? 'shared' : 'personal');
 
   useEffect(() => {
     if (active !== 'duties' || !dutyPath) return;
@@ -297,7 +334,10 @@ function AppShell({ session }) {
     setMobileOpen(false);
   };
 
-  const chooseDutyView = (view, extra = {}) => {
+  const chooseDutyView = (requestedView, extra = {}) => {
+    // Closing the editor returns to whichever sheet opened it (cá nhân or chung).
+    const view = requestedView === 'back' ? dutyListViewRef.current : requestedView;
+    if (view === 'personal' || view === 'shared') dutyListViewRef.current = view;
     setActive('duties');
     const pathname = dutiesPathname({ view, dutyId: extra.dutyId });
     setDutyPath(pathname);
@@ -359,10 +399,32 @@ function AppShell({ session }) {
       openChat: false,
       token: Date.now(),
     });
+    if (isDutyWeekNotification(item)) {
+      chooseDutyView('shared');
+      return;
+    }
     choose(menu);
   };
 
   const activeFocusTarget = focusTarget?.menu === active ? focusTarget : null;
+
+  const signOutFromMenu = () => {
+    markAppSignOut();
+    void signOut();
+  };
+
+  // App shell: a tapped push / app notification opens here like a bell item (the app marks it read).
+  const openFromNotificationRef = useRef(openFromNotification);
+  openFromNotificationRef.current = openFromNotification;
+  useEffect(() => {
+    if (!isInApp()) return undefined;
+    const stop = onAppMessage((message) => {
+      if (message.type === 'open-notification' && message.item?.sourceId) openFromNotificationRef.current(message.item);
+    });
+    // The app checks the account: storage left by another account is signed out, never shown.
+    postToApp({ type: 'ready', userId: String(user._id) });
+    return stop;
+  }, [user._id]);
 
   return (
     <OwnAvatarProvider user={user}>
@@ -402,6 +464,7 @@ function AppShell({ session }) {
                   <ReportSubmenu
                     active={reportSection}
                     onChoose={chooseReportSection}
+                    showBoarding={canSeeBoarding}
                   />
                 ) : null}
               </React.Fragment>
@@ -458,9 +521,12 @@ function AppShell({ session }) {
           <button className="mobile-menu" onClick={() => setMobileOpen((open) => !open)} aria-label="Mở menu" aria-expanded={mobileOpen}>
             ☰
           </button>
-          <div>
+          <div className="shell-title">
             <p className="eyebrow">CRM Lê Văn Tám</p>
-            <h1>{title}</h1>
+            <div className="shell-title-row">
+              <h1>{title}</h1>
+              <PageHelpButton menuId={active} />
+            </div>
           </div>
           <div className="header-user">
             {canUseChat ? (
@@ -477,15 +543,13 @@ function AppShell({ session }) {
                 onOpenItem={openFromNotification}
               />
             ) : null}
-            <AccountMenu onChoose={choose} onSignOut={() => void signOut()} />
+            <AccountMenu onChoose={choose} onSignOut={signOutFromMenu} />
           </div>
         </header>
         {active === 'users' && isAdmin ? (
           <UserManagement />
         ) : active === 'departments' && isAdmin ? (
           <DepartmentManagement />
-        ) : active === 'locations' && isAdmin ? (
-          <LocationManagement />
         ) : active === 'roles' && isAdmin ? (
           <PermissionGroupManagement />
         ) : active === 'positions' && isAdmin ? (
@@ -494,16 +558,36 @@ function AppShell({ session }) {
           <DocumentTypeSettings />
         ) : active === 'school-years' && isAdmin ? (
           <SchoolYearSettings />
+        ) : active === 'teachers' && isAdmin ? (
+          <TeacherSettings />
+        ) : active === 'timetable' && isAdmin ? (
+          <TimetableSettings />
+        ) : active === 'subjects' && isAdmin ? (
+          <SubjectSettings />
+        ) : active === 'test-types' && isAdmin ? (
+          <TestTypeSettings />
         ) : active === 'display-settings' && isAdmin ? (
           <DisplaySettings />
+        ) : active === 'design-library' && isAdmin ? (
+          <DesignLibraryView />
         ) : active === 'notifications' ? (
           <NotificationsView data={notificationFeed} onOpenItem={openFromNotification} />
         ) : active === 'duties' ? (
           dutyRoute.view === 'shared' ? (
-            <SharedDutyScheduleView currentUserId={user._id} onChooseView={chooseDutyView} />
+            <SharedDutyScheduleView
+              currentUserId={user._id}
+              canCreate={canCreateDuties}
+              onChooseView={chooseDutyView}
+              focusWeek={
+                isDutyWeekNotification(activeFocusTarget)
+                  ? { weekStart: activeFocusTarget.sourceId, token: activeFocusTarget.token }
+                  : null
+              }
+            />
           ) : canManageOperations ? (
             <DutiesAdminView
               currentUserId={user._id}
+              canCreate={canCreateDuties}
               allowManage
               focusTarget={activeFocusTarget}
               dutyPage={dutyRoute.view}
@@ -514,6 +598,7 @@ function AppShell({ session }) {
             <DutiesUserView
               access={menuAccess?.duties || 'view'}
               currentUserId={user._id}
+              canCreate={canCreateDuties}
               focusTarget={activeFocusTarget}
               dutyPage={dutyRoute.view}
               editDutyId={dutyRoute.dutyId}
@@ -521,17 +606,24 @@ function AppShell({ session }) {
             />
           )
         ) : active === 'work' ? (
-          <WorkUserView focusTarget={activeFocusTarget} />
+          <WorkHub
+            focusTarget={activeFocusTarget}
+            workHidden={!canManageOperations && (menuAccess?.work || 'hidden') === 'hidden'}
+          />
         ) : active === 'chat' ? (
           <ChatHub path={chatPath} onNavigate={openChatThread} onOpenEntity={openChatEntity} />
         ) : active === 'people-review' ? (
-          <PeopleReviewView />
+          <PeopleReviewView focusTarget={activeFocusTarget} />
         ) : active === 'staff-faults' ? (
-          <StaffFaultsView />
+          <StaffFaultsView focusTarget={activeFocusTarget} />
         ) : active === 'reports' ? (
-          <WorkReportsView />
+          reportSection === 'boarding' && canSeeBoarding ? <BoardingReportsView /> : <WorkReportsView />
+        ) : active === 'boarding' ? (
+          <BoardingPage canManage={canManageOperations} />
         ) : active === 'homeroom' ? (
           <HomeroomRouter session={session} />
+        ) : active === 'attendance' ? (
+          <AttendancePage />
         ) : active === 'profile' || (active === 'settings' && !isAdmin) ? (
           <ProfileView session={session} />
         ) : active === 'change-password' ? (
@@ -616,12 +708,12 @@ function NotificationBell({ data, onViewAll, onOpenItem }) {
               {latestItems.map((item) => (
                 <button
                   type="button"
-                  className={`notification-popover-item ${item.read ? '' : 'unread'}${item.sourceType === 'completion_rejected' ? ' is-rejection' : ''}`}
+                  className={`notification-popover-item ${item.read ? '' : 'unread'}${item.sourceType === 'completion_rejected' || item.sourceType === 'work_returned' || item.sourceType === 'evaluation_text_returned' ? ' is-rejection' : ''}`}
                   key={item.key}
-                  title={item.sourceType === 'group_chat' || item.kind === 'group' ? 'Mở nhóm trao đổi' : item.kind === 'duty' ? 'Mở công tác này' : 'Mở công việc này'}
+                  title={item.sourceType === 'group_chat' || item.kind === 'group' ? 'Mở nhóm trao đổi' : item.kind === 'duty' ? 'Mở công tác này' : item.kind === 'todo' ? 'Mở Việc của tôi' : item.kind === 'people' ? `Mở ${peopleNotificationLabel(item)}` : 'Mở công việc này'}
                   onClick={() => openItem(item)}
                 >
-                  <span>{item.sourceType === 'group_chat' || item.kind === 'group' ? 'Nhóm' : item.kind === 'duty' ? 'Công tác' : item.sourceType === 'completion_rejected' ? 'Từ chối hoàn thành' : 'Công việc'} · {item.milestoneLabel}</span>
+                  <span>{item.sourceType === 'group_chat' || item.kind === 'group' ? 'Nhóm' : item.kind === 'duty' ? 'Công tác' : item.kind === 'todo' ? 'Việc của tôi' : item.kind === 'people' ? peopleNotificationLabel(item) : item.sourceType === 'completion_rejected' ? 'Từ chối hoàn thành' : 'Công việc'} · {item.milestoneLabel}</span>
                   <strong>{item.title}</strong>
                   <small>{item.description}</small>
                 </button>
@@ -646,12 +738,17 @@ function NotificationBell({ data, onViewAll, onOpenItem }) {
   );
 }
 
-function ReportSubmenu({ active, onChoose }) {
+function ReportSubmenu({ active, onChoose, showBoarding = true }) {
   return (
     <div className="report-submenu" aria-label="Loại báo cáo">
       <button type="button" className={active === 'work' ? 'active' : ''} onClick={() => onChoose('work')}>
         <span className="nav-icon">{navIconFor('work')}</span> Công việc
       </button>
+      {showBoarding ? (
+        <button type="button" className={active === 'boarding' ? 'active' : ''} onClick={() => onChoose('boarding')}>
+          <span className="nav-icon">{navIconFor('boarding')}</span> Bán trú
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -668,6 +765,7 @@ function NavButton({ id, label, active, onClick, nested = false, badge = 0 }) {
 
 function DutiesAdminView({
   currentUserId,
+  canCreate = true,
   allowManage = true,
   focusTarget = null,
   dutyPage = 'personal',
@@ -714,7 +812,7 @@ function DutiesAdminView({
     setPreviewOpen(false);
     setEditConfirm(null);
     setForm(emptyDutyForm());
-    onDutyNavigate?.('personal');
+    onDutyNavigate?.('back');
   };
 
   const openCreateEditor = () => {
@@ -755,11 +853,8 @@ function DutiesAdminView({
       return;
     }
     setPreviewOpen(false);
-    if (!dutyFormHasParticipants(form)) {
-      setFeedback({ type: 'error', text: 'Vui lòng chọn phòng ban, cá nhân tham gia, hoặc điền thành phần khác.' });
-      return;
-    }
-    const ok = await run('save', () => create(payload), 'Đã thêm công tác.');
+    // Văn thư may leave Thành phần empty and add it before sending the week to BGH.
+    const ok = await run('save', () => create(payload), 'Đã thêm công tác vào lịch tuần. Nhớ nộp Ban Giám hiệu duyệt ở Lịch công tác chung.');
     if (ok) closeEditor();
   };
 
@@ -767,10 +862,6 @@ function DutiesAdminView({
     event.preventDefault();
     if (editing) {
       setEditConfirm('save');
-      return;
-    }
-    if (!dutyFormHasParticipants(form)) {
-      setFeedback({ type: 'error', text: 'Vui lòng chọn phòng ban, cá nhân tham gia, hoặc điền thành phần khác.' });
       return;
     }
     setPreviewOpen(true);
@@ -792,11 +883,17 @@ function DutiesAdminView({
       {editorOpen ? (
         <div className="duty-editor-page-bar">
           <button type="button" className="work-ghost-button" onClick={closeEditor}>
-            ← Quay lại lịch cá nhân
+            ← Quay lại lịch công tác
           </button>
         </div>
       ) : (
-        <DutyWorkspaceTabs view="personal" onChoose={onDutyNavigate} />
+        <DutyWorkspaceTabs
+          view="personal"
+          onChoose={onDutyNavigate}
+          canCreate={allowManage && canCreate}
+          onCreate={openCreateEditor}
+          onImport={openImportPanel}
+        />
       )}
       {feedback.text && !editorOpen ? (
         <div className={`work-feedback ${feedback.type}`} role="status" aria-live="polite">
@@ -868,6 +965,7 @@ function DutiesAdminView({
             {feedback.text}
           </div>
         ) : null}
+        {editing ? <DutyChangeHistory dutyId={editing._id} /> : null}
         <div className="work-editor-actions duty-editor-actions">
           <button
             type="button"
@@ -905,8 +1003,6 @@ function DutiesAdminView({
       {!editorOpen ? (
         <DutyReportsView
           currentUserId={currentUserId}
-          onCreate={openCreateEditor}
-          onImport={openImportPanel}
           onEdit={(event) => startEdit({ _id: event._id })}
           focusDutyId={focusTarget?.sourceId}
           openChat={Boolean(focusTarget?.openChat && focusTarget?.sourceType === 'duty_chat')}
@@ -920,6 +1016,7 @@ function DutiesAdminView({
 function DutiesUserView({
   access,
   currentUserId,
+  canCreate: canCreateHint = false,
   focusTarget = null,
   dutyPage = 'personal',
   editDutyId = null,
@@ -964,7 +1061,7 @@ function DutiesUserView({
     setPreviewOpen(false);
     setEditConfirm(null);
     setForm(emptyDutyForm());
-    onDutyNavigate?.('personal');
+    onDutyNavigate?.('back');
   };
 
   const openCreateEditor = () => {
@@ -1007,7 +1104,7 @@ function DutiesUserView({
       return;
     }
     setPreviewOpen(false);
-    if (!dutyFormHasParticipants(form, { includeDepartments })) {
+    if (!includeDepartments && !dutyFormHasParticipants(form, { includeDepartments })) {
       setFeedback({ type: 'error', text: 'Vui lòng chọn phòng ban, cá nhân tham gia, hoặc điền thành phần khác.' });
       return;
     }
@@ -1021,7 +1118,7 @@ function DutiesUserView({
       setEditConfirm('save');
       return;
     }
-    if (!dutyFormHasParticipants(form, { includeDepartments: Boolean(options?.isOps) })) {
+    if (!options?.isOps && !dutyFormHasParticipants(form, { includeDepartments: false })) {
       setFeedback({ type: 'error', text: 'Vui lòng chọn phòng ban, cá nhân tham gia, hoặc điền thành phần khác.' });
       return;
     }
@@ -1036,11 +1133,17 @@ function DutiesUserView({
       {editorOpen ? (
         <div className="duty-editor-page-bar">
           <button type="button" className="work-ghost-button" onClick={closeEditor}>
-            ← Quay lại lịch cá nhân
+            ← Quay lại lịch công tác
           </button>
         </div>
       ) : (
-        <DutyWorkspaceTabs view="personal" onChoose={onDutyNavigate} />
+        <DutyWorkspaceTabs
+          view="personal"
+          onChoose={onDutyNavigate}
+          canCreate={canCreateHint}
+          onCreate={openCreateEditor}
+          onImport={openImportPanel}
+        />
       )}
 
       {importOpen && !editorOpen ? (
@@ -1086,6 +1189,7 @@ function DutiesUserView({
               {feedback.text}
             </div>
           ) : null}
+          {editing ? <DutyChangeHistory dutyId={editing._id} /> : null}
           <div className="work-editor-actions duty-editor-actions">
             {editing ? (
               <button type="button" className="work-ghost-button" onClick={() => setEditConfirm('cancel')}>
@@ -1128,8 +1232,6 @@ function DutiesUserView({
       {!editorOpen ? (
         <DutyReportsView
           currentUserId={currentUserId}
-          onCreate={openCreateEditor}
-          onImport={openImportPanel}
           onEdit={(event) => startEdit({ _id: event._id })}
           focusDutyId={focusTarget?.sourceId}
           openChat={Boolean(focusTarget?.openChat && focusTarget?.sourceType === 'duty_chat')}
@@ -1408,6 +1510,11 @@ function UserManagement() {
               </option>
             ))}
           </select>
+          {form.role === 'moderator' ? (
+            <small>
+              Moderator chỉ thao tác trong phòng ban này ở Công việc, Báo cáo, Đánh giá nhân sự và Ghi nhận lỗi. Để trống = toàn trường.
+            </small>
+          ) : null}
         </label>
         <label>
           Chức vụ
@@ -1437,7 +1544,7 @@ function UserManagement() {
           </select>
           <small>
             {usesPermissionGroup
-              ? 'Chỉ áp dụng cho User. Quyết định menu Ẩn / Xem / Xem tối cao / Giám thị (Giám thị chỉ dành cho Lớp chủ nhiệm).'
+              ? 'Chỉ áp dụng cho User. Quyết định menu Ẩn / Xem / Xem tối cao / Giám thị (Giám thị chỉ dành cho menu Điểm danh).'
               : `${ROLE_LABELS[form.role]} có toàn quyền chức năng — không cần gán nhóm quyền.`}
           </small>
         </label>
@@ -1737,129 +1844,8 @@ function DepartmentManagement() {
   );
 }
 
-function LocationManagement() {
-  const data = useQuery(anyApi.locations.list);
-  const create = useMutation(anyApi.locations.create);
-  const update = useMutation(anyApi.locations.update);
-  const remove = useMutation(anyApi.locations.remove);
-  const [form, setForm] = useState({ name: '', description: '' });
-  const [editing, setEditing] = useState(null);
-  const { pending, feedback, run } = useFeedback();
-
-  const locations = (data?.locations || []).filter((item) => item.active);
-
-  const submit = async (event) => {
-    event.preventDefault();
-    const payload = {
-      name: form.name,
-      description: form.description.trim() ? form.description : undefined,
-    };
-    if (editing) {
-      const ok = await run('save', () => update({ id: editing._id, ...payload }), 'Đã cập nhật địa điểm.');
-      if (ok) {
-        setEditing(null);
-        setForm({ name: '', description: '' });
-      }
-    } else {
-      const ok = await run('save', () => create(payload), 'Đã thêm địa điểm.');
-      if (ok) setForm({ name: '', description: '' });
-    }
-  };
-
-  if (data === undefined) return <LoadingView label="Đang tải địa điểm…" />;
-
-  return (
-    <section className="admin-view modern-management locations-management">
-      <div className="section-intro">
-        <div>
-          <span className="status-pill blue">Địa điểm</span>
-          <h2>Thiết lập địa điểm</h2>
-          <p>Thêm, sửa, xóa địa điểm dùng trong các nghiệp vụ nhà trường.</p>
-        </div>
-      </div>
-      <div className={`feedback ${feedback.type}`} role="status" aria-live="polite">
-        {feedback.text}
-      </div>
-      <form className="admin-form" onSubmit={submit}>
-        <div className="form-heading">
-          <strong>{editing ? `Sửa: ${editing.name}` : 'Thêm địa điểm'}</strong>
-          {editing && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => {
-                setEditing(null);
-                setForm({ name: '', description: '' });
-              }}
-            >
-              Hủy
-            </button>
-          )}
-        </div>
-        <label>
-          Tên địa điểm
-          <input required maxLength={120} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-        </label>
-        <label>
-          Mô tả
-          <textarea
-            maxLength={1000}
-            rows={3}
-            value={form.description}
-            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            placeholder="Mô tả ngắn về địa điểm (tùy chọn)"
-          />
-        </label>
-        <button className="primary-button" disabled={Boolean(pending)}>
-          {editing ? 'Lưu' : '+ Thêm địa điểm'}
-        </button>
-      </form>
-      <div className="card-list">
-        {locations.length === 0 ? (
-          <p className="muted">Chưa có địa điểm nào. Thêm địa điểm đầu tiên ở form trên.</p>
-        ) : (
-          locations.map((item) => (
-            <article className="mgmt-card" key={item._id}>
-              <div className="mgmt-card-head">
-                <div>
-                  <strong>{item.name}</strong>
-                  {item.description ? <span className="muted-block">{item.description}</span> : <span className="muted-block">Không có mô tả</span>}
-                </div>
-                <div className="row-actions">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditing(item);
-                      setForm({ name: item.name, description: item.description || '' });
-                    }}
-                    disabled={Boolean(pending)}
-                  >
-                    Sửa
-                  </button>
-                  <button
-                    type="button"
-                    className="danger-button"
-                    onClick={() => {
-                      if (window.confirm(`Xóa địa điểm ${item.name}?`)) {
-                        void run(`del-${item._id}`, () => remove({ id: item._id }), 'Đã xóa địa điểm.');
-                      }
-                    }}
-                    disabled={Boolean(pending)}
-                  >
-                    Xóa
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))
-        )}
-      </div>
-    </section>
-  );
-}
-
 function defaultAccessForm() {
-  return Object.fromEntries(PRIMARY_MENUS.map(([id]) => [id, id === 'notifications' ? 'view' : 'hidden']));
+  return Object.fromEntries(MATRIX_MENUS.map(([id]) => [id, id === 'notifications' ? 'view' : 'hidden']));
 }
 
 function PermissionGroupManagement() {
@@ -1877,7 +1863,7 @@ function PermissionGroupManagement() {
   const { pending, feedback, run } = useFeedback();
 
   const groups = (data?.groups || []).filter((g) => g.active);
-  const menus = data?.menus || PRIMARY_MENUS.map(([id, label]) => ({ id, label }));
+  const menus = data?.menus || MATRIX_MENUS.map(([id, label]) => ({ id, label }));
   const users = data?.users || [];
 
   useEffect(() => {
@@ -1956,7 +1942,7 @@ function PermissionGroupManagement() {
           <h2>Thiết lập nhóm quyền</h2>
           <p>
             Mỗi nhóm quy định quyền trên menu Quản trị hệ thống: Ẩn, Xem (thao tác nghiệp vụ trong phạm vi của mình), Xem tối cao (thao tác nghiệp vụ trên phạm vi toàn trường), hoặc Giám thị.
-            Giám thị chỉ dành cho menu Lớp chủ nhiệm; các menu khác không thể chọn mức này.
+            Giám thị chỉ dành cho menu Điểm danh (menu này chỉ có Ẩn hoặc Giám thị); các menu khác không thể chọn mức Giám thị.
             Mã nhóm quyền (tối đa 20 ký tự) dùng khi import user hàng loạt.
           </p>
         </div>
@@ -2020,7 +2006,7 @@ function PermissionGroupManagement() {
             <div className="perm-matrix-row" key={menu.id}>
               <span>{menu.label}</span>
               {MATRIX_ACCESS_LEVELS.map((level) => {
-                if (level === 'supervisor' && menu.id !== 'homeroom') {
+                if (!isMatrixLevelAvailable(menu.id, level)) {
                   return (
                     <span key={level} className="radio-cell radio-cell-unavailable" aria-hidden="true">
                       —
@@ -2297,7 +2283,15 @@ function MustChangePasswordView() {
         <button className="primary-button" disabled={pending}>
           {pending ? 'Đang cập nhật…' : 'Đổi mật khẩu và tiếp tục'}
         </button>
-        <button type="button" className="text-button" onClick={() => void signOut()} disabled={pending}>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => {
+            markAppSignOut();
+            void signOut();
+          }}
+          disabled={pending}
+        >
           Đăng xuất
         </button>
       </form>
@@ -2336,7 +2330,14 @@ function AccessDeniedView({ message }) {
         <p className="eyebrow">CRM Lê Văn Tám</p>
         <h1>Chưa thể truy cập</h1>
         <p>{message}</p>
-        <button type="button" className="text-button" onClick={() => void signOut()}>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => {
+            markAppSignOut();
+            void signOut();
+          }}
+        >
           Đăng xuất
         </button>
       </div>
@@ -2492,14 +2493,55 @@ function Root() {
       <AuthLoading>
         <LoadingView label="Đang kiểm tra phiên đăng nhập…" />
       </AuthLoading>
-      <Unauthenticated>
-        <SignedOutView />
-      </Unauthenticated>
+      <Unauthenticated>{isInApp() ? <AppHandoffView /> : <SignedOutView />}</Unauthenticated>
       <Authenticated>
         <AuthenticatedApp />
       </Authenticated>
     </ConvexAuthProvider>
   );
+}
+
+/**
+ * In the app shell the app signs in natively and hands this WebView a single-use code
+ * (convex/appHandoff.ts). After "Đăng xuất", or when the app has no session, the app shows its
+ * own sign-in screen instead.
+ */
+function AppHandoffView() {
+  const { signIn } = useAuthActions();
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (appSignOutRequested()) {
+      setLeaving(true);
+      postToApp({ type: 'signed-out' });
+      return undefined;
+    }
+    void (async () => {
+      // Network trouble: try again a few times, then let the app offer Thử lại (never sign out).
+      for (let attempt = 0; attempt < 4 && !cancelled; attempt += 1) {
+        if (attempt) await new Promise((resolve) => window.setTimeout(resolve, 1500 * attempt));
+        const result = await requestAppHandoff();
+        if (cancelled) return;
+        if (result.signedOut) {
+          setLeaving(true);
+          postToApp({ type: 'signed-out' });
+          return;
+        }
+        if (!result.code) continue;
+        try {
+          await signIn('app-handoff', { code: result.code });
+          return;
+        } catch (error) {
+          console.error('App sign-in handoff failed', error);
+        }
+      }
+      if (!cancelled) postToApp({ type: 'handoff-error' });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [signIn]);
+  return <LoadingView label={leaving ? 'Đang quay lại màn hình đăng nhập…' : 'Đang đăng nhập…'} />;
 }
 
 function LoadingView({ label }) {
@@ -2513,4 +2555,5 @@ function LoadingView({ label }) {
   );
 }
 
+installAppBridge();
 createRoot(document.getElementById('root')).render(<Root />);

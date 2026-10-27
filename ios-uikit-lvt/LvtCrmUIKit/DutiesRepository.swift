@@ -70,6 +70,117 @@ final class DutiesRepository: Sendable {
         )
     }
 
+    /// Monday-to-Saturday sheet plus the week's approval state.
+    func sharedWeek(weekStart: String, weekEnd: String) async throws -> SharedDutyWeek {
+        let result = try await convex.query(
+            "duties:sharedSchedule",
+            args: ["startDate": weekStart, "endDate": weekEnd]
+        )
+        func strings(_ value: Any?) -> [String] { (value as? [Any] ?? []).compactMap { $0 as? String } }
+        func number(_ value: Any?) -> Double? { (value as? NSNumber)?.doubleValue }
+        let events = (result["events"] as? [[String: Any]] ?? []).map { e -> SharedDutyEvent in
+            let change = e["approvalChange"] as? String
+            let locationText = (e["locationText"] as? String) ?? ""
+            return SharedDutyEvent(
+                id: (e["_id"] as? String) ?? "",
+                title: (e["title"] as? String) ?? "",
+                content: (e["content"] as? String) ?? "",
+                startDate: (e["startDate"] as? String) ?? "",
+                endDate: (e["endDate"] as? String) ?? "",
+                startTime: (e["startTime"] as? String) ?? "",
+                endTime: (e["endTime"] as? String) ?? "",
+                allDay: (e["allDay"] as? Bool) ?? false,
+                locationText: locationText.isEmpty ? ((e["location"] as? String) ?? "") : locationText,
+                departmentIds: strings(e["departmentIds"]),
+                participantUserIds: strings(e["participantUserIds"]),
+                departmentNames: strings(e["departmentNames"]),
+                participantNames: strings(e["participantNames"]),
+                otherParticipants: (e["otherParticipants"] as? String) ?? "",
+                canManage: (e["canManage"] as? Bool) ?? false,
+                approvalChange: change == "added" || change == "changed" ? change : nil
+            )
+        }
+        let week = (result["weeks"] as? [[String: Any]] ?? [])
+            .first { ($0["weekStart"] as? String) == weekStart }
+            .map { w in
+                DutyWeekState(
+                    weekStart: (w["weekStart"] as? String) ?? weekStart,
+                    status: (w["status"] as? String) ?? "empty",
+                    changeCount: (w["changeCount"] as? NSNumber)?.intValue ?? 0,
+                    changes: (w["changes"] as? [[String: Any]] ?? []).map {
+                        DutyWeekChange(id: ($0["id"] as? String) ?? "", kind: ($0["kind"] as? String) ?? "", title: ($0["title"] as? String) ?? "")
+                    },
+                    missingParticipants: (w["missingParticipants"] as? NSNumber)?.intValue ?? 0,
+                    hasApprovedVersion: (w["hasApprovedVersion"] as? Bool) ?? false,
+                    submittedAt: number(w["submittedAt"]),
+                    submittedByName: (w["submittedByName"] as? String) ?? "",
+                    returnedAt: number(w["returnedAt"]),
+                    returnedByName: (w["returnedByName"] as? String) ?? "",
+                    returnNote: (w["returnNote"] as? String) ?? "",
+                    approvedAt: number(w["approvedAt"]),
+                    approvedByName: (w["approvedByName"] as? String) ?? ""
+                )
+            }
+        return SharedDutyWeek(
+            viewer: (result["viewer"] as? String) ?? "public",
+            canSubmit: (result["canSubmit"] as? Bool) ?? false,
+            canReview: (result["canReview"] as? Bool) ?? false,
+            events: events,
+            week: week
+        )
+    }
+
+    func submitWeek(weekStart: String) async throws {
+        _ = try await convex.mutation("dutyWeeks:submit", args: ["weekStart": weekStart])
+    }
+
+    func approveWeek(weekStart: String, submittedAt: Double) async throws {
+        _ = try await convex.mutation(
+            "dutyWeeks:approve",
+            args: ["weekStart": weekStart, "submittedAt": NSNumber(value: Int64(submittedAt))]
+        )
+    }
+
+    func returnWeek(weekStart: String, submittedAt: Double, note: String) async throws {
+        _ = try await convex.mutation(
+            "dutyWeeks:returnWeek",
+            args: ["weekStart": weekStart, "submittedAt": NSNumber(value: Int64(submittedAt)), "note": note]
+        )
+    }
+
+    func formOptions() async throws -> DutyFormOptions {
+        let result = try await convex.query("duties:formOptions")
+        let departments = (result["departments"] as? [[String: Any]] ?? []).map {
+            DutyFormOption(id: ($0["_id"] as? String) ?? "", label: ($0["name"] as? String) ?? "", detail: ($0["code"] as? String) ?? "")
+        }
+        let users = (result["users"] as? [[String: Any]] ?? []).map { row -> DutyFormOption in
+            let name = (row["name"] as? String) ?? ""
+            let email = (row["email"] as? String) ?? ""
+            return DutyFormOption(id: (row["_id"] as? String) ?? "", label: name.isEmpty ? email : name, detail: email)
+        }
+        return DutyFormOptions(isOps: (result["isOps"] as? Bool) ?? false, departments: departments, users: users)
+    }
+
+    func updateDuty(_ draft: DutyDraft) async throws {
+        _ = try await convex.mutation(
+            "duties:update",
+            args: [
+                "id": draft.id,
+                "title": draft.title,
+                "content": draft.content,
+                "startDate": draft.startDate,
+                "endDate": draft.endDate,
+                "startTime": draft.startTime,
+                "endTime": draft.endTime,
+                "allDay": draft.allDay,
+                "locationText": draft.locationText,
+                "departmentIds": draft.departmentIds,
+                "participantUserIds": draft.participantUserIds,
+                "otherParticipants": draft.otherParticipants,
+            ]
+        )
+    }
+
     func downloadSharedSchedulePdf(mode: String, anchorIso: String) async throws -> SharedSchedulePdf {
         guard let token = tokenProvider(), !token.isEmpty else {
             throw ConvexException(code: "UNAUTHORIZED", message: "Bạn cần đăng nhập để xem lịch công tác chung.")
