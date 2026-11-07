@@ -32,7 +32,18 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LVTConvexURL</key>
-	<string>https://confident-guanaco-953.convex.cloud</string>
+	<string>$(LVT_CONVEX_URL)</string>
+	<key>LVTWebURL</key>
+	<string>$(LVT_WEB_URL)</string>
+	<key>LVTDemoConvexURL</key>
+	<string>https://decisive-puma-318.convex.cloud</string>
+	<key>LVTDemoWebURL</key>
+	<string>https://sandbox.thcslevantam.ai.vn</string>
+	<key>WKAppBoundDomains</key>
+	<array>
+		<string>lvt.vscgroup.io.vn</string>
+		<string>sandbox.thcslevantam.ai.vn</string>
+	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>vn.lvt.crm.notifications.refresh</string>
@@ -65,6 +76,8 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Ứng dụng dùng Face ID để bạn đăng nhập nhanh vào LVT CRM mà không cần nhập mật khẩu.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Ứng dụng cần quyền sử dụng máy ảnh để chụp ảnh đại diện hoặc ảnh bằng chứng hoàn thành công việc.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

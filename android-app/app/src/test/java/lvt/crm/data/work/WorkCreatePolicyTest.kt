@@ -8,17 +8,6 @@ import org.junit.Test
 
 class WorkCreatePolicyTest {
     @Test
-    fun opsAndTeamLeadsCanCreate() {
-        assertTrue(WorkCreatePolicy.canCreate("admin", 1))
-        assertTrue(WorkCreatePolicy.canCreate("moderator", 5))
-        assertTrue(WorkCreatePolicy.canCreate("user", 2))
-        assertTrue(WorkCreatePolicy.canCreate("user", 3))
-        assertFalse(WorkCreatePolicy.canCreate("user", 1))
-        assertFalse(WorkCreatePolicy.canCreate("user", 4))
-        assertFalse(WorkCreatePolicy.canCreate("user", 5))
-    }
-
-    @Test
     fun validateRequiresTitleAssignmentsAndDeadline() {
         assertEquals(
             "Vui lòng nhập tên công việc (tối đa 200 ký tự).",
@@ -94,23 +83,73 @@ class WorkCreatePolicyTest {
     }
 
     @Test
-    fun editStaysOpenForOpsAfterSubmissionLock() {
-        assertTrue(WorkDocumentActions.showsEdit(canEdit = false, isOps = true))
-        assertTrue(WorkDocumentActions.showsDelete(canDelete = false, isOps = true))
-        assertFalse(WorkDocumentActions.showsLocked(canEdit = false, canDelete = false, isOps = true))
-        assertFalse(WorkDocumentActions.showsEdit(canEdit = false, isOps = false))
-        assertTrue(WorkDocumentActions.showsLocked(canEdit = false, canDelete = false, isOps = false))
+    fun editFollowsOnlyServerFlags() {
+        val base = WorkApprovalItem(
+            id = "doc-1", fileName = "", content = "", deadline = "2026-09-01", status = "pending",
+            approvalCount = 0, approvalTotal = 1, myDecision = "",
+        )
+        // Hidden for an unknown reason (scope, creator rule): no note.
+        val hidden = base.copy(canEdit = false, canDelete = false)
+        assertFalse(WorkDocumentActions.showsEdit(hidden))
+        assertFalse(WorkDocumentActions.showsDelete(hidden))
+        assertNull(WorkDocumentActions.lockedMessage(hidden))
+        // Submitted results, reported by the server.
+        val submitted = hidden.copy(hasSubmissions = true)
+        assertEquals(WORK_LOCKED_MESSAGE, WorkDocumentActions.lockedMessage(submitted))
+        assertEquals("Đã có người nộp kết quả — công việc chỉ xem.", WORK_LOCKED_MESSAGE)
+        // Approved and locked for this user.
+        val locked = hidden.copy(status = "approved", approvalLocked = true, approvalCount = 1)
+        assertEquals(WORK_APPROVAL_LOCKED_MESSAGE, WorkDocumentActions.lockedMessage(locked))
+        // Admin may still edit an approved document (server flag), but not delete it.
+        val adminApproved = locked.copy(canEdit = true, canDelete = false, editRequiresReapproval = true)
+        assertTrue(WorkDocumentActions.showsEdit(adminApproved))
+        assertFalse(WorkDocumentActions.showsDelete(adminApproved))
+        assertNull(WorkDocumentActions.lockedMessage(adminApproved))
+        val mutable = base.copy(canEdit = true, canDelete = true)
+        assertTrue(WorkDocumentActions.showsEdit(mutable))
+        assertTrue(WorkDocumentActions.showsDelete(mutable))
+    }
+
+    @Test
+    fun lastEditedLineUsesVietnamTime() {
+        val base = WorkApprovalItem(
+            id = "doc-1", fileName = "", content = "", deadline = "2026-09-01", status = "approved",
+            approvalCount = 1, approvalTotal = 1, myDecision = "",
+        )
+        assertNull(WorkDocumentActions.lastEditedLine(base))
+        // 2026-10-22 07:05 UTC = 14:05 Vietnam.
         assertEquals(
-            WORK_LOCKED_MESSAGE,
+            "Đã chỉnh sửa bởi Quản trị lúc 14:05 22/10/2026",
+            WorkDocumentActions.lastEditedLine(base.copy(lastEditedByName = "Quản trị", lastEditedAt = 1_792_652_700_000L)),
+        )
+        assertEquals(
+            "Đã chỉnh sửa bởi Quản trị",
+            WorkDocumentActions.lastEditedLine(base.copy(lastEditedByName = "Quản trị")),
+        )
+    }
+
+    @Test
+    fun documentActionErrorsUseWebMessages() {
+        assertEquals(
+            WORK_IMMUTABLE_ERROR_MESSAGE,
             WorkDocumentActions.errorMessage("Error: WORK_DOCUMENT_IMMUTABLE", deleting = true, fallback = "x"),
         )
         assertEquals(
-            "Bạn không có quyền sửa hoặc xóa công việc này.",
+            "Chỉ người tạo mới được sửa hoặc xóa công việc này.",
             WorkDocumentActions.errorMessage("WORK_UPDATE_FORBIDDEN", deleting = false, fallback = "x"),
         )
         assertEquals(
-            "Không thể xóa công văn lúc này.",
-            WorkDocumentActions.errorMessage("WORK_DOCUMENT_NOT_FOUND", deleting = true, fallback = "x"),
+            "Văn thư không thể giao công việc cho Ban giám hiệu.",
+            WorkDocumentActions.errorMessage("Uncaught Error: WORK_ASSIGNEE_BGH_FORBIDDEN", deleting = false, fallback = "x"),
+        )
+        assertEquals(
+            "Không thể xóa công việc lúc này.",
+            WorkDocumentActions.errorMessage("NETWORK_DOWN", deleting = true, fallback = "x"),
+        )
+        assertEquals("x", WorkDocumentActions.errorMessage("NETWORK_DOWN", deleting = false, fallback = "x"))
+        assertEquals(
+            "Đã có người nộp kết quả nên không thể sửa công việc này.",
+            WorkDocumentActions.errorMessage("Uncaught Error: WORK_HAS_SUBMISSIONS", deleting = true, fallback = "x"),
         )
     }
 

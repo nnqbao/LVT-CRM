@@ -1,5 +1,14 @@
 import Foundation
 
+struct WorkUploadedEvidence: Sendable {
+    let driveFileId: String
+    let driveChecksum: String
+    let cleanupToken: String
+    let fileName: String
+    let fileType: String
+    let fileSize: Int
+}
+
 struct WorkFormDepartment: Equatable, Sendable {
     let id: String
     let name: String
@@ -10,6 +19,7 @@ struct WorkFormUser: Equatable, Sendable {
     let name: String
     let departmentName: String
     let level: Int
+    var positionName: String = ""
 }
 
 struct WorkDocumentType: Equatable, Sendable {
@@ -24,6 +34,46 @@ struct WorkFormOptions: Equatable, Sendable {
     let departments: [WorkFormDepartment]
     let users: [WorkFormUser]
     let documentTypes: [WorkDocumentType]
+    /// Creator-based rule from the server: admin/mod documents go to Ban giám hiệu first.
+    var requiresApproval: Bool = false
+    /// Whole-department assignments (admin/mod and Ban giám hiệu), decided by the server.
+    var canAssignDepartments: Bool = false
+    /// Eligible Ban giám hiệu approvers (only sent when approval is required).
+    var approvers: [WorkFormUser] = []
+
+    /// `work:formOptions`. Flags come from the server; nothing is derived from position levels here.
+    static func decode(
+        _ result: [String: Any],
+        documentTypes: [WorkDocumentType],
+        departments: [WorkFormDepartment]
+    ) -> WorkFormOptions {
+        func people(_ value: Any?) -> [WorkFormUser] {
+            ((value as? [[String: Any]]) ?? []).compactMap { item in
+                let id = (item["_id"] as? String) ?? ""
+                guard !id.isEmpty else { return nil }
+                let name = ((item["name"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return WorkFormUser(
+                    id: id,
+                    name: name.isEmpty ? ((item["email"] as? String) ?? "") : name,
+                    departmentName: (item["departmentName"] as? String) ?? "",
+                    level: (item["level"] as? NSNumber)?.intValue ?? 0,
+                    positionName: (item["positionName"] as? String) ?? ""
+                )
+            }
+        }
+        let isOps = (result["isOps"] as? Bool) ?? false
+        return WorkFormOptions(
+            canCreate: (result["canCreate"] as? Bool) ?? false,
+            isOps: isOps,
+            departments: departments,
+            users: people(result["users"]),
+            documentTypes: documentTypes,
+            requiresApproval: (result["requiresApproval"] as? Bool) ?? false,
+            // Older servers omit the flag: only admin/mod could assign departments then.
+            canAssignDepartments: (result["canAssignDepartments"] as? Bool) ?? isOps,
+            approvers: people(result["approvers"])
+        )
+    }
 }
 
 struct WorkCreateAssignment: Equatable {
@@ -49,7 +99,9 @@ enum WorkCreatePolicy {
         title: String,
         assignments: [WorkCreateAssignment],
         hasFile: Bool = false,
-        documentTypeId: String = ""
+        documentTypeId: String = "",
+        approversRequired: Bool = false,
+        approverCount: Int = 0
     ) -> String? {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed.count > 200 {
@@ -78,23 +130,64 @@ enum WorkCreatePolicy {
                 return "\(label): chọn hạn chót."
             }
         }
+        if approversRequired && approverCount == 0 {
+            return "Vui lòng chọn ít nhất một người duyệt thuộc Ban giám hiệu."
+        }
         return nil
     }
 
-    static let lockedMessage = "Đã có người nộp · Không thể sửa hoặc xóa"
-
-    static func showsEdit(canEdit: Bool, isOps: Bool) -> Bool { canEdit || isOps }
-
-    static func showsDelete(canDelete: Bool, isOps: Bool) -> Bool { canDelete || isOps }
-
-    static func showsLocked(canEdit: Bool, canDelete: Bool, isOps: Bool) -> Bool {
-        !showsEdit(canEdit: canEdit, isOps: isOps) && !showsDelete(canDelete: canDelete, isOps: isOps)
+    /// `work:createDocument` / `work:updateDocument` arguments. `approverUserIds` is sent whenever the creator
+    /// picked approvers; the server decides whether the document needs them.
+    static func mutationArgs(
+        title: String,
+        assignments: [WorkCreateAssignment],
+        evidence: WorkUploadedEvidence?,
+        documentTypeId: String?,
+        approverUserIds: [String]
+    ) -> [String: Any] {
+        var payload: [[String: Any]] = []
+        for row in assignments {
+            var item: [String: Any] = [
+                "type": row.type,
+                "content": row.content.trimmingCharacters(in: .whitespacesAndNewlines),
+                "deadline": row.deadline.trimmingCharacters(in: .whitespacesAndNewlines),
+            ]
+            if row.isIndividual {
+                item["userIds"] = row.userIds.filter { !$0.isEmpty }
+            } else {
+                item["departmentId"] = row.departmentId
+            }
+            payload.append(item)
+        }
+        var args: [String: Any] = [
+            "title": title.trimmingCharacters(in: .whitespacesAndNewlines),
+            "assignments": payload,
+        ]
+        if let documentTypeId, !documentTypeId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            args["documentTypeId"] = documentTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var seen = Set<String>()
+        let approvers = approverUserIds
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+        if !approvers.isEmpty {
+            args["approverUserIds"] = approvers
+        }
+        if let evidence {
+            args["driveFileId"] = evidence.driveFileId
+            args["driveChecksum"] = evidence.driveChecksum
+            args["cleanupToken"] = evidence.cleanupToken
+            args["fileName"] = evidence.fileName
+            args["fileType"] = evidence.fileType
+            args["fileSize"] = evidence.fileSize
+        }
+        return args
     }
 
-    /// Admin/mod keep the server right to edit after someone has submitted.
+    /// Edit/delete failures keep the server's mapped message (approval lock, scope, assignee rules…).
     static func actionError(raw: String, deleting: Bool, fallback: String) -> String {
-        if raw.contains("WORK_DOCUMENT_IMMUTABLE") { return lockedMessage }
-        if raw.contains("WORK_UPDATE_FORBIDDEN") { return "Bạn không có quyền sửa hoặc xóa công việc này." }
+        let code = ConvexHttpClient.extractCode(raw)
+        if let message = ConvexHttpClient.workMessage(code) { return message }
         if deleting { return "Không thể xóa công văn lúc này." }
         return fallback
     }

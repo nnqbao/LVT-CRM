@@ -1,0 +1,1745 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/assets/logo-thcs-le-van-tam.png">
+  <title>Trường THCS Lê Văn Tám - Nền tảng quản lý nội bộ</title>
+  <style>
+    :root {
+      --ink: #1e2340;
+      --muted: #6b7088;
+      --line: #e3e6f5;
+      --paper: #ffffff;
+      --soft: #f4f6ff;
+      --school-blue: #263985;
+      --school-blue-2: #1f2f70;
+      --red: #e4052e;
+      --red-soft: #fde9ed;
+      --gold: #f2a81d;
+      --green: #23865f;
+      --green-soft: #e8f6ef;
+      --shadow: 0 18px 50px rgba(49, 39, 130, .12);
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 4%, rgba(228, 5, 46, .08), transparent 24rem),
+        linear-gradient(135deg, #ffffff 0%, #f4f6ff 54%, #fff7f8 100%);
+      font-family: "Segoe UI", "Be Vietnam Pro", Tahoma, sans-serif;
+      line-height: 1.45;
+      overflow-x: hidden;
+    }
+
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    .app {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 22px 18px;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, #ffffff, #f8f9ff);
+      border-right: 1px solid var(--line);
+      overflow-y: auto;
+    }
+
+    .brand {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      width: 100%;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand-home {
+      border: 0;
+      color: inherit;
+      background: transparent;
+      text-align: left;
+    }
+
+    .brand-home:hover h1 { color: var(--school-blue); }
+
+    .brand-logo {
+      width: 58px;
+      height: 58px;
+      object-fit: contain;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 10px 26px rgba(49, 39, 130, .16);
+    }
+
+    .crest {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border: 2px solid var(--school-blue);
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 10px 24px rgba(49, 39, 130, .12);
+      color: var(--school-blue);
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .brand small, .panel-title span, .meta, .task span, .event span, .teacher span {
+      color: inherit;
+      opacity: .72;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .nav {
+      display: grid;
+      gap: 6px;
+      margin: 22px 0;
+    }
+
+    .nav button {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 42px;
+      padding: 10px 12px;
+      border: 0;
+      border-radius: var(--radius);
+      color: var(--ink);
+      background: transparent;
+      text-align: left;
+    }
+
+    .nav button:hover,
+    .nav button.active {
+      color: var(--school-blue);
+      background: var(--soft);
+      box-shadow: inset 3px 0 0 var(--school-blue);
+    }
+
+    .nav svg, .icon-button svg, .section-action svg, .quick-action-toggle svg, .quick-action-menu svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex: 0 0 auto;
+    }
+
+    .sidebar-card {
+      padding: 14px;
+      border: 1px solid rgba(228, 5, 46, .18);
+      border-radius: var(--radius);
+      background: var(--red-soft);
+    }
+
+    .sidebar-card strong { display: block; margin-bottom: 6px; }
+    .sidebar-card p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .main {
+      min-width: 0;
+      max-width: 100vw;
+      padding: 22px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .page-title h2 {
+      margin: 0 0 4px;
+      font-size: 28px;
+      line-height: 1.15;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .page-title p { margin: 0; color: var(--muted); }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .search {
+      width: min(320px, 46vw);
+      min-height: 42px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.85);
+      color: var(--ink);
+      outline: none;
+    }
+
+    .primary, .ghost, .icon-button, .section-action {
+      min-height: 42px;
+      border-radius: var(--radius);
+      border: 1px solid transparent;
+      font-weight: 700;
+    }
+
+    .primary {
+      padding: 0 15px;
+      color: #fff;
+      background: var(--school-blue);
+      box-shadow: 0 10px 24px rgba(49, 39, 130, .2);
+    }
+
+    .primary:hover { background: var(--school-blue-2); }
+
+    .ghost, .section-action {
+      padding: 0 13px;
+      color: var(--school-blue);
+      background: #fff;
+      border-color: var(--line);
+    }
+
+    .action-menu {
+      position: relative;
+      display: inline-flex;
+    }
+
+    .quick-action-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 15px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      color: #fff;
+      background: var(--school-blue);
+      box-shadow: 0 10px 24px rgba(49, 39, 130, .2);
+      font-weight: 800;
+    }
+
+    .quick-action-toggle:hover,
+    .quick-action-toggle[aria-expanded="true"] {
+      background: var(--school-blue-2);
+    }
+
+    .quick-action-toggle .chevron {
+      width: 16px;
+      height: 16px;
+      transition: transform .16s ease;
+    }
+
+    .quick-action-toggle[aria-expanded="true"] .chevron {
+      transform: rotate(180deg);
+    }
+
+    .quick-action-menu {
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 10px);
+      right: 0;
+      width: min(330px, calc(100vw - 32px));
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      box-shadow: 0 22px 55px rgba(31, 47, 112, .2);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-6px);
+      transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+    }
+
+    .action-menu.open .quick-action-menu {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    .quick-action-menu::before {
+      content: "";
+      position: absolute;
+      top: -6px;
+      right: 22px;
+      width: 12px;
+      height: 12px;
+      border-left: 1px solid var(--line);
+      border-top: 1px solid var(--line);
+      background: #fff;
+      transform: rotate(45deg);
+    }
+
+    .quick-action-item {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 10px;
+      width: 100%;
+      padding: 10px;
+      border: 0;
+      border-radius: var(--radius);
+      color: var(--ink);
+      background: transparent;
+      text-align: left;
+    }
+
+    .quick-action-item:hover {
+      background: var(--soft);
+    }
+
+    .quick-action-item svg {
+      width: 34px;
+      height: 34px;
+      padding: 8px;
+      border-radius: var(--radius);
+      color: var(--school-blue);
+      background: #eef2ff;
+    }
+
+    .quick-action-item strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .quick-action-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    .quick-action-divider {
+      height: 1px;
+      margin: 6px 4px;
+      background: var(--line);
+    }
+
+    .toast {
+      position: fixed;
+      z-index: 40;
+      right: 22px;
+      bottom: 22px;
+      max-width: min(360px, calc(100vw - 32px));
+      padding: 12px 14px;
+      border: 1px solid rgba(35, 134, 95, .28);
+      border-radius: var(--radius);
+      color: var(--ink);
+      background: #fff;
+      box-shadow: 0 18px 50px rgba(31, 47, 112, .18);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(12px);
+      transition: opacity .2s ease, transform .2s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast strong { display: block; margin-bottom: 2px; }
+    .toast span { color: var(--muted); font-size: 13px; }
+
+    .section-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .icon-button {
+      width: 42px;
+      display: grid;
+      place-items: center;
+      color: var(--school-blue);
+      background: #fff;
+      border-color: var(--line);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.65fr) minmax(320px, .9fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid rgba(227, 230, 245, .9);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.9);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-title strong {
+      display: block;
+      font-size: 16px;
+    }
+
+    .panel-title span { color: var(--muted); font-size: 13px; }
+
+    .panel-body { padding: 18px; }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .kpi {
+      min-height: 112px;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .kpi b {
+      display: block;
+      font-size: 28px;
+      line-height: 1;
+      margin: 8px 0;
+      color: var(--school-blue);
+    }
+
+    .kpi span { color: var(--muted); font-size: 13px; }
+    .kpi.danger b { color: var(--red); }
+    .kpi.gold b { color: #b16c00; }
+    .kpi.green b { color: var(--green); }
+
+    .week {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .day {
+      min-width: 150px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .day h3 {
+      margin: 0;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 14px;
+      color: var(--school-blue);
+      background: var(--soft);
+    }
+
+    .event {
+      display: grid;
+      gap: 4px;
+      padding: 12px;
+      border-bottom: 1px solid #e9ecfa;
+      font-size: 13px;
+    }
+
+    .event:last-child { border-bottom: 0; }
+    .event strong { font-size: 13px; }
+    .event span { color: var(--muted); }
+
+    .tag {
+      width: fit-content;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--school-blue);
+      background: var(--soft);
+    }
+
+    .tag.red { color: var(--red); background: var(--red-soft); }
+    .tag.green { color: var(--green); background: var(--green-soft); }
+    .tag.gold { color: #8b5b00; background: #fff3d3; }
+
+    .task-list, .teacher-list, .report-list, .account-list, .leader-list, .info-list, .news-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .task, .teacher, .report-row, .account-row, .leader-row, .info-row, .news-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .check {
+      width: 20px;
+      height: 20px;
+      border-radius: 5px;
+      border: 2px solid var(--school-blue);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: #fff;
+    }
+
+    .done .check { background: var(--green); border-color: var(--green); }
+    .done .check::after { content: "✓"; font-size: 13px; font-weight: 900; }
+
+    .task strong, .teacher strong, .account-row strong, .leader-row strong, .info-row strong, .news-row strong {
+      display: block;
+      font-size: 14px;
+    }
+
+    .task span, .teacher span, .report-row span, .account-row span, .leader-row span, .info-row span, .news-row span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .avatar {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--school-blue);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0;
+      flex: 0 0 auto;
+    }
+
+    .avatar.red { background: var(--red); }
+    .avatar.gold { color: var(--ink); background: var(--gold); }
+
+    .profile-hero {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 16px;
+      align-items: center;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(135deg, rgba(38,57,133,.08), rgba(228,5,46,.06)),
+        #fff;
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+
+    .profile-hero > div { min-width: 0; }
+
+    .profile-hero img {
+      width: 86px;
+      height: 86px;
+      object-fit: contain;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 10px 24px rgba(49, 39, 130, .14);
+    }
+
+    .profile-hero h3 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .profile-hero p {
+      margin: 0;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .mini-stat {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .mini-stat b {
+      display: block;
+      color: var(--school-blue);
+      font-size: 20px;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .mini-stat span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .assistant {
+      background:
+        linear-gradient(160deg, rgba(38,57,133,.97), rgba(31,47,112,.96)),
+        var(--school-blue);
+      color: #fff;
+    }
+
+    .assistant .panel-head { border-color: rgba(255,255,255,.18); }
+    .assistant .panel-title span { color: rgba(255,255,255,.7); }
+
+    .chat {
+      display: grid;
+      gap: 10px;
+    }
+
+    .bubble {
+      padding: 12px;
+      border-radius: var(--radius);
+      color: #fff;
+      background: rgba(255,255,255,.12);
+    }
+
+    .bubble.alt {
+      color: var(--ink);
+      background: #fff;
+    }
+
+    .quick-prompts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .quick-prompts button {
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid rgba(255,255,255,.24);
+      border-radius: var(--radius);
+      color: #fff;
+      background: rgba(228,5,46,.18);
+      font-size: 13px;
+      text-align: left;
+    }
+
+    .modules {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .module {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .module h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    .module p {
+      margin: 0 0 14px;
+      min-height: 58px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .progress {
+      height: 9px;
+      border-radius: 999px;
+      background: #e8ebfb;
+      overflow: hidden;
+    }
+
+    .progress i {
+      display: block;
+      width: var(--value);
+      height: 100%;
+      background: var(--red);
+    }
+
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, .7fr);
+      gap: 16px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      background: #fff;
+      color: var(--ink);
+      outline: none;
+    }
+
+    input[type="checkbox"] {
+      width: 18px;
+      min-height: 18px;
+      height: 18px;
+      accent-color: var(--school-blue);
+    }
+
+    label:has(input[type="checkbox"]) {
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    textarea { min-height: 96px; resize: vertical; }
+
+    .mobile-toggle { display: none; }
+
+    /* Component library — canonical patterns for future product pages */
+    .design-intro { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(260px, .55fr); gap: 18px; align-items: stretch; margin-bottom: 18px; }
+    .design-hero { position: relative; min-height: 220px; padding: 26px; border-radius: var(--radius); overflow: hidden; color: #fff; background: linear-gradient(120deg, rgba(38,57,133,.98), rgba(31,47,112,.94)), var(--school-blue); box-shadow: var(--shadow); }
+    .design-hero::after { content: ""; position: absolute; right: -54px; bottom: -88px; width: 230px; height: 230px; border: 42px solid rgba(255,255,255,.08); border-radius: 50%; }
+    .design-kicker { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 24px; padding: 6px 10px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; color: rgba(255,255,255,.86); background: rgba(255,255,255,.08); font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .design-hero h3 { position: relative; z-index: 1; max-width: 720px; margin: 0 0 10px; font-size: clamp(26px, 3vw, 40px); line-height: 1.08; text-wrap: balance; }
+    .design-hero p { position: relative; z-index: 1; max-width: 680px; margin: 0; color: rgba(255,255,255,.76); font-size: 15px; }
+    .principle-card { display: grid; align-content: start; gap: 14px; padding: 20px; border: 1px solid rgba(228,5,46,.18); border-radius: var(--radius); background: linear-gradient(160deg, #fff, #fff7f8); box-shadow: var(--shadow); }
+    .principle-card h3 { margin: 0; font-size: 17px; }
+    .principle-card p { margin: 0; color: var(--muted); font-size: 13px; }
+    .principle-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .principle-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px; align-items: start; color: var(--ink); font-size: 13px; }
+    .principle-list b { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; color: var(--school-blue); background: var(--soft); font-size: 11px; }
+    .component-index { display: flex; gap: 8px; margin-bottom: 18px; overflow-x: auto; padding: 2px 0 8px; scrollbar-width: thin; }
+    .component-index a { flex: 0 0 auto; padding: 8px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--school-blue); background: #fff; font-size: 12px; font-weight: 800; text-decoration: none; }
+    .component-index a:hover, .component-index a:focus-visible { border-color: var(--school-blue); background: var(--soft); }
+    .component-stack { display: grid; gap: 18px; }
+    .component-section { scroll-margin-top: 16px; }
+    .component-section .panel-head { align-items: flex-start; background: linear-gradient(180deg, #fff, #fbfbff); }
+    .component-number { display: inline-grid; place-items: center; width: 30px; height: 30px; margin-right: 10px; border-radius: var(--radius); color: #fff; background: var(--school-blue); font-size: 12px; font-weight: 900; }
+    .component-heading { display: flex; align-items: flex-start; }
+    .component-note { color: var(--muted); font-size: 12px; text-align: right; }
+    .token-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .color-token { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+    .color-swatch { height: 76px; background: var(--swatch); }
+    .color-meta { padding: 11px; }
+    .color-meta strong, .color-meta code { display: block; overflow-wrap: anywhere; }
+    .color-meta strong { font-size: 13px; }
+    .color-meta code { margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .type-scale { display: grid; gap: 0; }
+    .type-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 18px; align-items: baseline; padding: 15px 0; border-bottom: 1px solid var(--line); }
+    .type-row:last-child { border-bottom: 0; }
+    .type-row code { color: var(--muted); font-size: 11px; }
+    .type-display { font-size: 32px; line-height: 1.15; font-weight: 800; }
+    .type-title { font-size: 22px; line-height: 1.2; font-weight: 800; }
+    .type-section { font-size: 16px; line-height: 1.3; font-weight: 800; }
+    .type-body { font-size: 14px; line-height: 1.55; }
+    .type-caption { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .component-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .component-row + .component-row { margin-top: 14px; }
+    .button-secondary, .button-danger, .button-text { min-height: 42px; padding: 0 15px; border-radius: var(--radius); font-weight: 800; }
+    .button-secondary { border: 1px solid var(--school-blue); color: var(--school-blue); background: #fff; }
+    .button-danger { border: 1px solid var(--red); color: #fff; background: var(--red); }
+    .button-text { border: 1px solid transparent; color: var(--school-blue); background: transparent; }
+    .button-secondary:hover, .button-text:hover { background: var(--soft); }
+    .button-danger:hover { background: #c90028; }
+    button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity: .52; box-shadow: none; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid rgba(38,57,133,.22); outline-offset: 2px; }
+    .field-demo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .field-help { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
+    .field-error input { border-color: var(--red); background: #fffafb; }
+    .field-error .field-help { color: var(--red); }
+    .control-inline { display: flex; align-items: center; gap: 9px; color: var(--ink); font-size: 13px; font-weight: 700; }
+    .control-inline input { width: 18px; min-height: 18px; height: 18px; }
+    .switch { position: relative; width: 42px; height: 24px; flex: 0 0 auto; }
+    .switch input { position: absolute; opacity: 0; pointer-events: none; }
+    .switch-track { position: absolute; inset: 0; border-radius: 999px; background: #cfd3e5; transition: background .16s ease; }
+    .switch-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(30,35,64,.22); transition: transform .16s ease; }
+    .switch input:checked + .switch-track { background: var(--school-blue); }
+    .switch input:checked + .switch-track::after { transform: translateX(18px); }
+    .switch input:focus-visible + .switch-track { outline: 3px solid rgba(38,57,133,.22); outline-offset: 2px; }
+    .state-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .alert { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 11px; align-items: start; padding: 13px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+    .alert-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: var(--radius); font-size: 13px; font-weight: 900; }
+    .alert strong, .alert span { display: block; }
+    .alert strong { margin-bottom: 3px; font-size: 13px; }
+    .alert span { color: var(--muted); font-size: 12px; }
+    .alert.info .alert-icon { color: var(--school-blue); background: var(--soft); }
+    .alert.success .alert-icon { color: var(--green); background: var(--green-soft); }
+    .alert.warning .alert-icon { color: #8b5b00; background: #fff3d3; }
+    .alert.error .alert-icon { color: var(--red); background: var(--red-soft); }
+    .sample-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .sample-card { padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+    .sample-card header { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+    .sample-card h4 { margin: 0 0 4px; font-size: 14px; }
+    .sample-card p { margin: 0; color: var(--muted); font-size: 12px; }
+    .sample-card .metric { display: block; margin: 8px 0 4px; color: var(--school-blue); font-size: 28px; line-height: 1; font-weight: 900; font-variant-numeric: tabular-nums; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+    .data-table { width: 100%; min-width: 680px; border-collapse: collapse; background: #fff; font-size: 13px; }
+    .data-table th, .data-table td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+    .data-table th { color: var(--muted); background: #fafbff; font-size: 11px; letter-spacing: .03em; text-transform: uppercase; }
+    .data-table tbody tr:last-child td { border-bottom: 0; }
+    .data-table tbody tr:hover { background: #fbfcff; }
+    .empty-state { display: grid; place-items: center; min-height: 250px; padding: 28px; border: 1px dashed #c9cee5; border-radius: var(--radius); background: #fbfcff; text-align: center; }
+    .empty-state-icon { width: 52px; height: 52px; display: grid; place-items: center; margin-bottom: 12px; border-radius: 50%; color: var(--school-blue); background: var(--soft); font-weight: 900; }
+    .empty-state h4 { margin: 0 0 6px; font-size: 16px; }
+    .empty-state p { max-width: 430px; margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+    .layout-spec { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .layout-rule { padding: 15px; border-left: 3px solid var(--school-blue); background: var(--soft); }
+    .layout-rule strong { display: block; margin-bottom: 4px; font-size: 13px; }
+    .layout-rule span { color: var(--muted); font-size: 12px; }
+    .modal-backdrop { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(18,24,58,.54); opacity: 0; visibility: hidden; transition: opacity .16s ease, visibility .16s ease; }
+    .modal-backdrop.open { opacity: 1; visibility: visible; }
+    .modal-card { width: min(520px, 100%); overflow: hidden; border-radius: 12px; background: #fff; box-shadow: 0 28px 80px rgba(18,24,58,.3); transform: translateY(10px); transition: transform .16s ease; }
+    .modal-backdrop.open .modal-card { transform: translateY(0); }
+    .modal-head, .modal-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; }
+    .modal-head { border-bottom: 1px solid var(--line); }
+    .modal-head h3 { margin: 0; font-size: 17px; }
+    .modal-body { padding: 18px; }
+    .modal-body p { margin: 0; color: var(--muted); font-size: 13px; }
+    .modal-actions { justify-content: flex-end; border-top: 1px solid var(--line); background: #fafbff; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+
+    @media (max-width: 1100px) {
+      .app { grid-template-columns: 92px minmax(0, 1fr); }
+      .brand { justify-content: center; }
+      .brand div, .nav span, .sidebar-card { display: none; }
+      .nav button { justify-content: center; }
+      .grid, .split { grid-template-columns: 1fr; }
+      .modules { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .token-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .sample-cards, .state-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 760px) {
+      html, body, .app, .main {
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+      .app { display: block; }
+      .sidebar {
+        position: fixed;
+        z-index: 20;
+        inset: 0 auto 0 0;
+        width: 280px;
+        transform: translateX(-100%);
+        transition: transform .2s ease;
+      }
+      .sidebar.open { transform: translateX(0); }
+      .brand div, .nav span, .sidebar-card { display: block; }
+      .nav button { justify-content: flex-start; }
+      .main { padding: 16px; }
+      .mobile-toggle { display: grid; }
+      .topbar {
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr);
+        align-items: flex-start;
+        overflow: hidden;
+      }
+      .actions {
+        grid-column: 1 / -1;
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr;
+        justify-content: stretch;
+      }
+      .page-title { min-width: 0; }
+      .page-title h2 {
+        max-width: 100%;
+        font-size: 22px;
+        word-break: break-word;
+      }
+      .search { width: 100%; }
+      .actions .search { grid-column: 1 / -1; }
+      .actions .ghost,
+      .actions .primary,
+      .action-menu,
+      .quick-action-toggle { width: 100%; }
+      .quick-action-menu {
+        left: 0;
+        right: auto;
+        width: 100%;
+      }
+      .quick-action-menu::before {
+        right: 24px;
+      }
+      .toast {
+        right: 16px;
+        bottom: 16px;
+      }
+      .kpis, .modules, .form-grid, .quick-prompts, .stat-grid { grid-template-columns: 1fr; }
+      .design-intro, .field-demo, .token-grid, .sample-cards, .state-grid, .layout-spec { grid-template-columns: 1fr; }
+      .design-hero { min-height: 240px; padding: 20px; }
+      .design-kicker { margin-bottom: 36px; }
+      .type-row { grid-template-columns: 1fr; gap: 6px; }
+      .component-note { width: 100%; text-align: left; }
+      .component-row > button:not(.icon-button) { width: 100%; }
+      .panel, .profile-hero, .kpi, .module { min-width: 0; }
+      .profile-hero {
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+        gap: 12px;
+        padding: 16px;
+      }
+      .profile-hero img {
+        width: 76px;
+        height: 76px;
+      }
+      .profile-hero h3 {
+        font-size: 19px;
+        word-break: break-word;
+      }
+      .panel-head {
+        align-items: stretch;
+        flex-wrap: wrap;
+      }
+      .section-action { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="Điều hướng hệ thống">
+      <button class="brand brand-home" type="button" id="brandHome" aria-label="Về trang tổng quan">
+        <img class="brand-logo" src="/assets/logo-thcs-le-van-tam.png" alt="Logo Trường THCS Lê Văn Tám">
+        <div>
+          <h1>Trường THCS Lê Văn Tám</h1>
+          <small>Nền tảng quản lý nội bộ</small>
+        </div>
+      </button>
+
+      <nav class="nav" aria-label="Chức năng chính">
+        <button class="active" data-view="dashboard" title="Tổng quan">
+          <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3z"/><path d="M13 21h8V11h-8z"/><path d="M13 3v6h8V3z"/><path d="M3 21h8v-6H3z"/></svg>
+          <span>Tổng quan</span>
+        </button>
+        <button data-view="schoolInfo" title="Thông tin nhà trường">
+          <svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/><path d="M9 10h.01M15 10h.01"/></svg>
+          <span>Thông tin nhà trường</span>
+        </button>
+        <button data-view="leaders" title="Ban Giám hiệu">
+          <svg viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M5 10v6c2 2 4.5 3 7 3s5-1 7-3v-6"/></svg>
+          <span>Ban Giám hiệu</span>
+        </button>
+        <button data-view="schedule" title="Lịch công tác">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          <span>Lịch công tác</span>
+        </button>
+        <button data-view="tasks" title="Nhiệm vụ">
+          <svg viewBox="0 0 24 24"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <span>Nhiệm vụ</span>
+        </button>
+        <button data-view="teachers" title="Giáo viên và tổ">
+          <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Giáo viên & tổ</span>
+        </button>
+        <button data-view="classes" title="Lớp chủ nhiệm">
+          <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>
+          <span>Lớp chủ nhiệm</span>
+        </button>
+        <button data-view="accounts" title="Quản trị tài khoản">
+          <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M19 8v6M16 11h6"/></svg>
+          <span>Quản trị tài khoản</span>
+        </button>
+        <button data-view="news" title="Tin tức & thông báo">
+          <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+          <span>Tin tức & thông báo</span>
+        </button>
+        <button data-view="components" title="Thư viện giao diện">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7M17.5 14v7"/></svg>
+          <span>Thư viện giao diện</span>
+        </button>
+        <button data-view="reports" title="Báo cáo">
+          <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+          <span>Báo cáo</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-card">
+        <strong>AI nhắc việc</strong>
+        <p>Hôm nay có 3 việc cần xử lý trước 16:30. Ưu tiên báo cáo chuyên môn và lịch họp phụ huynh.</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-button mobile-toggle" id="menuBtn" aria-label="Mở menu">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="page-title">
+          <h2 id="viewTitle">Tổng quan nhà trường</h2>
+          <p id="viewSubtitle">Lịch tuần và nhiệm vụ nội bộ.</p>
+        </div>
+        <div class="actions">
+          <input class="search" type="search" placeholder="Tìm lịch, giáo viên, lớp..." aria-label="Tìm kiếm">
+          <button class="ghost">Xuất báo cáo</button>
+          <div class="action-menu" id="quickActionMenu">
+            <button class="quick-action-toggle" id="quickActionToggle" aria-expanded="false" aria-haspopup="true" aria-controls="quickActionPanel">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              Tác vụ nhanh
+              <svg class="chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="quick-action-menu" id="quickActionPanel" role="menu">
+              <button class="quick-action-item" role="menuitem" data-target="tasks" data-toast="Đã mở màn hình tạo nhiệm vụ mới.">
+                <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <span><strong>Tạo nhiệm vụ</strong><span>Giao việc cho BGH, tổ trưởng, giáo viên hoặc văn phòng.</span></span>
+              </button>
+              <button class="quick-action-item" role="menuitem" data-target="schedule" data-toast="Đã chuyển sang lịch công tác tuần.">
+                <svg viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/></svg>
+                <span><strong>Nhập lịch công tác</strong><span>Thêm lịch họp, chuyên môn, trực trường và deadline tuần.</span></span>
+              </button>
+              <button class="quick-action-item" role="menuitem" data-target="news" data-toast="Đã mở kho tin tức và thông báo.">
+                <svg viewBox="0 0 24 24"><path d="M4 22V4a2 2 0 0 1 2-2h12v20l-7-3Z"/><path d="M9 7h6M9 11h6"/></svg>
+                <span><strong>Gửi thông báo</strong><span>Đăng thông báo nội bộ theo toàn trường, tổ, khối hoặc lớp.</span></span>
+              </button>
+              <button class="quick-action-item" role="menuitem" data-target="leaders" data-toast="Đã mở phần Ban Giám hiệu để phân công lịch trực.">
+                <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+                <span><strong>Phân công trực BGH</strong><span>Cập nhật người trực, ca trực và việc cần theo dõi trong tuần.</span></span>
+              </button>
+              <div class="quick-action-divider"></div>
+              <button class="quick-action-item" role="menuitem" data-target="accounts" data-toast="Đã mở quản trị tài khoản để thêm người dùng.">
+                <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+                <span><strong>Mời tài khoản</strong><span>Tạo tài khoản giáo viên, GVCN, tổ trưởng hoặc văn phòng.</span></span>
+              </button>
+              <button class="quick-action-item" role="menuitem" data-target="schoolInfo" data-toast="Đã mở thông tin nhà trường để cập nhật hồ sơ.">
+                <svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-8h6v8"/></svg>
+                <span><strong>Cập nhật thông tin trường</strong><span>Sửa hồ sơ trường, năm học, liên hệ và cấu hình vận hành.</span></span>
+              </button>
+              <button class="quick-action-item" role="menuitem" data-target="reports" data-toast="Đã mở báo cáo nhanh cho BGH.">
+                <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                <span><strong>Tạo báo cáo nhanh</strong><span>Tổng hợp tiến độ tuần, việc trễ hạn và tình hình từng tổ.</span></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="view active" id="dashboard">
+        <div class="profile-hero">
+          <img src="/assets/logo-thcs-le-van-tam.png" alt="Logo Trường THCS Lê Văn Tám">
+          <div>
+            <h3>Trường Trung học cơ sở Lê Văn Tám</h3>
+            <p>107F Chu Văn An, phường Bình Thạnh, Tp.Hồ Chí Minh · 02838.412337 · <a href="mailto:thcslvtam.bth@tphcm.gov.vn">thcslvtam.bth@tphcm.gov.vn</a></p>
+            <div class="stat-grid">
+              <div class="mini-stat"><b>2025-2026</b><span>Năm học đang cập nhật hồ sơ</span></div>
+              <div class="mini-stat"><b>03</b><span>Cán bộ quản lý</span></div>
+              <div class="mini-stat"><b>06</b><span>Nhóm thông tin công khai</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kpis">
+          <article class="kpi"><span>Lịch tuần</span><b>18</b><span>đầu việc đã đăng</span></article>
+          <article class="kpi danger"><span>Cần xử lý</span><b>07</b><span>việc sắp tới hạn</span></article>
+          <article class="kpi gold"><span>Thông báo</span><b>12</b><span>chưa xác nhận xem</span></article>
+          <article class="kpi green"><span>Hoàn thành</span><b>84%</b><span>tiến độ tuần này</span></article>
+        </div>
+
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div class="panel-title">
+                <strong>Lịch công tác tuần</strong>
+                <span>Tuần 01/07 - 05/07, tự động gợi ý việc theo vai trò</span>
+              </div>
+              <button class="section-action">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                Thêm lịch
+              </button>
+            </div>
+            <div class="panel-body">
+              <div class="week">
+                <article class="day">
+                  <h3>Thứ hai</h3>
+                  <div class="event"><span>07:15</span><strong>Chào cờ đầu tuần</strong><small class="tag">Toàn trường</small></div>
+                  <div class="event"><span>14:00</span><strong>Họp BGH mở tuần</strong><small class="tag red">Quan trọng</small></div>
+                </article>
+                <article class="day">
+                  <h3>Thứ ba</h3>
+                  <div class="event"><span>08:30</span><strong>Kiểm tra hồ sơ tổ Toán</strong><small class="tag gold">Chuyên môn</small></div>
+                  <div class="event"><span>15:00</span><strong>Nộp giáo án tuần</strong><small class="tag red">Deadline</small></div>
+                </article>
+                <article class="day">
+                  <h3>Thứ tư</h3>
+                  <div class="event"><span>09:00</span><strong>Dự giờ lớp 8A1</strong><small class="tag">Khối 8</small></div>
+                  <div class="event"><span>16:00</span><strong>Sinh hoạt chuyên môn</strong><small class="tag gold">Tổ trưởng</small></div>
+                </article>
+                <article class="day">
+                  <h3>Thứ năm</h3>
+                  <div class="event"><span>13:30</span><strong>Tổng hợp nề nếp lớp</strong><small class="tag green">GVCN</small></div>
+                  <div class="event"><span>15:30</span><strong>Họp phụ huynh 9A2</strong><small class="tag red">Cần chuẩn bị</small></div>
+                </article>
+                <article class="day">
+                  <h3>Thứ sáu</h3>
+                  <div class="event"><span>10:00</span><strong>Báo cáo tuần cho BGH</strong><small class="tag red">Deadline</small></div>
+                  <div class="event"><span>14:30</span><strong>Tổng vệ sinh lớp học</strong><small class="tag">Phong trào</small></div>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <aside class="panel assistant">
+            <div class="panel-head">
+              <div class="panel-title">
+                <strong>AI Assistant</strong>
+                <span>Tóm tắt, nhắc việc, cảnh báo trễ hạn</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="chat" id="chat">
+                <div class="bubble">Em đã tách lịch tuần thành 18 đầu việc. Có 7 việc cần nhắc theo vai trò giáo viên, tổ trưởng và GVCN.</div>
+                <div class="bubble alt">Ưu tiên hôm nay: nộp giáo án, xác nhận lịch dự giờ, chuẩn bị họp phụ huynh 9A2.</div>
+              </div>
+              <div class="quick-prompts">
+                <button data-prompt="Tóm tắt lịch tuần cho giáo viên">Tóm tắt lịch tuần</button>
+                <button data-prompt="Liệt kê việc quá hạn">Việc quá hạn</button>
+                <button data-prompt="Soạn nhắc việc cho tổ trưởng">Nhắc tổ trưởng</button>
+                <button data-prompt="Gợi ý kế hoạch hôm nay">Kế hoạch hôm nay</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="modules">
+          <article class="module">
+            <h3>Thông tin nhà trường</h3>
+            <p>Đồng bộ hồ sơ chính thức: địa chỉ, điện thoại, email, năm học và các mục công khai.</p>
+            <div class="progress"><i style="--value: 88%"></i></div>
+          </article>
+          <article class="module">
+            <h3>Ban Giám hiệu</h3>
+            <p>Quản lý danh sách cán bộ quản lý năm học 2025-2026 và phạm vi phụ trách.</p>
+            <div class="progress"><i style="--value: 76%"></i></div>
+          </article>
+          <article class="module">
+            <h3>Tin tức & thông báo</h3>
+            <p>Theo dõi tin nhà trường, thông báo, y tế, tuyển sinh, công khai và hoạt động chuyên môn.</p>
+            <div class="progress"><i style="--value: 71%"></i></div>
+          </article>
+          <article class="module">
+            <h3>Quản lý lịch công tác</h3>
+            <p>BGH nhập lịch tuần, phân loại hoạt động, gán người phụ trách và tự động nhắc đúng đối tượng.</p>
+            <div class="progress"><i style="--value: 78%"></i></div>
+          </article>
+          <article class="module">
+            <h3>Nhiệm vụ giáo viên</h3>
+            <p>Mỗi giáo viên có danh sách việc riêng: lịch dạy, họp, hồ sơ, báo cáo và việc chủ nhiệm.</p>
+            <div class="progress"><i style="--value: 64%"></i></div>
+          </article>
+          <article class="module">
+            <h3>Báo cáo nội bộ</h3>
+            <p>BGH theo dõi tiến độ theo tổ, lớp, cá nhân và xuất báo cáo tuần/tháng nhanh.</p>
+            <div class="progress"><i style="--value: 84%"></i></div>
+          </article>
+          <article class="module">
+            <h3>Quản trị tài khoản</h3>
+            <p>Phân quyền BGH, tổ trưởng, giáo viên, GVCN và văn phòng theo từng chức năng.</p>
+            <div class="progress"><i style="--value: 72%"></i></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="schedule">
+        <div class="split">
+          <section class="panel">
+            <div class="panel-head"><div class="panel-title"><strong>Nhập lịch công tác tuần</strong><span>Demo form cho BGH hoặc văn phòng trường</span></div></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <label>Ngày <input type="date" value="2026-07-01"></label>
+                <label>Thời gian <input type="time" value="14:00"></label>
+                <label>Loại việc <select><option>Họp</option><option>Chuyên môn</option><option>Kiểm tra</option><option>Phong trào</option><option>Báo cáo</option></select></label>
+                <label>Người phụ trách <select><option>Ban giám hiệu</option><option>Tổ trưởng chuyên môn</option><option>Giáo viên chủ nhiệm</option><option>Toàn trường</option></select></label>
+                <label style="grid-column: 1 / -1;">Nội dung <textarea>Họp triển khai kế hoạch chuyên môn tuần và rà soát hồ sơ giáo án.</textarea></label>
+              </div>
+              <button class="primary" style="margin-top:12px;">Lưu và tạo nhắc việc</button>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="panel-head"><div class="panel-title"><strong>AI tách việc</strong><span>Kết quả sau khi nhập lịch</span></div></div>
+            <div class="panel-body task-list">
+              <div class="task"><div class="check"></div><div><strong>Gửi thông báo cho tổ trưởng</strong><span>Trước 16:00 hôm nay</span></div><small class="tag red">Gấp</small></div>
+              <div class="task"><div class="check"></div><div><strong>Chuẩn bị biên bản họp</strong><span>Văn phòng trường</span></div><small class="tag">Hành chính</small></div>
+              <div class="task done"><div class="check"></div><div><strong>Gắn lịch vào tuần</strong><span>Đã hoàn thành</span></div><small class="tag green">Xong</small></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="tasks">
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title"><strong>Danh sách nhiệm vụ tuần</strong><span>Theo dõi trạng thái hoàn thành và việc trễ hạn</span></div>
+            <button class="section-action">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              Giao việc
+            </button>
+          </div>
+          <div class="panel-body task-list">
+            <div class="task"><div class="check"></div><div><strong>Nộp giáo án tuần 1 tháng 7</strong><span>Tổ Văn - Sử - Địa, hạn 15:00 thứ ba</span></div><small class="tag red">Sắp hạn</small></div>
+            <div class="task"><div class="check"></div><div><strong>Chuẩn bị dự giờ lớp 8A1</strong><span>Cô Mai, thầy Đức, BGH chuyên môn</span></div><small class="tag gold">Chuyên môn</small></div>
+            <div class="task done"><div class="check"></div><div><strong>Xác nhận lịch chào cờ</strong><span>Tổng phụ trách đội</span></div><small class="tag green">Xong</small></div>
+            <div class="task"><div class="check"></div><div><strong>Tổng hợp nề nếp khối 9</strong><span>GVCN khối 9, hạn thứ sáu</span></div><small class="tag">GVCN</small></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="teachers">
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-head"><div class="panel-title"><strong>Giáo viên & tổ chuyên môn</strong><span>Quản lý nhiệm vụ theo tổ</span></div></div>
+            <div class="panel-body teacher-list">
+              <div class="teacher"><div class="crest" style="width:38px;height:38px;font-size:12px;">TO</div><div><strong>Tổ Toán - Tin</strong><span>8 giáo viên, 5 nhiệm vụ đang mở</span></div><small class="tag red">2 trễ</small></div>
+              <div class="teacher"><div class="crest" style="width:38px;height:38px;font-size:12px;">VN</div><div><strong>Tổ Văn - Sử - Địa</strong><span>10 giáo viên, 3 nhiệm vụ đang mở</span></div><small class="tag gold">Theo dõi</small></div>
+              <div class="teacher"><div class="crest" style="width:38px;height:38px;font-size:12px;">AN</div><div><strong>Tổ Anh - Nhạc - Mỹ thuật</strong><span>7 giáo viên, 1 nhiệm vụ đang mở</span></div><small class="tag green">Ổn</small></div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="panel-head"><div class="panel-title"><strong>Gợi ý cho tổ trưởng</strong><span>AI tự tổng hợp đầu việc</span></div></div>
+            <div class="panel-body">
+              <p style="margin-top:0;color:var(--muted);">Tổ Toán - Tin cần ưu tiên nhắc giáo viên hoàn tất giáo án và xác nhận lịch kiểm tra hồ sơ trước 15:00 thứ ba.</p>
+              <button class="primary">Tạo tin nhắc tổ</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="classes">
+        <section class="panel">
+          <div class="panel-head"><div class="panel-title"><strong>Quản lý lớp chủ nhiệm</strong><span>Theo dõi việc của GVCN, họp phụ huynh, nề nếp và học sinh cần quan tâm</span></div></div>
+          <div class="panel-body modules" style="margin-top:0;">
+            <article class="module"><h3>Lớp 6A1</h3><p>2 học sinh cần theo dõi nề nếp, họp phụ huynh mini vào thứ năm.</p><small class="tag gold">GVCN: Cô Lan</small></article>
+            <article class="module"><h3>Lớp 8A1</h3><p>Có lịch dự giờ thứ tư, cần nhắc lớp chuẩn bị nội quy và sĩ số.</p><small class="tag red">Dự giờ</small></article>
+            <article class="module"><h3>Lớp 9A2</h3><p>Chuẩn bị họp phụ huynh cuối cấp, cập nhật danh sách học sinh cần tư vấn.</p><small class="tag red">Quan trọng</small></article>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="accounts">
+        <div class="split">
+          <section class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><strong>Quản trị tài khoản</strong><span>Tạo tài khoản, phân vai trò và kiểm soát quyền truy cập</span></div>
+              <button class="section-action">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                Thêm tài khoản
+              </button>
+            </div>
+            <div class="panel-body account-list">
+              <div class="account-row"><div class="avatar red">HT</div><div><strong>Hiệu trưởng</strong><span>Toàn quyền: lịch công tác, nhiệm vụ, báo cáo, tài khoản</span></div><small class="tag red">Admin</small></div>
+              <div class="account-row"><div class="avatar">PHT</div><div><strong>Phó hiệu trưởng chuyên môn</strong><span>Duyệt lịch chuyên môn, giao việc tổ trưởng, xem báo cáo tiến độ</span></div><small class="tag">Quản lý</small></div>
+              <div class="account-row"><div class="avatar gold">TT</div><div><strong>Tổ trưởng chuyên môn</strong><span>Giao việc trong tổ, xác nhận hoàn thành, tổng hợp báo cáo tổ</span></div><small class="tag gold">Tổ trưởng</small></div>
+              <div class="account-row"><div class="avatar">GV</div><div><strong>Giáo viên / GVCN</strong><span>Xem lịch cá nhân, nhận nhắc việc, cập nhật tiến độ lớp chủ nhiệm</span></div><small class="tag green">Người dùng</small></div>
+              <div class="account-row"><div class="avatar">VP</div><div><strong>Văn phòng trường</strong><span>Nhập thông báo, cập nhật lịch tuần, hỗ trợ hồ sơ hành chính</span></div><small class="tag">Vận hành</small></div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="panel-head"><div class="panel-title"><strong>Thiết lập quyền</strong><span>Demo phân quyền theo vai trò</span></div></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <label>Vai trò <select><option>Hiệu trưởng</option><option>Phó hiệu trưởng</option><option>Tổ trưởng</option><option>Giáo viên</option><option>Văn phòng</option></select></label>
+                <label>Trạng thái <select><option>Đang hoạt động</option><option>Tạm khóa</option><option>Chờ kích hoạt</option></select></label>
+                <label><input type="checkbox" checked> Quản lý lịch công tác</label>
+                <label><input type="checkbox" checked> Giao và duyệt nhiệm vụ</label>
+                <label><input type="checkbox"> Quản trị tài khoản</label>
+                <label><input type="checkbox" checked> Xem báo cáo nội bộ</label>
+              </div>
+              <button class="primary" style="margin-top:12px;">Lưu phân quyền</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="leaders">
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><strong>Ban Giám hiệu</strong><span>Hồ sơ lãnh đạo, phạm vi phụ trách và lịch trực</span></div>
+              <button class="section-action">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                Cập nhật hồ sơ
+              </button>
+            </div>
+            <div class="panel-body leader-list">
+              <div class="leader-row"><div class="avatar red">PTT</div><div><strong>Phạm Thị Thuỷ</strong><span>Hiệu trưởng - phụ trách chung, phê duyệt kế hoạch tuần và báo cáo nội bộ</span></div><small class="tag red">Hiệu trưởng</small></div>
+              <div class="leader-row"><div class="avatar">TM</div><div><strong>Trần Thị Ngọc Minh</strong><span>P.Hiệu trưởng - theo dõi chuyên môn, lịch công tác và nhiệm vụ tổ chuyên môn</span></div><small class="tag">P.Hiệu trưởng</small></div>
+              <div class="leader-row"><div class="avatar gold">VV</div><div><strong>Vũ Minh Vương</strong><span>P.Hiệu trưởng - theo dõi vận hành, nề nếp và các đầu việc được phân công</span></div><small class="tag gold">P.Hiệu trưởng</small></div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="panel-head"><div class="panel-title"><strong>Lịch trực BGH</strong><span>Theo dõi theo ngày trong tuần</span></div></div>
+            <div class="panel-body task-list">
+              <div class="task"><div class="check"></div><div><strong>Thứ hai - Hiệu trưởng</strong><span>Chào cờ, họp giao ban, xử lý việc phát sinh</span></div><small class="tag red">Quan trọng</small></div>
+              <div class="task"><div class="check"></div><div><strong>Thứ ba, tư - PHT chuyên môn</strong><span>Kiểm tra hồ sơ, dự giờ, hỗ trợ tổ chuyên môn</span></div><small class="tag">Chuyên môn</small></div>
+              <div class="task"><div class="check"></div><div><strong>Thứ năm, sáu - PHT nề nếp</strong><span>Theo dõi lớp chủ nhiệm, phong trào và báo cáo tuần</span></div><small class="tag gold">Theo dõi</small></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="schoolInfo">
+        <div class="split">
+          <section class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><strong>Thông tin nhà trường</strong><span>Hồ sơ nhận diện và thông tin vận hành cơ bản</span></div>
+              <button class="section-action">
+                <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                Chỉnh sửa
+              </button>
+            </div>
+            <div class="panel-body">
+              <div class="profile-hero">
+                <img src="/assets/logo-thcs-le-van-tam.png" alt="Logo Trường THCS Lê Văn Tám">
+                <div>
+                  <h3>Trường Trung học cơ sở Lê Văn Tám</h3>
+                  <p>107F Chu Văn An, phường Bình Thạnh, Tp.Hồ Chí Minh · Điện thoại: 02838.412337 · Email: <a href="mailto:thcslvtam.bth@tphcm.gov.vn">thcslvtam.bth@tphcm.gov.vn</a></p>
+                  <div class="stat-grid">
+                    <div class="mini-stat"><b>2025-2026</b><span>Năm học trên hồ sơ tổ chức</span></div>
+                    <div class="mini-stat"><b>03</b><span>Cán bộ quản lý</span></div>
+                    <div class="mini-stat"><b>06</b><span>Nhóm thông tin chính</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="info-list">
+                <div class="info-row"><small class="tag">Tên đơn vị</small><div><strong>Trường Trung học cơ sở Lê Văn Tám</strong><span>Tên hiển thị thống nhất trong toàn bộ hệ thống</span></div><strong>Đã xác nhận</strong></div>
+                <div class="info-row"><small class="tag gold">Địa chỉ</small><div><strong>107F Chu Văn An, phường Bình Thạnh, Tp.Hồ Chí Minh</strong><span>Dùng cho hồ sơ trường, báo cáo, biểu mẫu và trang liên hệ</span></div><strong>Chính thức</strong></div>
+                <div class="info-row"><small class="tag green">Liên hệ</small><div><strong>02838.412337 · <a href="mailto:thcslvtam.bth@tphcm.gov.vn">thcslvtam.bth@tphcm.gov.vn</a></strong><span>Dùng cho thông báo nội bộ, văn bản và hồ sơ người dùng</span></div><strong>Chính thức</strong></div>
+                <div class="info-row"><small class="tag">Danh mục</small><div><strong>Giới thiệu, Thời khóa biểu, Lịch công tác tuần, Công khai, Tin tức, Y tế</strong><span>Các nhóm dữ liệu nên đồng bộ vào platform quản lý nội bộ</span></div><strong>Theo website</strong></div>
+              </div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="panel-head"><div class="panel-title"><strong>Cấu hình hệ thống</strong><span>Thông tin nền cho vận hành platform</span></div></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <label>Tên trường <input value="Trường Trung học cơ sở Lê Văn Tám"></label>
+                <label>Năm học <input value="2025 - 2026"></label>
+                <label>Khối lớp <select><option>Khối 6, 7, 8, 9</option></select></label>
+                <label>Ngôn ngữ <select><option>Tiếng Việt</option></select></label>
+                <label style="grid-column: 1 / -1;">Ghi chú vận hành <textarea>Thông tin chính thức của trường sẽ được dùng tự động trong báo cáo, thông báo, màn hình tài khoản và hồ sơ Ban Giám hiệu.</textarea></label>
+              </div>
+              <button class="primary" style="margin-top:12px;">Lưu thông tin</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="news">
+        <div class="grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><strong>Tin tức & thông báo</strong><span>Nhóm nội dung phù hợp để đồng bộ từ website trường</span></div>
+              <button class="section-action">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                Thêm tin
+              </button>
+            </div>
+            <div class="panel-body news-list">
+              <div class="news-row"><small class="tag red">Thông báo</small><div><strong>Thông báo nội bộ nhà trường</strong><span>Dùng để đẩy lịch họp, hạn nộp hồ sơ, thông báo khẩn cho giáo viên</span></div><strong>Ưu tiên</strong></div>
+              <div class="news-row"><small class="tag">Nhà trường</small><div><strong>Hoạt động nhà trường</strong><span>Gồm hoạt động ngoại khóa, hội xuân truyền thống, múa dân vũ, chuyên đề nhà trường</span></div><strong>Tin tức</strong></div>
+              <div class="news-row"><small class="tag gold">Tuyển sinh</small><div><strong>Tuyển sinh lớp 6 và lớp 10</strong><span>Phù hợp để tạo checklist hồ sơ, hạn đăng ký và phân công người phụ trách</span></div><strong>Theo dõi</strong></div>
+              <div class="news-row"><small class="tag green">Y tế</small><div><strong>Văn bản Y tế, truyền thông GDSK, bán trú</strong><span>Có thể chuyển thành thông báo nhắc việc cho GVCN và văn phòng</span></div><strong>Định kỳ</strong></div>
+              <div class="news-row"><small class="tag">Công khai</small><div><strong>Công khai chất lượng, điều kiện đảm bảo chất lượng, thu chi tài chính</strong><span>Gắn với báo cáo năm học và kho văn bản công khai</span></div><strong>Hồ sơ</strong></div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="panel-head"><div class="panel-title"><strong>AI xử lý tin</strong><span>Từ bài viết thành việc cần làm</span></div></div>
+            <div class="panel-body task-list">
+              <div class="task"><div class="check"></div><div><strong>Tóm tắt tin thành 3 ý chính</strong><span>Áp dụng cho tin dài hoặc văn bản hướng dẫn</span></div><small class="tag">AI</small></div>
+              <div class="task"><div class="check"></div><div><strong>Tách deadline và người phụ trách</strong><span>Tạo nhiệm vụ cho BGH, tổ trưởng, GVCN hoặc văn phòng</span></div><small class="tag red">Nhắc việc</small></div>
+              <div class="task done"><div class="check"></div><div><strong>Lưu vào kho thông báo</strong><span>Phân loại theo Nhà trường, Y tế, Công khai, Tuyển sinh</span></div><small class="tag green">Sẵn sàng</small></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="reports">
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title"><strong>Báo cáo nhanh cho BGH</strong><span>Tổng hợp tiến độ tuần/tháng</span></div>
+            <button class="primary">Xuất PDF</button>
+          </div>
+          <div class="panel-body report-list">
+            <div class="report-row"><small class="tag red">Trễ hạn</small><div><strong>2 nhiệm vụ quá hạn</strong><span>Tập trung ở tổ Toán - Tin và GVCN khối 9</span></div><strong>11%</strong></div>
+            <div class="report-row"><small class="tag gold">Đang làm</small><div><strong>7 nhiệm vụ đang mở</strong><span>4 nhiệm vụ chuyên môn, 2 việc chủ nhiệm, 1 thông báo nội bộ</span></div><strong>39%</strong></div>
+            <div class="report-row"><small class="tag green">Xong</small><div><strong>16 nhiệm vụ hoàn thành</strong><span>Đã xác nhận bởi giáo viên hoặc tổ trưởng</span></div><strong>84%</strong></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="components">
+        <div class="design-intro">
+          <section class="design-hero">
+            <span class="design-kicker">Lê Văn Tám UI · Phiên bản nền tảng</span>
+            <h3>Một ngôn ngữ giao diện cho toàn bộ hệ thống nhà trường</h3>
+            <p>Trang tham chiếu chính thức cho các màn hình con: dùng chung màu sắc, typography, khoảng cách, trạng thái và mẫu tương tác để sản phẩm luôn quen thuộc, rõ ràng và đáng tin cậy.</p>
+          </section>
+          <aside class="principle-card">
+            <div>
+              <h3>Nguyên tắc cốt lõi</h3>
+              <p>Ưu tiên người dùng thao tác hằng ngày hơn hiệu ứng trang trí.</p>
+            </div>
+            <ul class="principle-list">
+              <li><b>01</b><span><strong>Nhất quán</strong><br>Cùng hành động phải có cùng hình dáng và vị trí.</span></li>
+              <li><b>02</b><span><strong>Dễ quét</strong><br>Thông tin quan trọng nhìn thấy trong vài giây.</span></li>
+              <li><b>03</b><span><strong>Có phản hồi</strong><br>Mọi thao tác đều có hover, focus và trạng thái kết quả.</span></li>
+              <li><b>04</b><span><strong>Mobile trước</strong><br>Không hy sinh khả năng thao tác trên điện thoại.</span></li>
+            </ul>
+          </aside>
+        </div>
+
+        <nav class="component-index" aria-label="Mục lục thư viện giao diện">
+          <a href="#foundation">Nền tảng</a>
+          <a href="#typography">Chữ</a>
+          <a href="#actions">Nút bấm</a>
+          <a href="#forms">Biểu mẫu</a>
+          <a href="#status">Trạng thái</a>
+          <a href="#cards">Thẻ dữ liệu</a>
+          <a href="#table">Bảng</a>
+          <a href="#feedback">Phản hồi</a>
+          <a href="#layout">Bố cục</a>
+        </nav>
+
+        <div class="component-stack">
+          <section class="panel component-section" id="foundation">
+            <div class="panel-head">
+              <div class="component-heading"><span class="component-number">01</span><div class="panel-title"><strong>Màu sắc nền tảng</strong><span>Token duy nhất, không tự tạo màu mới trong từng trang</span></div></div>
+              <span class="component-note">Tỉ lệ khuyên dùng: 80% trung tính · 15% xanh · 5% trạng thái</span>
+            </div>
+            <div class="panel-body token-grid">
+              <article class="color-token"><div class="color-swatch" style="--swatch:#263985"></div><div class="color-meta"><strong>School Blue</strong><code>--school-blue · #263985</code></div></article>
+              <article class="color-token"><div class="color-swatch" style="--swatch:#1f2f70"></div><div class="color-meta"><strong>Blue Hover</strong><code>--school-blue-2 · #1F2F70</code></div></article>
+              <article class="color-token"><div class="color-swatch" style="--swatch:#e4052e"></div><div class="color-meta"><strong>Critical Red</strong><code>--red · #E4052E</code></div></article>
+              <article class="color-token"><div class="color-swatch" style="--swatch:#23865f"></div><div class="color-meta"><strong>Success Green</strong><code>--green · #23865F</code></div></article>
+              <article class="color-token"><div class="color-swatch" style="--swatch:#f2a81d"></div><div class="color-meta"><strong>Attention Gold</strong><code>--gold · #F2A81D</code></div></article>
+              <article class="color-token"><div class="color-swatch" style="--swatch:#1e2340"></div><div class="color-meta"><strong>Primary Ink</strong><code>--ink · #1E2340</code></div></article>
+              <article class="color-token"><div class="color-swatch" style="--swatch:#6b7088"></div><div class="color-meta"><strong>Muted Ink</strong><code>--muted · #6B7088</code></div></article>
+              <article class="color-token"><div class="color-swatch" style="--swatch:#f4f6ff"></div><div class="color-meta"><strong>Soft Surface</strong><code>--soft · #F4F6FF</code></div></article>
+            </div>
+          </section>
+
+          <section class="panel component-section" id="typography">
+            <div class="panel-head"><div class="component-heading"><span class="component-number">02</span><div class="panel-title"><strong>Typography</strong><span>Segoe UI / Be Vietnam Pro, rõ nét và thân thiện với tiếng Việt</span></div></div><span class="component-note">Body tối thiểu 14px · line-height 1.45</span></div>
+            <div class="panel-body type-scale">
+              <div class="type-row"><code>Display · 32/37 · 800</code><div class="type-display">Tổng quan nhà trường</div></div>
+              <div class="type-row"><code>Page title · 22/26 · 800</code><div class="type-title">Lịch công tác tuần</div></div>
+              <div class="type-row"><code>Section · 16/21 · 800</code><div class="type-section">Nhiệm vụ cần xử lý</div></div>
+              <div class="type-row"><code>Body · 14/22 · 400</code><div class="type-body">Thông tin mô tả giúp giáo viên hiểu nội dung, thời hạn và người chịu trách nhiệm.</div></div>
+              <div class="type-row"><code>Caption · 12/17 · 400</code><div class="type-caption">Cập nhật lần cuối lúc 15:30 · Phòng văn thư</div></div>
+            </div>
+          </section>
+
+          <section class="panel component-section" id="actions">
+            <div class="panel-head"><div class="component-heading"><span class="component-number">03</span><div class="panel-title"><strong>Nút bấm và hành động</strong><span>Mỗi vùng chỉ nên có một hành động chính</span></div></div><span class="component-note">Chiều cao chuẩn 42px · radius 8px</span></div>
+            <div class="panel-body">
+              <div class="component-row">
+                <button class="primary" data-demo-toast="Đã lưu thay đổi|Hành động chính hoàn tất thành công.">Lưu thay đổi</button>
+                <button class="button-secondary" data-demo-toast="Đã mở bản xem trước|Dữ liệu hiện tại chưa bị thay đổi.">Xem trước</button>
+                <button class="ghost">Hủy</button>
+                <button class="button-danger" data-demo-toast="Hành động nhạy cảm|Trong sản phẩm thật cần bước xác nhận trước khi xóa.">Xóa dữ liệu</button>
+                <button class="button-text">Xem chi tiết</button>
+                <button class="icon-button" aria-label="Thêm mục mới"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+              </div>
+              <div class="component-row">
+                <button class="primary" disabled>Đang xử lý...</button>
+                <button class="button-secondary" disabled>Không khả dụng</button>
+                <small class="type-caption">Disabled chỉ dùng khi có lý do rõ ràng; nếu có thể, hiển thị giải thích gần nút.</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel component-section" id="forms">
+            <div class="panel-head"><div class="component-heading"><span class="component-number">04</span><div class="panel-title"><strong>Biểu mẫu</strong><span>Nhãn luôn nằm trên trường nhập, lỗi hiển thị sát dữ liệu liên quan</span></div></div><span class="component-note">Không dùng placeholder thay cho label</span></div>
+            <div class="panel-body">
+              <div class="field-demo">
+                <label>Tiêu đề nhiệm vụ<input value="Nộp báo cáo chuyên môn tháng 7"><span class="field-help">Ngắn gọn, dùng động từ chỉ hành động.</span></label>
+                <label>Người phụ trách<select><option>Nguyễn Thị Hoa · Tổ trưởng</option></select><span class="field-help">Chỉ hiển thị người thuộc phạm vi được phân công.</span></label>
+                <label>Thời hạn<input type="date" value="2026-07-24"></label>
+                <label class="field-error">Mã giáo viên<input value=""><span class="field-help">Mã giáo viên là thông tin bắt buộc.</span></label>
+                <label style="grid-column:1/-1">Ghi chú<textarea>Đính kèm báo cáo tổng hợp và xác nhận số liệu trước khi gửi.</textarea></label>
+              </div>
+              <div class="component-row" style="margin-top:16px">
+                <label class="control-inline"><input type="checkbox" checked> Gửi thông báo cho người phụ trách</label>
+                <label class="control-inline"><span class="switch"><input type="checkbox" checked aria-label="Bật nhắc việc"><span class="switch-track"></span></span> Bật nhắc việc tự động</label>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel component-section" id="status">
+            <div class="panel-head"><div class="component-heading"><span class="component-number">05</span><div class="panel-title"><strong>Badge và trạng thái</strong><span>Không chỉ dựa vào màu; luôn có nhãn chữ rõ nghĩa</span></div></div><span class="component-note">Một bản ghi chỉ dùng một trạng thái chính</span></div>
+            <div class="panel-body">
+              <div class="component-row"><span class="tag">Mặc định</span><span class="tag red">Quá hạn</span><span class="tag gold">Chờ duyệt</span><span class="tag green">Hoàn thành</span></div>
+              <div class="state-grid" style="margin-top:16px">
+                <article class="alert info"><span class="alert-icon">i</span><div><strong>Thông tin</strong><span>Lịch tuần đã được cập nhật lúc 15:30.</span></div></article>
+                <article class="alert success"><span class="alert-icon">✓</span><div><strong>Thành công</strong><span>16 nhiệm vụ đã hoàn thành đúng hạn.</span></div></article>
+                <article class="alert warning"><span class="alert-icon">!</span><div><strong>Cần chú ý</strong><span>3 giáo viên chưa xác nhận thông báo.</span></div></article>
+                <article class="alert error"><span class="alert-icon">×</span><div><strong>Có lỗi</strong><span>Không thể lưu vì thiếu mã giáo viên.</span></div></article>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel component-section" id="cards">
+            <div class="panel-head"><div class="component-heading"><span class="component-number">06</span><div class="panel-title"><strong>Thẻ dữ liệu</strong><span>Dùng cho số liệu tóm tắt và nhóm thông tin có cùng cấu trúc</span></div></div><span class="component-note">Tránh đặt card lồng bên trong card</span></div>
+            <div class="panel-body sample-cards">
+              <article class="sample-card"><header><div><h4>Nhiệm vụ tuần</h4><p>Tất cả tổ chuyên môn</p></div><span class="tag">Tuần 29</span></header><strong class="metric">25</strong><p>84% đã hoàn thành</p><div class="progress" style="margin-top:12px"><i style="--value:84%"></i></div></article>
+              <article class="sample-card"><header><div><h4>Cần xử lý</h4><p>Sắp tới hạn trong 24 giờ</p></div><span class="tag red">Ưu tiên</span></header><strong class="metric" style="color:var(--red)">07</strong><p>2 việc đang quá hạn</p></article>
+              <article class="sample-card"><header><div><h4>Xác nhận thông báo</h4><p>Toàn trường</p></div><span class="tag green">Ổn định</span></header><strong class="metric" style="color:var(--green)">92%</strong><p>68/74 người đã xem</p></article>
+            </div>
+          </section>
+
+          <section class="panel component-section" id="table">
+            <div class="panel-head"><div class="component-heading"><span class="component-number">07</span><div class="panel-title"><strong>Bảng dữ liệu</strong><span>Dùng cho danh sách cần so sánh, lọc hoặc thao tác hàng loạt</span></div></div><button class="section-action">Lọc danh sách</button></div>
+            <div class="panel-body">
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead><tr><th>Nhiệm vụ</th><th>Phụ trách</th><th>Thời hạn</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                  <tbody>
+                    <tr><td><strong>Nộp báo cáo chuyên môn</strong></td><td>Nguyễn Thị Hoa</td><td>24/07/2026</td><td><span class="tag gold">Đang làm</span></td><td><button class="button-text">Mở</button></td></tr>
+                    <tr><td><strong>Xác nhận lịch họp phụ huynh</strong></td><td>GVCN khối 9</td><td>22/07/2026</td><td><span class="tag red">Quá hạn</span></td><td><button class="button-text">Mở</button></td></tr>
+                    <tr><td><strong>Cập nhật kế hoạch tuần</strong></td><td>Ban Giám hiệu</td><td>20/07/2026</td><td><span class="tag green">Hoàn thành</span></td><td><button class="button-text">Mở</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel component-section" id="feedback">
+            <div class="panel-head"><div class="component-heading"><span class="component-number">08</span><div class="panel-title"><strong>Phản hồi, empty state và modal</strong><span>Giúp người dùng luôn biết hệ thống đang ở trạng thái nào</span></div></div><button class="button-secondary" id="openDemoModal">Mở modal mẫu</button></div>
+            <div class="panel-body empty-state">
+              <div>
+                <span class="empty-state-icon">0</span>
+                <h4>Chưa có thông báo nào</h4>
+                <p>Khi nhà trường tạo thông báo đầu tiên, danh sách người nhận và tình trạng xác nhận sẽ xuất hiện tại đây.</p>
+                <button class="primary" data-demo-toast="Bắt đầu tạo thông báo|Đây là phản hồi mẫu của hệ thống.">Tạo thông báo</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel component-section" id="layout">
+            <div class="panel-head"><div class="component-heading"><span class="component-number">09</span><div class="panel-title"><strong>Quy tắc bố cục trang con</strong><span>Khung chuẩn để dev mở rộng mà không phá nhịp giao diện</span></div></div><span class="component-note">Desktop ≥1100 · Tablet 761–1099 · Mobile ≤760</span></div>
+            <div class="panel-body layout-spec">
+              <article class="layout-rule"><strong>Trang danh sách</strong><span>Page title → bộ lọc → bảng/danh sách → phân trang. Hành động tạo mới nằm góc phải header.</span></article>
+              <article class="layout-rule"><strong>Trang chi tiết</strong><span>Thông tin chính ở cột rộng, metadata hoặc hành động phụ ở cột hẹp; về mobile thành một cột.</span></article>
+              <article class="layout-rule"><strong>Trang biểu mẫu</strong><span>Tối đa hai cột desktop, một cột mobile; nhóm trường theo nghiệp vụ, nút lưu nằm cuối luồng đọc.</span></article>
+              <article class="layout-rule"><strong>Khoảng cách</strong><span>8px cho liên hệ gần, 12–18px trong component, 18–24px giữa các vùng nội dung.</span></article>
+              <article class="layout-rule"><strong>Bo góc</strong><span>8px cho control/card; 12px chỉ dành cho modal hoặc lớp nổi quan trọng.</span></article>
+              <article class="layout-rule"><strong>Chuyển động</strong><span>150–200ms cho hover/menu/modal; tôn trọng prefers-reduced-motion, không dùng chuyển động trang trí.</span></article>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" aria-live="polite"></div>
+  <div class="modal-backdrop" id="demoModal" role="dialog" aria-modal="true" aria-labelledby="demoModalTitle" aria-hidden="true">
+    <section class="modal-card">
+      <header class="modal-head"><h3 id="demoModalTitle">Xác nhận tạo nhiệm vụ</h3><button class="icon-button" id="closeDemoModal" aria-label="Đóng modal">×</button></header>
+      <div class="modal-body"><p>Modal dùng cho xác nhận, tác vụ ngắn hoặc thông tin cần tập trung. Không dùng modal cho biểu mẫu dài hay nhiều bước.</p></div>
+      <footer class="modal-actions"><button class="ghost" data-close-modal>Hủy</button><button class="primary" data-close-modal data-demo-toast="Đã xác nhận|Nhiệm vụ mẫu đã được tạo.">Xác nhận</button></footer>
+    </section>
+  </div>
+
+  <script>
+    const titles = {
+      dashboard: ["Tổng quan nhà trường", "Lịch tuần và nhiệm vụ nội bộ."],
+      schedule: ["Lịch công tác tuần", "BGH nhập lịch, AI tách việc, gán người phụ trách và tạo nhắc việc."],
+      tasks: ["Quản lý nhiệm vụ", "Theo dõi việc cần làm của giáo viên, tổ chuyên môn và GVCN."],
+      teachers: ["Giáo viên & tổ chuyên môn", "Quản lý đầu việc theo tổ, vai trò và tiến độ hoàn thành."],
+      classes: ["Lớp chủ nhiệm", "Hỗ trợ GVCN theo dõi nề nếp, họp phụ huynh và việc của lớp."],
+      accounts: ["Quản trị tài khoản", "Phân quyền người dùng theo vai trò trong nhà trường."],
+      leaders: ["Ban Giám hiệu", "Theo dõi hồ sơ lãnh đạo, lịch trực và phạm vi phụ trách."],
+      schoolInfo: ["Thông tin nhà trường", "Quản lý hồ sơ nhận diện, thông tin vận hành và cấu hình năm học."],
+      news: ["Tin tức & thông báo", "Đồng bộ tin nhà trường, y tế, tuyển sinh, công khai và thông báo nội bộ."],
+      components: ["Thư viện giao diện", "Nguồn chuẩn cho màu sắc, component, trạng thái và bố cục của các trang con."],
+      reports: ["Báo cáo nội bộ", "Tổng hợp tiến độ, việc trễ hạn và tình hình từng tổ cho BGH."]
+    };
+
+    const sidebar = document.getElementById("sidebar");
+    const viewTitle = document.getElementById("viewTitle");
+    const viewSubtitle = document.getElementById("viewSubtitle");
+
+    const activateView = (target, updateUrl = true) => {
+      const button = document.querySelector(`.nav button[data-view="${target}"]`);
+      if (!button || !titles[target]) return;
+        document.querySelectorAll(".nav button").forEach((item) => item.classList.remove("active"));
+        document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
+        button.classList.add("active");
+        document.getElementById(target).classList.add("active");
+        viewTitle.textContent = titles[target][0];
+        viewSubtitle.textContent = titles[target][1];
+        sidebar.classList.remove("open");
+        if (updateUrl) {
+          const url = new URL(window.location.href);
+          if (target === "dashboard") url.searchParams.delete("view");
+          else url.searchParams.set("view", target);
+          history.replaceState(null, "", `${url.pathname}${url.search}`);
+        }
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+
+    document.querySelectorAll(".nav button").forEach((button) => {
+      button.addEventListener("click", () => {
+        activateView(button.dataset.view);
+      });
+    });
+
+    const requestedView = new URLSearchParams(window.location.search).get("view");
+    if (requestedView) activateView(requestedView, false);
+
+    document.getElementById("menuBtn").addEventListener("click", () => {
+      sidebar.classList.toggle("open");
+    });
+
+    document.getElementById("brandHome").addEventListener("click", () => {
+      const dashboardButton = document.querySelector('.nav button[data-view="dashboard"]');
+      dashboardButton.click();
+    });
+
+    const actionMenu = document.getElementById("quickActionMenu");
+    const actionToggle = document.getElementById("quickActionToggle");
+    const toast = document.getElementById("toast");
+    let toastTimer;
+
+    const closeActionMenu = () => {
+      actionMenu.classList.remove("open");
+      actionToggle.setAttribute("aria-expanded", "false");
+    };
+
+    const showToast = (title, detail) => {
+      clearTimeout(toastTimer);
+      toast.innerHTML = `<strong>${title}</strong><span>${detail}</span>`;
+      toast.classList.add("show");
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
+    };
+
+    actionToggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const isOpen = actionMenu.classList.toggle("open");
+      actionToggle.setAttribute("aria-expanded", String(isOpen));
+    });
+
+    document.querySelectorAll(".quick-action-item").forEach((button) => {
+      button.addEventListener("click", () => {
+        const target = button.dataset.target;
+        const targetButton = document.querySelector(`.nav button[data-view="${target}"]`);
+        if (targetButton) targetButton.click();
+        closeActionMenu();
+        showToast(button.querySelector("strong").textContent, button.dataset.toast);
+      });
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!actionMenu.contains(event.target)) closeActionMenu();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeActionMenu();
+    });
+
+    document.querySelectorAll(".quick-prompts button").forEach((button) => {
+      button.addEventListener("click", () => {
+        const chat = document.getElementById("chat");
+        const reply = document.createElement("div");
+        reply.className = "bubble alt";
+        reply.textContent = button.dataset.prompt + ": AI sẽ tạo bản nhắc ngắn, phân vai người nhận và ưu tiên deadline gần nhất.";
+        chat.appendChild(reply);
+      });
+    });
+
+    document.querySelectorAll("[data-demo-toast]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const [title, detail] = button.dataset.demoToast.split("|");
+        showToast(title, detail);
+      });
+    });
+
+    const demoModal = document.getElementById("demoModal");
+    const openDemoModal = document.getElementById("openDemoModal");
+    const closeDemoModal = document.getElementById("closeDemoModal");
+    let modalReturnFocus;
+
+    const setDemoModal = (isOpen) => {
+      demoModal.classList.toggle("open", isOpen);
+      demoModal.setAttribute("aria-hidden", String(!isOpen));
+      if (isOpen) {
+        modalReturnFocus = document.activeElement;
+        requestAnimationFrame(() => closeDemoModal.focus());
+      } else if (modalReturnFocus) {
+        modalReturnFocus.focus();
+      }
+    };
+
+    openDemoModal.addEventListener("click", () => setDemoModal(true));
+    closeDemoModal.addEventListener("click", () => setDemoModal(false));
+    document.querySelectorAll("[data-close-modal]").forEach((button) => button.addEventListener("click", () => setDemoModal(false)));
+    demoModal.addEventListener("click", (event) => {
+      if (event.target === demoModal) setDemoModal(false);
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && demoModal.classList.contains("open")) setDemoModal(false);
+    });
+  </script>
+</body>
+</html>

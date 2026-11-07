@@ -3,23 +3,11 @@ import { useAction, useMutation } from 'convex/react';
 import { anyApi } from 'convex/server';
 import { assertImportFileMeta } from '../lib/userImport.js';
 import { downloadDutyImportTemplate } from '../lib/dutyImportExcel.js';
-
-export function DutyCreateToolbarActions({ onCreate, onImport }) {
-  return (
-    <div className="duty-list-create-actions">
-      <button type="button" className="work-ghost-button" onClick={onImport}>
-        Import Excel
-      </button>
-      <button type="button" className="work-primary-button" onClick={onCreate}>
-        <span>+</span> Tạo công tác
-      </button>
-    </div>
-  );
-}
+import { formatVnDate } from './sharedDutySchedule.js';
 
 function formatPreviewTime(row) {
-  if (row.allDay) return `${row.startDate} · Cả ngày`;
-  return `${row.startDate} ${row.startTime} → ${row.endDate} ${row.endTime}`;
+  if (row.allDay) return `${formatVnDate(row.startDate)} · Cả ngày`;
+  return `${formatVnDate(row.startDate)} ${row.startTime} → ${formatVnDate(row.endDate)} ${row.endTime}`;
 }
 
 export default function DutyBulkImport({ onClose, onImported = null }) {
@@ -166,7 +154,8 @@ export default function DutyBulkImport({ onClose, onImported = null }) {
 
       <p className="duty-bulk-import-help">
         Mỗi dòng là một công tác. File được tải lên server trước, hệ thống đọc lại để kiểm tra.
-        Một dòng lỗi thì chưa nhập dòng nào. Tổ trưởng/tổ phó chỉ dùng cột email cấp dưới hoặc thành phần khác, không điền mã phòng ban.
+        Cột <code>dia_diem</code> gõ tự do (tối đa 200 ký tự).
+        Một dòng lỗi thì chưa nhập dòng nào. Tổ trưởng/tổ phó chỉ dùng cột email cấp dưới hoặc thành phần khác, không điền mã tổ chuyên môn.
       </p>
 
       <div className="duty-bulk-import-actions">
@@ -223,7 +212,7 @@ export default function DutyBulkImport({ onClose, onImported = null }) {
                 <small>{formatPreviewTime(row)}</small>
                 <small>
                   {[
-                    row.departmentNames.length ? `PB: ${row.departmentNames.join(', ')}` : '',
+                    row.departmentNames.length ? `Tổ: ${row.departmentNames.join(', ')}` : '',
                     row.participantEmails.length ? `Email: ${row.participantEmails.join(', ')}` : '',
                     row.otherParticipants ? `Khác: ${row.otherParticipants}` : '',
                   ]

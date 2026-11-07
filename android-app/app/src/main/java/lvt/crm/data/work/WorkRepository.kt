@@ -62,6 +62,7 @@ data class WorkDocumentAssignment(
     val type: String = "",
     val departmentId: String = "",
     val userIds: List<String> = emptyList(),
+    val taskCount: Int? = null,
 )
 
 data class WorkCompletionReviewItem(
@@ -74,11 +75,23 @@ data class WorkCompletionReviewItem(
     val note: String = "",
 )
 
+/** One designated Ban giám hiệu approver and their decision on the current submission. */
+data class WorkApproverView(
+    val id: String,
+    val name: String,
+    val level: Int = 0,
+    val approved: Boolean = false,
+    val rejected: Boolean = false,
+    val decidedAt: Long? = null,
+    val reason: String = "",
+)
+
 data class WorkApprovalItem(
     val id: String,
     val fileName: String,
     val content: String,
     val deadline: String,
+    /** Document approval status: `pending` | `approved` | `rejected`. */
     val status: String,
     val approvalCount: Int,
     val approvalTotal: Int,
@@ -90,6 +103,29 @@ data class WorkApprovalItem(
     val canEdit: Boolean = false,
     val canDelete: Boolean = false,
     val documentTypeId: String = "",
+    /** List status from the server (`awaiting_approval`, `approval_returned`, `in_progress`, …). */
+    val workStatus: String = "",
+    /** Created by admin/mod: Ban giám hiệu must approve before release. */
+    val requiresApproval: Boolean = false,
+    /** First approval locks edit/delete for everyone. */
+    val approvalLocked: Boolean = false,
+    val submittedAt: Long = 0L,
+    val decidedAt: Long? = null,
+    val returnReason: String = "",
+    val creatorName: String = "",
+    /** `admin` | `moderator` | `user` (role kind only). */
+    val creatorRole: String = "",
+    val approvers: List<WorkApproverView> = emptyList(),
+    /** Approval queue only: the current user still has to approve or return it. */
+    val awaitingMyDecision: Boolean = false,
+    /** Approval queue only: returning is still allowed (nobody approved yet). */
+    val canReject: Boolean = false,
+    /** Admin editing an approved document sends it back to Ban giám hiệu (server flag, optional). */
+    val editRequiresReapproval: Boolean = false,
+    val lastEditedByName: String = "",
+    val lastEditedAt: Long? = null,
+    /** Server flag (optional): an assignee submitted results, so the document is read-only. */
+    val hasSubmissions: Boolean? = null,
 )
 
 /** Prefill the create form. Individual assignees are one row each, matching web. */
@@ -126,11 +162,15 @@ data class WorkSnapshot(
     val isAdmin: Boolean,
     val accessLevel: Int,
     val tasks: List<WorkTaskItem>,
+    /** Documents the user manages ("Việc tôi tạo", from `work:listAdmin`). */
     val approvals: List<WorkApprovalItem>,
     val completionReviews: List<WorkCompletionReviewItem> = emptyList(),
     val canCreate: Boolean = false,
     val isOps: Boolean = false,
     val documentTypes: List<WorkDocumentType> = emptyList(),
+    /** Ban giám hiệu "Chờ tôi duyệt" queue (from `work:listMine.approvals`, 30-day history included). */
+    val approvalQueue: List<WorkApprovalItem> = emptyList(),
+    val currentUserId: String = "",
 )
 
 internal data class ApprovalDecision(
@@ -173,7 +213,8 @@ interface WorkOperations {
     )
     suspend fun uploadEvidence(fileBytes: ByteArray, fileName: String, mimeType: String): WorkUploadedEvidence =
         throw UnsupportedOperationException()
-    suspend fun decideApproval(documentId: String, approve: Boolean)
+    /** Approve, or return with a required [reason] (`work:approveDocument` / `work:rejectDocument`). */
+    suspend fun decideApproval(documentId: String, approve: Boolean, reason: String? = null)
     suspend fun reviewCompletion(
         review: WorkCompletionReviewItem,
         approve: Boolean,
@@ -186,6 +227,7 @@ interface WorkOperations {
         assignments: List<WorkCreateAssignment>,
         evidence: WorkUploadedEvidence? = null,
         documentTypeId: String? = null,
+        approverUserIds: List<String>? = null,
     ): String = throw UnsupportedOperationException()
 
     suspend fun updateDocument(
@@ -194,6 +236,7 @@ interface WorkOperations {
         assignments: List<WorkCreateAssignment>,
         evidence: WorkUploadedEvidence? = null,
         documentTypeId: String? = null,
+        approverUserIds: List<String>? = null,
     ): Unit = throw UnsupportedOperationException()
 
     suspend fun deleteDocument(documentId: String): Unit = throw UnsupportedOperationException()
@@ -227,29 +270,13 @@ class WorkRepository(
         val approvals = mutableListOf<WorkApprovalItem>()
         var isOps = isAdmin
 
-        val approvalArray = result.optJSONArray("approvals")
-        if (approvalArray != null) {
-            for (i in 0 until approvalArray.length()) {
-                val document = approvalArray.getJSONObject(i)
-                val approvers = document.optJSONArray("approvers") ?: org.json.JSONArray()
-                val decisions = mutableListOf<ApprovalDecision>()
-                for (approverIndex in 0 until approvers.length()) {
-                    val approver = approvers.optJSONObject(approverIndex) ?: continue
-                    decisions += ApprovalDecision(
-                        userId = approver.optString("_id"),
-                        approved = approver.optBoolean("approved", false),
-                        rejected = approver.optBoolean("rejected", false),
-                    )
-                }
-                approvals += parseApproval(document, decisionForUser(currentUserId, decisions))
-            }
-        }
+        // Ban giám hiệu approval queue: listMine.approvals (admin/mod never get one).
+        val approvalQueue = parseApprovalQueue(result.optJSONArray("approvals"), currentUserId)
 
         var completionReviews = emptyList<WorkCompletionReviewItem>()
         if (isAdmin || canCreate) {
             val adminResult = convex.query("work:listAdmin")
             isOps = adminResult.optBoolean("isOps", isAdmin)
-            approvals.clear()
             val documents = adminResult.optJSONArray("documents") ?: org.json.JSONArray()
             for (i in 0 until documents.length()) {
                 val document = documents.getJSONObject(i)
@@ -322,6 +349,8 @@ class WorkRepository(
             canCreate = canCreate,
             isOps = isOps,
             documentTypes = parseDocumentTypes(result),
+            approvalQueue = approvalQueue,
+            currentUserId = currentUserId,
         )
     }
 
@@ -333,29 +362,7 @@ class WorkRepository(
             result = convex.query("work:formOptions")
             documentTypes = parseDocumentTypes(result)
         }
-        val departments = result.optJSONArray("departments") ?: org.json.JSONArray()
-        val users = result.optJSONArray("users") ?: org.json.JSONArray()
-        return WorkFormOptions(
-            canCreate = result.optBoolean("canCreate", false),
-            isOps = result.optBoolean("isOps", false),
-            departments = List(departments.length()) { index ->
-                val item = departments.getJSONObject(index)
-                WorkFormDepartment(
-                    id = item.optString("_id"),
-                    name = item.optString("name"),
-                )
-            },
-            users = List(users.length()) { index ->
-                val item = users.getJSONObject(index)
-                WorkFormUser(
-                    id = item.optString("_id"),
-                    name = item.optString("name").ifBlank { item.optString("email") },
-                    departmentName = item.optString("departmentName"),
-                    level = item.optInt("level", 0),
-                )
-            },
-            documentTypes = documentTypes,
-        )
+        return parseWorkFormOptions(result, documentTypes)
     }
 
     override suspend fun createDocument(
@@ -363,8 +370,9 @@ class WorkRepository(
         assignments: List<WorkCreateAssignment>,
         evidence: WorkUploadedEvidence?,
         documentTypeId: String?,
+        approverUserIds: List<String>?,
     ): String {
-        val args = documentMutationArgs(title, assignments, evidence, documentTypeId)
+        val args = documentMutationArgs(title, assignments, evidence, documentTypeId, approverUserIds)
         return try {
             val result = convex.mutation("work:createDocument", args)
             if (evidence != null && evidence.cleanupToken.isNotBlank()) {
@@ -385,8 +393,9 @@ class WorkRepository(
         assignments: List<WorkCreateAssignment>,
         evidence: WorkUploadedEvidence?,
         documentTypeId: String?,
+        approverUserIds: List<String>?,
     ) {
-        val args = documentMutationArgs(title, assignments, evidence, documentTypeId)
+        val args = documentMutationArgs(title, assignments, evidence, documentTypeId, approverUserIds)
             .put("documentId", documentId)
         try {
             val result = convex.mutation("work:updateDocument", args)
@@ -415,12 +424,18 @@ class WorkRepository(
         assignments: List<WorkCreateAssignment>,
         evidence: WorkUploadedEvidence?,
         documentTypeId: String?,
+        approverUserIds: List<String>?,
     ): JSONObject {
         val args = JSONObject()
             .put("title", title.trim())
             .put("assignments", assignmentPayload(assignments))
         if (!documentTypeId.isNullOrBlank()) {
             args.put("documentTypeId", documentTypeId.trim())
+        }
+        // Only sent when the form collected approvers; the server decides whether they are needed.
+        val approvers = approverUserIds.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (approvers.isNotEmpty()) {
+            args.put("approverUserIds", org.json.JSONArray(approvers))
         }
         if (evidence != null) {
             args.put("driveFileId", evidence.driveFileId)
@@ -564,9 +579,15 @@ class WorkRepository(
         runCatching { downloadHttp.newCall(request).execute().close() }
     }
 
-    override suspend fun decideApproval(documentId: String, approve: Boolean) {
-        val path = if (approve) "work:approveDocument" else "work:rejectDocument"
-        convex.mutation(path, JSONObject().put("documentId", documentId))
+    override suspend fun decideApproval(documentId: String, approve: Boolean, reason: String?) {
+        if (approve) {
+            convex.mutation("work:approveDocument", JSONObject().put("documentId", documentId))
+        } else {
+            convex.mutation(
+                "work:rejectDocument",
+                JSONObject().put("documentId", documentId).put("reason", reason?.trim().orEmpty()),
+            )
+        }
     }
 
     override suspend fun reviewCompletion(
@@ -669,7 +690,20 @@ private fun org.json.JSONArray?.toMemberNames(): List<String> {
     }.filter { it.isNotBlank() }
 }
 
-private fun parseApproval(document: JSONObject, myDecision: String) = WorkApprovalItem(
+internal fun parseApprovalQueue(items: org.json.JSONArray?, currentUserId: String): List<WorkApprovalItem> {
+    if (items == null) return emptyList()
+    return List(items.length()) { index ->
+        val document = items.getJSONObject(index)
+        val approvers = parseApprovers(document.optJSONArray("approvers"))
+        val decision = decisionForUser(
+            currentUserId,
+            approvers.map { ApprovalDecision(it.id, it.approved, it.rejected) },
+        )
+        parseApproval(document, decision)
+    }
+}
+
+internal fun parseApproval(document: JSONObject, myDecision: String) = WorkApprovalItem(
     id = document.optString("_id"),
     fileName = document.optString("fileName"),
     content = document.optString("content"),
@@ -685,7 +719,94 @@ private fun parseApproval(document: JSONObject, myDecision: String) = WorkApprov
     canEdit = document.optBoolean("canEdit", false),
     canDelete = document.optBoolean("canDelete", false),
     documentTypeId = document.optString("documentTypeId"),
+    workStatus = document.optStringOrBlank("workStatus"),
+    requiresApproval = document.optBoolean("requiresApproval", false),
+    approvalLocked = document.optBoolean("approvalLocked", false),
+    submittedAt = document.optLongOrNull("submittedAt") ?: document.optLongOrNull("createdAt") ?: 0L,
+    decidedAt = document.optLongOrNull("decidedAt"),
+    returnReason = document.optStringOrBlank("returnReason"),
+    creatorName = document.optStringOrBlank("creatorName"),
+    creatorRole = document.optStringOrBlank("creatorRole"),
+    approvers = parseApprovers(document.optJSONArray("approvers")),
+    awaitingMyDecision = document.optBoolean("awaitingMyDecision", false),
+    canReject = document.optBoolean("canReject", false),
+    editRequiresReapproval = document.optBoolean("editRequiresReapproval", false),
+    lastEditedByName = document.optStringOrBlank("lastEditedByName"),
+    lastEditedAt = document.optLongOrNull("lastEditedAt"),
+    hasSubmissions = if (document.has("hasSubmissions") && !document.isNull("hasSubmissions")) {
+        document.optBoolean("hasSubmissions", false)
+    } else {
+        null
+    },
 )
+
+internal fun parseApprovers(items: org.json.JSONArray?): List<WorkApproverView> {
+    if (items == null) return emptyList()
+    return List(items.length()) { index ->
+        val item = items.optJSONObject(index) ?: return@List null
+        WorkApproverView(
+            id = item.optString("_id"),
+            name = item.optString("name").ifBlank { item.optString("email") }.ifBlank { "Chưa đặt tên" },
+            level = item.optInt("level", 0),
+            approved = item.optBoolean("approved", false),
+            rejected = item.optBoolean("rejected", false),
+            decidedAt = item.optLongOrNull("decidedAt"),
+            reason = item.optStringOrBlank("reason"),
+        )
+    }.filterNotNull().filter { it.id.isNotBlank() }
+}
+
+internal fun parseWorkFormOptions(result: JSONObject, documentTypes: List<WorkDocumentType>): WorkFormOptions {
+    val departments = result.optJSONArray("departments") ?: org.json.JSONArray()
+    val isOps = result.optBoolean("isOps", false)
+    return WorkFormOptions(
+        canCreate = result.optBoolean("canCreate", false),
+        isOps = isOps,
+        departments = List(departments.length()) { index ->
+            val item = departments.getJSONObject(index)
+            WorkFormDepartment(
+                id = item.optString("_id"),
+                name = item.optString("name"),
+            )
+        },
+        users = parseFormUsers(result.optJSONArray("users")),
+        documentTypes = documentTypes,
+        requiresApproval = result.optBoolean("requiresApproval", false),
+        // Older servers had no flag: only admin/mod assigned whole departments.
+        canAssignDepartments = if (result.has("canAssignDepartments") && !result.isNull("canAssignDepartments")) {
+            result.optBoolean("canAssignDepartments", isOps)
+        } else {
+            isOps
+        },
+        approvers = parseFormUsers(result.optJSONArray("approvers")),
+    )
+}
+
+private fun parseFormUsers(items: org.json.JSONArray?): List<WorkFormUser> {
+    if (items == null) return emptyList()
+    return List(items.length()) { index ->
+        val item = items.getJSONObject(index)
+        WorkFormUser(
+            id = item.optString("_id"),
+            name = item.optString("name").ifBlank { item.optString("email") },
+            departmentName = item.optString("departmentName"),
+            level = item.optInt("level", 0),
+            positionName = item.optStringOrBlank("positionName"),
+        )
+    }.filter { it.id.isNotBlank() }
+}
+
+private fun JSONObject.optStringOrBlank(key: String): String {
+    if (!has(key) || isNull(key)) return ""
+    return optString(key, "").trim()
+}
+
+private fun JSONObject.optLongOrNull(key: String): Long? {
+    if (!has(key) || isNull(key)) return null
+    val value = optDouble(key, Double.NaN)
+    if (value.isNaN() || value <= 0.0) return null
+    return value.toLong()
+}
 
 private fun parseAssignments(items: org.json.JSONArray?): List<WorkDocumentAssignment> {
     if (items == null) return emptyList()
@@ -713,6 +834,7 @@ private fun parseAssignments(items: org.json.JSONArray?): List<WorkDocumentAssig
             type = item.optString("type"),
             departmentId = item.optString("departmentId"),
             userIds = userIds,
+            taskCount = if (item.has("taskCount") && !item.isNull("taskCount")) item.optInt("taskCount") else null,
         )
     }
 }

@@ -5,6 +5,14 @@ enum DutyListTab: Int, CaseIterable, Equatable {
     case ongoing
     case past
 
+    var systemImage: String {
+        switch self {
+        case .upcoming: return "clock"
+        case .ongoing: return "play.circle"
+        case .past: return "checkmark.circle"
+        }
+    }
+
     var title: String {
         switch self {
         case .upcoming: return "Sắp diễn ra"

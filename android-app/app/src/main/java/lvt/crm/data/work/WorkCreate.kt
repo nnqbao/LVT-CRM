@@ -10,6 +10,7 @@ data class WorkFormUser(
     val name: String,
     val departmentName: String,
     val level: Int,
+    val positionName: String = "",
 )
 
 data class WorkDocumentType(
@@ -24,6 +25,12 @@ data class WorkFormOptions(
     val departments: List<WorkFormDepartment>,
     val users: List<WorkFormUser>,
     val documentTypes: List<WorkDocumentType> = emptyList(),
+    /** Server flag: documents this creator makes go to Ban giám hiệu before release (admin/mod). */
+    val requiresApproval: Boolean = false,
+    /** Server flag: may assign whole departments (admin/mod and Ban giám hiệu). */
+    val canAssignDepartments: Boolean = isOps,
+    /** Eligible Ban giám hiệu approvers (only filled for approval-required creators). */
+    val approvers: List<WorkFormUser> = emptyList(),
 )
 
 data class WorkCreateAssignment(
@@ -48,11 +55,6 @@ fun formatWorkDeadline(millis: Long): String {
 }
 
 object WorkCreatePolicy {
-    fun canCreate(role: String, level: Int): Boolean {
-        if (role == "admin" || role == "moderator") return true
-        return level == 2 || level == 3
-    }
-
     fun validate(
         title: String,
         assignments: List<WorkCreateAssignment>,
@@ -88,25 +90,43 @@ object WorkCreatePolicy {
     private val DATE_RE = Regex("""^\d{4}-\d{2}-\d{2}$""")
 }
 
-const val WORK_LOCKED_MESSAGE = "Đã có người nộp · Không thể sửa hoặc xóa"
+const val WORK_LOCKED_MESSAGE = "Đã có người nộp kết quả — công việc chỉ xem."
+const val WORK_APPROVAL_LOCKED_MESSAGE = "Ban giám hiệu đã duyệt · Không thể sửa hoặc xóa"
+const val WORK_IMMUTABLE_ERROR_MESSAGE =
+    "Công việc đã có người duyệt hoặc người nộp nên không thể sửa hoặc xóa."
 
 /**
- * Visibility follows `canEdit` / `canDelete` from the list payload.
- * Admin/mod (`isOps`) keep the longer server right: `updateDocument` / `deleteDocument`
- * still succeed after a submission, so the buttons stay available.
+ * Edit/delete visibility follows only the server's `canEdit` / `canDelete` (absent = false).
+ * The server decides every lock: first approval (admin may still edit an approved document,
+ * which sends it back to Ban giám hiệu), submissions, moderator scope, creator rules.
  */
 object WorkDocumentActions {
-    fun showsEdit(canEdit: Boolean, isOps: Boolean) = canEdit || isOps
+    fun showsEdit(document: WorkApprovalItem) = document.canEdit
 
-    fun showsDelete(canDelete: Boolean, isOps: Boolean) = canDelete || isOps
+    fun showsDelete(document: WorkApprovalItem) = document.canDelete
 
-    fun showsLocked(canEdit: Boolean, canDelete: Boolean, isOps: Boolean) =
-        !showsEdit(canEdit, isOps) && !showsDelete(canDelete, isOps)
+    /**
+     * Read-only note when both actions are hidden: submitted results (only when the server
+     * says so via `hasSubmissions`), otherwise the approval lock; no note for other reasons.
+     */
+    fun lockedMessage(document: WorkApprovalItem): String? = when {
+        showsEdit(document) || showsDelete(document) -> null
+        document.hasSubmissions == true -> WORK_LOCKED_MESSAGE
+        document.approvalLocked -> WORK_APPROVAL_LOCKED_MESSAGE
+        else -> null
+    }
+
+    /** Muted "Đã chỉnh sửa bởi … lúc HH:mm dd/MM/yyyy" line, or null. */
+    fun lastEditedLine(document: WorkApprovalItem): String? {
+        val name = document.lastEditedByName.trim()
+        if (name.isEmpty()) return null
+        val time = WorkApprovalPolicy.formatTimeDate(document.lastEditedAt)
+        return if (time.isEmpty()) "Đã chỉnh sửa bởi $name" else "Đã chỉnh sửa bởi $name lúc $time"
+    }
 
     fun errorMessage(raw: String, deleting: Boolean, fallback: String): String {
-        if (raw.contains("WORK_DOCUMENT_IMMUTABLE")) return WORK_LOCKED_MESSAGE
-        if (raw.contains("WORK_UPDATE_FORBIDDEN")) return "Bạn không có quyền sửa hoặc xóa công việc này."
-        if (deleting) return "Không thể xóa công văn lúc này."
+        lvt.crm.data.convex.WorkErrorMessages.messageFor(raw)?.let { return it }
+        if (deleting) return "Không thể xóa công việc lúc này."
         return fallback
     }
 }

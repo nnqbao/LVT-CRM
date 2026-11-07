@@ -219,8 +219,8 @@ export const listMine = query({
     if (user.status !== "active") throw new Error("USER_NOT_ACTIVE");
     if (user.mustChangePassword) throw new Error("PASSWORD_CHANGE_REQUIRED");
     const menuAccess = await resolveUserMenuAccess(ctx, user);
-    if (!isOperationalManagerRole(user.role) && menuAccess.reports === "hidden") {
-      throw new Error("FORBIDDEN: reports menu hidden");
+    if (!isOperationalManagerRole(user.role) && menuAccess.boarding === "hidden") {
+      throw new Error("FORBIDDEN: boarding menu hidden");
     }
     const periods = await ctx.db.query("boardingPeriods").collect();
     return periods
@@ -252,8 +252,8 @@ export const report = query({
     if (actor.status !== "active") throw new Error("USER_NOT_ACTIVE");
     if (actor.mustChangePassword) throw new Error("PASSWORD_CHANGE_REQUIRED");
     const menuAccess = await resolveUserMenuAccess(ctx, actor);
-    if (!isOperationalManagerRole(actor.role) && menuAccess.reports === "hidden") {
-      throw new Error("FORBIDDEN: reports menu hidden");
+    if (!isOperationalManagerRole(actor.role) && menuAccess.boarding === "hidden") {
+      throw new Error("FORBIDDEN: boarding menu hidden");
     }
 
     const [periods, users, departments, positions] = await Promise.all([
@@ -263,7 +263,7 @@ export const report = query({
       ctx.db.query("positions").collect(),
     ]);
     const canViewAll =
-      isOperationalManagerRole(actor.role) || menuAccess.reports === "view_all";
+      isOperationalManagerRole(actor.role) || menuAccess.boarding === "view_all";
     const activePeriods = periods
       .filter((period) => period.active)
       .sort(
@@ -303,8 +303,8 @@ export const report = query({
         name: user.name || user.email || "Chưa đặt tên",
         email: user.email || "",
         departmentName: user.departmentId
-          ? departmentMap.get(String(user.departmentId)) || "Chưa gán phòng ban"
-          : "Chưa gán phòng ban",
+          ? departmentMap.get(String(user.departmentId)) || "Chưa gán tổ chuyên môn"
+          : "Chưa gán tổ chuyên môn",
         positionName: user.positionId
           ? positionMap.get(String(user.positionId)) || "Chưa gán chức vụ"
           : "Chưa gán chức vụ",

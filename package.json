@@ -12,14 +12,20 @@
     "check": "node scripts/check-files.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "typecheck": "./node_modules/.bin/tsc --project tsconfig.app.json && ./node_modules/.bin/tsc --project convex/tsconfig.json --noEmit",
-    "typecheck:convex-codegen": "./scripts/lvt-convex-self-hosted-env.sh ./node_modules/.bin/convex codegen --typecheck enable",
-    "convex:dev": "./scripts/lvt-convex-self-hosted-env.sh ./node_modules/.bin/convex dev",
-    "convex:deploy": "./scripts/lvt-convex-self-hosted-env.sh ./node_modules/.bin/convex deploy"
+    "typecheck:convex-codegen": "./scripts/lvt-convex-cloud-env.sh dev ./node_modules/.bin/convex codegen --typecheck enable",
+    "convex:dev": "./scripts/lvt-convex-cloud-env.sh dev ./node_modules/.bin/convex dev",
+    "convex:deploy": "./scripts/lvt-convex-cloud-env.sh prod ./node_modules/.bin/convex deploy",
+    "guide:build": "node scripts/build-guide.mjs",
+    "guide:shots": "node scripts/guide-shots/run.mjs",
+    "guide:videos": "node scripts/guide-videos/run.mjs",
+    "guide:voice": "node scripts/guide-videos/align-voice.mjs",
+    "guide:videos:publish": "node scripts/guide-videos/publish.mjs"
   },
   "dependencies": {
     "@auth/core": "0.41.3",
     "@convex-dev/auth": "^0.0.94",
     "@fontsource-variable/montserrat": "^5.3.0",
+    "@simplewebauthn/server": "9.0.3",
     "convex": "^1.42.3",
     "docx-preview": "^0.4.0",
     "jspdf": "^4.2.1",
