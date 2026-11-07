@@ -63,16 +63,16 @@ export default defineConfig({
     allowedHosts: ["lvt.vscgroup.io.vn"],
     proxy: {
       "/api/auth": {
-        target: "http://127.0.0.1:3211",
+        target: "http://127.0.0.1:3315",
         changeOrigin: true,
       },
       "/api": {
-        target: "http://127.0.0.1:3210",
+        target: "http://127.0.0.1:3314",
         changeOrigin: true,
         ws: true,
       },
       "/.well-known": {
-        target: "http://127.0.0.1:3211",
+        target: "http://127.0.0.1:3315",
         changeOrigin: true,
       },
     },
