@@ -21,6 +21,7 @@
 - Tests: Node test runner under `tests/*.test.mjs`.
 - Production frontend: `https://lvt.vscgroup.io.vn`.
 - Self-hosted Convex deployment commands must use the repository wrapper scripts; never expose or inline admin keys.
+- **This project's reserved Convex ports are 3316 (backend) / 3317 (HTTP actions) / 6803 (dashboard), compose project `lvt-crm-teacher-import-convex` — assigned 2026-11-07.** Never use 3210/3211/6791: those belong to VUBAOANH. Every LVT-CRM copy used to declare 3210 *and* omit `name:` in its compose, so they shared one Docker volume and overwrote each other's data. Read `~/ops/docs/convex-ports.md` before changing any Convex port.
 - Cursor agents also load `.cursor/rules/*.mdc` (core + import always-on; work/auth rules by glob). Keep those rules in sync when changing invariants.
 
 ## Engineering discipline
@@ -171,3 +172,5 @@ Canonical detail: `README.md` → **Xuất danh sách người dùng**.
 - Ask the owner only when a business/product decision is genuinely missing or conflicting.
 - Group unresolved questions by impact: blocking, security/data integrity, then UX/non-blocking.
 - Do not silently choose a destructive, irreversible, permission-expanding, or privacy-weakening interpretation.
+
+- Machine-local values (Convex ports, compose project name) live only in the untracked `infra/convex-local/.env` of each checkout (template `infra/convex-local/.env.example`, registry `~/ops/docs/convex-ports.md`). Never write a port number or per-checkout name into a tracked file (`tests/machine-local-config.test.mjs`). Never use 3210/3211/6791 (another project).

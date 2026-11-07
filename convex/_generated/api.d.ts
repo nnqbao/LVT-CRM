@@ -55,6 +55,8 @@ import type * as mail from "../mail.js";
 import type * as menuAccess from "../menuAccess.js";
 import type * as notificationSettings from "../notificationSettings.js";
 import type * as notifications from "../notifications.js";
+import type * as oneoffTeacherImport from "../oneoffTeacherImport.js";
+import type * as oneoffTeacherImportPlan from "../oneoffTeacherImportPlan.js";
 import type * as peopleReview from "../peopleReview.js";
 import type * as permissionGroups from "../permissionGroups.js";
 import type * as personalReminderPolicy from "../personalReminderPolicy.js";
@@ -143,6 +145,8 @@ declare const fullApi: ApiFromModules<{
   menuAccess: typeof menuAccess;
   notificationSettings: typeof notificationSettings;
   notifications: typeof notifications;
+  oneoffTeacherImport: typeof oneoffTeacherImport;
+  oneoffTeacherImportPlan: typeof oneoffTeacherImportPlan;
   peopleReview: typeof peopleReview;
   permissionGroups: typeof permissionGroups;
   personalReminderPolicy: typeof personalReminderPolicy;
