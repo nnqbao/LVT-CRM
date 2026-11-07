@@ -21,6 +21,7 @@
 - Tests: Node test runner under `tests/*.test.mjs`.
 - Production frontend: `https://lvt.vscgroup.io.vn`.
 - Self-hosted Convex deployment commands must use the repository wrapper scripts; never expose or inline admin keys.
+- **This project's reserved Convex ports are 3316 (backend) / 3317 (HTTP actions) / 6803 (dashboard), compose project `lvt-crm-teacher-import-convex` — assigned 2026-11-07.** Never use 3210/3211/6791: those belong to VUBAOANH. Every LVT-CRM copy used to declare 3210 *and* omit `name:` in its compose, so they shared one Docker volume and overwrote each other's data. Read `~/ops/docs/convex-ports.md` before changing any Convex port.
 - Cursor agents also load `.cursor/rules/*.mdc` (core + import always-on; work/auth rules by glob). Keep those rules in sync when changing invariants.
 
 ## Engineering discipline

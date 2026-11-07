@@ -196,18 +196,18 @@ docker compose -f infra/convex-local/docker-compose.yml up -d
 
 | Service | URL |
 |--------|-----|
-| Backend/API | `http://127.0.0.1:3210` |
-| Site proxy (auth HTTP) | `http://127.0.0.1:3211` |
-| Dashboard | `http://127.0.0.1:6791` |
+| Backend/API | `http://127.0.0.1:3316` |
+| Site proxy (auth HTTP) | `http://127.0.0.1:3317` |
+| Dashboard | `http://127.0.0.1:6803` |
 
 `.env.local` (gitignored, chỉ dành cho local development):
 
 ```dotenv
-VITE_CONVEX_URL=http://127.0.0.1:3210
-CONVEX_SELF_HOSTED_URL=http://127.0.0.1:3210
+VITE_CONVEX_URL=http://127.0.0.1:3316
+CONVEX_SELF_HOSTED_URL=http://127.0.0.1:3316
 CONVEX_SELF_HOSTED_ADMIN_KEY=<admin key from local deployment>
 # optional site origin for auth routes
-# VITE_CONVEX_SITE_URL=http://127.0.0.1:3211
+# VITE_CONVEX_SITE_URL=http://127.0.0.1:3317
 ```
 
 **Lưu ý shell:** admin key thường chứa ký tự `|`. Không `source .env.local` trực tiếp trong bash (pipe bị hiểu nhầm). Dùng export an toàn hoặc load qua script/Python.
@@ -237,7 +237,7 @@ npx convex env set SITE_URL http://localhost:5173
 # production tunnel ví dụ: SITE_URL=https://lvt.vscgroup.io.vn
 ```
 
-`auth.config.ts` dùng `process.env.CONVEX_SITE_URL` (local proxy `http://127.0.0.1:3211`).
+`auth.config.ts` dùng `process.env.CONVEX_SITE_URL` (local proxy `http://127.0.0.1:3317`).
 
 ### Đẩy functions + seed + frontend
 

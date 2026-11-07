@@ -6,7 +6,7 @@ if (( $# == 0 )); then
   exit 64
 fi
 
-export CONVEX_SELF_HOSTED_URL="http://127.0.0.1:3210"
+export CONVEX_SELF_HOSTED_URL="http://127.0.0.1:3316"
 if ! admin_key="$(
   security find-generic-password \
     -s lvt-convex-local-admin-key \

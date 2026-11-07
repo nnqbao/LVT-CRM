@@ -34,7 +34,7 @@ const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT || 3007);
 const convexUrl = process.env.CONVEX_URL
   || process.env.CONVEX_SELF_HOSTED_URL
-  || 'http://127.0.0.1:3210';
+  || 'http://127.0.0.1:3316';
 const driveAccount = process.env.LVT_DRIVE_ACCOUNT || 'bemiagent@gmail.com';
 const maxFileSize = 20 * 1024 * 1024;
 const acceptedExtensions = new Set(['pdf', 'docx', 'xlsx', 'xls', 'png', 'jpg', 'jpeg']);
