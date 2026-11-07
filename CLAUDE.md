@@ -21,7 +21,7 @@
 - Any Android / iOS UIKit change must bump the Profile version (`versionName` / `MARKETING_VERSION`) and build number. See `.cursor/rules/native-app-version.mdc`.
 - Tests: Node test runner under `tests/*.test.mjs`.
 - Production frontend: `https://lvt.vscgroup.io.vn`.
-- Convex runs on Convex Cloud (dev `decisive-puma-318` = sandbox, prod `confident-guanaco-953` = customers). Deploy/codegen only through `scripts/lvt-convex-cloud-env.sh` (the npm scripts); never expose or inline deploy/admin keys. The old self-hosted wrapper stays retired. **This project's reserved Convex ports are 3314 (backend) / 3315 (HTTP actions) / 6801 (dashboard), compose project `lvt-crm-ios-webview-convex` — never 3210/3211/6791, which belong to VUBAOANH.** See `~/ops/docs/convex-ports.md` before touching any Convex port.
+- Convex runs on Convex Cloud (dev `decisive-puma-318` = sandbox, prod `confident-guanaco-953` = customers). Deploy/codegen only through `scripts/lvt-convex-cloud-env.sh` (the npm scripts); never expose or inline deploy/admin keys. The old self-hosted wrapper stays retired.
 - UI changes (web, Android, iOS) follow `DESIGN.md`; read it before touching screens or styles.
 - Cursor agents also load `.cursor/rules/*.mdc` (core + import always-on; work/auth rules by glob). Keep those rules in sync when changing invariants.
 
@@ -202,3 +202,5 @@ Canonical detail: `README.md` → **Xuất danh sách người dùng**.
 - Ask the owner only when a business/product decision is genuinely missing or conflicting.
 - Group unresolved questions by impact: blocking, security/data integrity, then UX/non-blocking.
 - Do not silently choose a destructive, irreversible, permission-expanding, or privacy-weakening interpretation.
+
+- Machine-local values (Convex ports, compose project name) live only in the untracked `infra/convex-local/.env` of each checkout (template `infra/convex-local/.env.example`, registry `~/ops/docs/convex-ports.md`). Never write a port number or per-checkout name into a tracked file (`tests/machine-local-config.test.mjs`). Never use 3210/3211/6791 (another project).

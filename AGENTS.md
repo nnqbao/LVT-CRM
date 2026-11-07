@@ -42,8 +42,7 @@ Prod đang có khách (Trường THCS Lê Văn Tám) sử dụng. **Mọi thay �
 
 ### Những chỗ dễ nhầm
 
-- Cổng Convex của dự án này: **3314** (backend) / **3315** (HTTP actions) / **6801** (dashboard), compose project `lvt-crm-ios-webview-convex` — cấp cố định ngày 2026-11-07.
-- `127.0.0.1:3210` là backend của **VUBAOANH**, không phải của LVT (ghi chú cũ nói `akiko-dev` là sai; akiko ở 3420). Đừng trỏ lệnh Convex nào vào 3210/3211/6791.
+- Cổng 3210 là backend của **VUBAOANH**, không phải của LVT (ghi chú cũ nói `akiko-dev` là sai; akiko ở 3420). Đừng trỏ lệnh Convex nào vào 3210/3211/6791.
 - Convex thật của LVT vẫn ở Convex Cloud; bản self-hosted chỉ là chỗ đặt sẵn. Trước khi đụng bất kỳ cổng Convex nào, đọc `~/ops/docs/convex-ports.md`.
 - `.env.local` của thư mục prod trỏ vào prod: chạy `npx convex deploy` trần ở đó là deploy thẳng lên prod.
 - Hostname proxy cũ `lvt-convex.vscgroup.io.vn` / `lvt-convex-site.vscgroup.io.vn` đã ngừng (trả 530).
@@ -102,3 +101,5 @@ Always-on via `.cursor/rules/ponytail.mdc`. Cloud does not get Mac Mini `hooks.j
 ## Defuddle
 
 For reading web docs, prefer `/defuddle` skill or `npx -y defuddle parse <url> --md` over dumping raw HTML.
+
+- Machine-local values (Convex ports, compose project name) live only in the untracked `infra/convex-local/.env` of each checkout (template `infra/convex-local/.env.example`, registry `~/ops/docs/convex-ports.md`). Never write a port number or per-checkout name into a tracked file (`tests/machine-local-config.test.mjs`). Never use 3210/3211/6791 (another project).
