@@ -51,3 +51,5 @@ Always-on via `.cursor/rules/ponytail.mdc`. Cloud does not get Mac Mini `hooks.j
 ## Defuddle
 
 For reading web docs, prefer `/defuddle` skill or `npx -y defuddle parse <url> --md` over dumping raw HTML.
+
+- Machine-local values (Convex ports, compose project name) live only in the untracked `infra/convex-local/.env` of each checkout (template `infra/convex-local/.env.example`, registry `~/ops/docs/convex-ports.md`). Never write a port number or per-checkout name into a tracked file (`tests/machine-local-config.test.mjs`). Never use 3210/3211/6791 (another project).

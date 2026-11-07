@@ -172,3 +172,5 @@ Canonical detail: `README.md` → **Xuất danh sách người dùng**.
 - Ask the owner only when a business/product decision is genuinely missing or conflicting.
 - Group unresolved questions by impact: blocking, security/data integrity, then UX/non-blocking.
 - Do not silently choose a destructive, irreversible, permission-expanding, or privacy-weakening interpretation.
+
+- Machine-local values (Convex ports, compose project name) live only in the untracked `infra/convex-local/.env` of each checkout (template `infra/convex-local/.env.example`, registry `~/ops/docs/convex-ports.md`). Never write a port number or per-checkout name into a tracked file (`tests/machine-local-config.test.mjs`). Never use 3210/3211/6791 (another project).
