@@ -23,8 +23,8 @@ fun localProperty(name: String): String? {
     return (project.findProperty(name) as String?)?.trim()?.takeIf { it.isNotEmpty() }
 }
 
-val lvtVersionCode = 55
-val lvtVersionName = "3.0.1"
+val lvtVersionCode = 56
+val lvtVersionName = "3.0.2"
 
 android {
     namespace = "lvt.crm"
@@ -66,7 +66,7 @@ android {
             buildConfigField(
                 "String",
                 "CONVEX_URL",
-                "\"${urlProperty("lvt.convex.debug.url", "https://confident-guanaco-953.convex.cloud")}\"",
+                "\"${urlProperty("lvt.convex.debug.url", "https://convex.thcslevantam.ai.vn")}\"",
             )
             buildConfigField(
                 "String",
@@ -88,7 +88,7 @@ android {
             buildConfigField(
                 "String",
                 "CONVEX_URL",
-                "\"${urlProperty("lvt.convex.release.url", "https://confident-guanaco-953.convex.cloud")}\"",
+                "\"${urlProperty("lvt.convex.release.url", "https://convex.thcslevantam.ai.vn")}\"",
             )
             buildConfigField(
                 "String",

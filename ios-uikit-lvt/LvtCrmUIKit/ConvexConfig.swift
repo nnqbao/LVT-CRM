@@ -24,7 +24,7 @@ enum DemoEnvironment {
         UserDefaults.standard.set(active, forKey: key)
     }
 
-    static var convexURL: String { infoValue("LVTDemoConvexURL") ?? "https://decisive-puma-318.convex.cloud" }
+    static var convexURL: String { infoValue("LVTDemoConvexURL") ?? "https://sandbox-convex.thcslevantam.ai.vn" }
     static var webURL: String { infoValue("LVTDemoWebURL") ?? "https://sandbox.thcslevantam.ai.vn" }
 
     private static func infoValue(_ key: String) -> String? {
@@ -61,9 +61,9 @@ enum ConvexConfig {
         }
         #if DEBUG
         return ProcessInfo.processInfo.environment["LVT_CONVEX_URL"]
-            ?? "https://confident-guanaco-953.convex.cloud"
+            ?? "https://convex.thcslevantam.ai.vn"
         #else
-        return "https://confident-guanaco-953.convex.cloud"
+        return "https://convex.thcslevantam.ai.vn"
         #endif
     }
 
