@@ -23,9 +23,9 @@ export const STATUS_SHORT = {
 export const STATUS_ORDER = ['present', 'late', 'absent_pending', 'absent_excused', 'absent_unexcused', 'no_data'];
 
 export const RAW_LABELS = {
-  present: 'Đúng giờ',
+  present: 'Có mặt',
   late: 'Đi trễ',
-  absent: 'Chưa điểm danh',
+  absent: 'Vắng',
   unknown: 'Không rõ',
 };
 
@@ -36,12 +36,6 @@ export function statusLabel(status) {
 export function rawLabel(raw) {
   return RAW_LABELS[raw] || '—';
 }
-
-/** Lý do gợi ý khi GVCN phân loại vắng. "Không lý do" chỉ hợp với Không phép. */
-export const REASON_PRESETS = {
-  excused: ['Phụ huynh xin phép', 'Ốm / khám bệnh', 'Việc gia đình', 'Tham gia hoạt động của trường'],
-  unexcused: ['Không có lý do', 'Phụ huynh không liên lạc được', 'Bỏ học / trốn học'],
-};
 
 export const GUARDIAN_RELATIONSHIPS = [
   ['father', 'Cha'],
@@ -187,4 +181,14 @@ export function genderLabel(value) {
   if (key === 'nam') return 'Nam';
   if (key === 'nu' || key === 'nữ') return 'Nữ';
   return GENDER_OPTIONS.find(([option]) => option === key)?.[1] || '—';
+}
+
+/**
+ * "Lớp 6-1" for a class named "6-1" or already "Lớp 6-1" (never "Lớp Lớp 6-1").
+ * `lower` gives the in-sentence form: "lớp 6-1".
+ */
+export function classLabel(name, { lower = false } = {}) {
+  const text = String(name ?? '').trim();
+  const bare = text.replace(/^lớp\s+/iu, '');
+  return `${lower ? 'lớp' : 'Lớp'} ${bare || text}`.trim();
 }

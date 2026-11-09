@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useQuery } from 'convex/react';
 import { anyApi } from 'convex/server';
 import './boarding.css';
+import { boardingPeriodLabel } from './boardingLabels.js';
 
 function periodLabel(period) {
-  return period ? `Kỳ ${period.semester} · Năm học ${period.schoolYear}` : 'Chưa có kỳ bán trú';
+  return period ? boardingPeriodLabel(period) : 'Chưa có kỳ bán trú';
 }
 
 export default function BoardingReportsView() {
@@ -36,8 +37,8 @@ export default function BoardingReportsView() {
           <h3>{periodLabel(selectedPeriod)}</h3>
           <p>
             {isGlobalView
-              ? 'Bạn đang xem toàn bộ phòng ban tham gia bán trú.'
-              : 'Bạn đang xem giáo viên tham gia bán trú trong phòng ban của mình.'}
+              ? 'Bạn đang xem toàn bộ tổ chuyên môn tham gia bán trú.'
+              : 'Bạn đang xem giáo viên tham gia bán trú trong tổ chuyên môn của mình.'}
           </p>
         </div>
         <label>
@@ -66,9 +67,9 @@ export default function BoardingReportsView() {
             </div>
             <div>
               <i>◇</i>
-              <span><strong>{groups.length}</strong><small>Phòng ban</small></span>
+              <span><strong>{groups.length}</strong><small>Tổ chuyên môn</small></span>
             </div>
-            <p>Dữ liệu được lấy từ thiết lập bán trú của Administrator.</p>
+            <p>Danh sách do quản trị viên thiết lập trong menu Bán trú.</p>
           </div>
 
           {groups.length ? (
@@ -77,7 +78,7 @@ export default function BoardingReportsView() {
                 <article className="boarding-report-group" key={group.departmentName}>
                   <header>
                     <div>
-                      <span>PHÒNG BAN</span>
+                      <span>TỔ CHUYÊN MÔN</span>
                       <h3>{group.departmentName}</h3>
                     </div>
                     <strong>{group.participantCount}<small> giáo viên</small></strong>
@@ -87,7 +88,7 @@ export default function BoardingReportsView() {
                       <thead>
                         <tr>
                           <th>#</th>
-                          <th>Họ tên user</th>
+                          <th>Họ tên</th>
                           <th>Chức vụ</th>
                           <th>Tham gia kỳ</th>
                         </tr>
@@ -114,7 +115,7 @@ export default function BoardingReportsView() {
             <div className="boarding-report-empty">
               <span>☼</span>
               <h3>Chưa có giáo viên tham gia trong kỳ này</h3>
-              <p>Hãy chọn kỳ khác hoặc cập nhật danh sách giáo viên trong Thiết lập bán trú.</p>
+              <p>Hãy chọn kỳ khác. Quản trị viên cập nhật danh sách ở menu Bán trú › Kỳ bán trú.</p>
             </div>
           )}
         </>
@@ -122,7 +123,7 @@ export default function BoardingReportsView() {
         <div className="boarding-report-empty">
           <span>☼</span>
           <h3>Chưa có kỳ bán trú để xem</h3>
-          <p>Administrator cần tạo kỳ bán trú và thêm giáo viên tham gia trước.</p>
+          <p>Quản trị viên cần tạo kỳ bán trú và thêm giáo viên tham gia trước.</p>
         </div>
       )}
     </section>

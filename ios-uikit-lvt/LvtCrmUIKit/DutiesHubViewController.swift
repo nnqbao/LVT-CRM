@@ -34,7 +34,7 @@ final class DutiesHubViewController: UIViewController {
         )
         let shared = hubButton(
             title: "Lịch công tác chung",
-            subtitle: "Xem và tải PDF lịch toàn trường",
+            subtitle: "Lịch tuần toàn trường đã duyệt, duyệt lịch và tải PDF",
             systemImage: "calendar",
             action: #selector(openSharedFromHub)
         )
@@ -75,8 +75,21 @@ final class DutiesHubViewController: UIViewController {
     }
 
     @objc private func openSharedFromHub() {
-        let picker = SharedDutyScheduleViewController(repository: dutiesRepository)
-        navigationController?.pushViewController(picker, animated: !UIAccessibility.isReduceMotionEnabled)
+        openShared(weekStart: nil, animated: !UIAccessibility.isReduceMotionEnabled)
+    }
+
+    /// Lịch công tác chung, optionally on a given week (approval notifications).
+    func openShared(weekStart: String?, animated: Bool) {
+        loadViewIfNeeded()
+        guard let navigationController else { return }
+        if let shared = navigationController.viewControllers.compactMap({ $0 as? SharedDutyScheduleViewController }).first {
+            navigationController.popToViewController(shared, animated: animated)
+            if let weekStart { shared.show(weekStart: weekStart) }
+            return
+        }
+        navigationController.popToRootViewController(animated: false)
+        let shared = SharedDutyScheduleViewController(repository: dutiesRepository, weekStart: weekStart)
+        navigationController.pushViewController(shared, animated: animated)
     }
 
     private func hubButton(title: String, subtitle: String, systemImage: String, action: Selector) -> UIButton {

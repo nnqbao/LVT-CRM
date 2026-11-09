@@ -3,6 +3,7 @@ import { useQuery } from 'convex/react';
 import { anyApi } from 'convex/server';
 import { DutyListHeading } from '../duties/DutyListFilters';
 import { messageFor } from '../lib/appErrorMessage';
+import { useNotificationFocus } from '../notifications/useNotificationFocus';
 import '../duties/duties.css';
 import '../work/work.css';
 import './peopleReview.css';
@@ -32,7 +33,7 @@ function FaultPersonPicker({ people, onSelect, onClose }) {
       : people;
     const map = new Map();
     for (const person of filtered) {
-      const key = person.departmentName || 'Chưa xác định phòng ban';
+      const key = person.departmentName || 'Chưa xác định tổ chuyên môn';
       const list = map.get(key) || [];
       list.push(person);
       map.set(key, list);
@@ -53,7 +54,7 @@ function FaultPersonPicker({ people, onSelect, onClose }) {
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Tên, email, phòng ban…"
+          placeholder="Tên, email, tổ chuyên môn…"
         />
         {groups.length ? (
           <div className="pr-picker-list">
@@ -197,7 +198,7 @@ function FaultEmpty({ filtered = false }) {
 
 function FaultCard({ fault, showTarget = false }) {
   return (
-    <article className="pr-fault-card">
+    <article className="pr-fault-card" data-focus-id={showTarget ? undefined : String(fault._id)}>
       <header>
         <strong>{formatDate(fault.violationDate)}</strong>
         {showTarget ? null : <span>Ghi bởi {fault.recordedByName}</span>}
@@ -237,7 +238,9 @@ class StaffFaultsErrorBoundary extends React.Component {
   }
 }
 
-function StaffFaultsPage() {
+function StaffFaultsPage({ focusTarget }) {
+  // Bell "Ghi nhận lỗi mới" → highlight the card in "Lỗi của tôi".
+  useNotificationFocus(focusTarget, { acceptSourceTypes: ['staff_fault'] });
   const [mineSearch, setMineSearch] = useState(emptyFaultSearch);
   const [recordedSearch, setRecordedSearch] = useState(emptyFaultSearch);
   const [picking, setPicking] = useState(false);
@@ -324,10 +327,10 @@ function StaffFaultsPage() {
   );
 }
 
-export default function StaffFaultsView() {
+export default function StaffFaultsView({ focusTarget = null }) {
   return (
     <StaffFaultsErrorBoundary>
-      <StaffFaultsPage />
+      <StaffFaultsPage focusTarget={focusTarget} />
     </StaffFaultsErrorBoundary>
   );
 }

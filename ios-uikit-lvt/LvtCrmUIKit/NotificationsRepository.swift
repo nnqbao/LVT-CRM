@@ -24,7 +24,8 @@ final class NotificationsRepository: Sendable {
                 dueAt: notificationInt64(item["dueAt"]),
                 milestoneHours: notificationInt(item["milestoneHours"]),
                 milestoneLabel: (item["milestoneLabel"] as? String) ?? "",
-                read: (item["read"] as? Bool) ?? false
+                read: (item["read"] as? Bool) ?? false,
+                menu: (item["menu"] as? String) ?? ""
             )
         }
         let settings = result["settings"] as? [String: Any] ?? [:]

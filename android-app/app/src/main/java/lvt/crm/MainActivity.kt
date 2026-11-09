@@ -2,7 +2,6 @@ package lvt.crm
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,13 +10,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 import lvt.crm.push.NotificationDestination
 import lvt.crm.ui.LvtRoot
 import lvt.crm.ui.theme.LvtCrmTheme
 import lvt.crm.update.PlayStoreUpdater
 
-class MainActivity : ComponentActivity() {
+/** FragmentActivity (still a ComponentActivity) so BiometricPrompt can host its fragment. */
+class MainActivity : FragmentActivity() {
     private data class PendingDestination(val id: Long, val destination: NotificationDestination)
 
     private val destinationQueue = ArrayDeque<PendingDestination>()
@@ -75,6 +76,7 @@ class MainActivity : ComponentActivity() {
                 STATE_NOTIFICATION_KEYS,
                 ArrayList(destinationQueue.map { it.destination.notificationKey.orEmpty() }),
             )
+            outState.putStringArrayList(STATE_MENUS, ArrayList(destinationQueue.map { it.destination.menu }))
         }
         super.onSaveInstanceState(outState)
     }
@@ -95,6 +97,7 @@ class MainActivity : ComponentActivity() {
         val sourceTypes = state.getStringArrayList(STATE_SOURCE_TYPES).orEmpty()
         val sourceIds = state.getStringArrayList(STATE_SOURCE_IDS).orEmpty()
         val notificationKeys = state.getStringArrayList(STATE_NOTIFICATION_KEYS).orEmpty()
+        val menus = state.getStringArrayList(STATE_MENUS).orEmpty()
         return ids.indices.mapNotNull { index ->
             val sourceId = sourceIds.getOrNull(index)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             val id = ids[index]
@@ -106,6 +109,7 @@ class MainActivity : ComponentActivity() {
                     sourceType = sourceTypes.getOrNull(index).orEmpty(),
                     sourceId = sourceId,
                     notificationKey = notificationKeys.getOrNull(index)?.takeIf { it.isNotBlank() },
+                    menu = menus.getOrNull(index).orEmpty(),
                 ),
             )
         }
@@ -128,5 +132,6 @@ class MainActivity : ComponentActivity() {
         private const val STATE_SOURCE_TYPES = "lvt.pending_notification.source_types"
         private const val STATE_SOURCE_IDS = "lvt.pending_notification.source_ids"
         private const val STATE_NOTIFICATION_KEYS = "lvt.pending_notification.keys"
+        private const val STATE_MENUS = "lvt.pending_notification.menus"
     }
 }

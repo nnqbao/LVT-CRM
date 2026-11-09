@@ -15,6 +15,11 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
     private let assignmentsStack = UIStackView()
     private let fileLabel = UILabel()
     private let typeButton = UIButton(type: .system)
+    private let approverBlock = UIStackView()
+    private let approverTitle = UILabel()
+    private let approverNote = UILabel()
+    private let approverButton = UIButton(type: .system)
+    private let reapprovalLabel = UILabel()
     private let errorLabel = UILabel()
     private let submitButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .medium)
@@ -26,6 +31,7 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
     private var fileMime = ""
     private var documentTypeId = ""
     private var keptFileName = ""
+    private var approverIds: [String] = []
     private var isBusy = false
 
     private static let maxUploadFileSize = 20 * 1024 * 1024
@@ -53,6 +59,7 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
             if editingWork.privateFile {
                 keptFileName = editingWork.fileName
             }
+            approverIds = editingWork.approvers.map(\.id)
             navigationItem.leftBarButtonItem = UIBarButtonItem(
                 title: "Hủy sửa",
                 style: .plain,
@@ -62,6 +69,7 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
         }
         configureViews()
         configureLayout()
+        refreshApprovers()
         rebuildAssignments()
         refreshFileLabel()
         Task { await loadOptions() }
@@ -109,7 +117,37 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
         errorLabel.numberOfLines = 0
         errorLabel.isHidden = true
 
-        submitButton.setTitle(editingWork == nil ? "Tạo công việc" : "Lưu thay đổi", for: .normal)
+        approverBlock.axis = .vertical
+        approverBlock.spacing = 6
+        approverBlock.isLayoutMarginsRelativeArrangement = true
+        approverBlock.layoutMargins = UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        approverBlock.backgroundColor = .secondarySystemGroupedBackground
+        approverBlock.layer.cornerRadius = 12
+        approverBlock.isHidden = true
+        approverTitle.font = .preferredFont(forTextStyle: .headline)
+        approverTitle.adjustsFontForContentSizeCategory = true
+        approverTitle.numberOfLines = 0
+        approverNote.font = .preferredFont(forTextStyle: .footnote)
+        approverNote.adjustsFontForContentSizeCategory = true
+        approverNote.textColor = .secondaryLabel
+        approverNote.numberOfLines = 0
+        approverNote.text = WorkApprovalRules.approvalNote
+        approverButton.contentHorizontalAlignment = .leading
+        approverButton.titleLabel?.numberOfLines = 0
+        approverButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        approverButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        approverButton.addTarget(self, action: #selector(pickApprovers), for: .touchUpInside)
+        reapprovalLabel.font = .preferredFont(forTextStyle: .footnote)
+        reapprovalLabel.adjustsFontForContentSizeCategory = true
+        reapprovalLabel.textColor = .systemOrange
+        reapprovalLabel.numberOfLines = 0
+        reapprovalLabel.text = WorkApprovalRules.reapprovalWarning
+        reapprovalLabel.isHidden = !WorkApprovalRules.editNeedsReapproval(editingWork)
+        approverBlock.addArrangedSubview(reapprovalLabel)
+        approverBlock.addArrangedSubview(approverTitle)
+        approverBlock.addArrangedSubview(approverNote)
+        approverBlock.addArrangedSubview(approverButton)
+
         submitButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         submitButton.addTarget(self, action: #selector(submit), for: .touchUpInside)
 
@@ -129,6 +167,7 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
             titleField,
             addRow,
             assignmentsStack,
+            approverBlock,
             fileLabel,
             photoButton,
             fileButton,
@@ -168,7 +207,7 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
                 documentTypeId = fallback.id
             }
             refreshTypeButton()
-            if loaded.isOps, addRow.arrangedSubviews.count == 1 {
+            if loaded.canAssignDepartments, addRow.arrangedSubviews.count == 1 {
                 let addDepartment = UIButton(type: .system)
                 addDepartment.setTitle("＋ Phòng ban", for: .normal)
                 addDepartment.addTarget(self, action: #selector(addDepartmentAssignment), for: .touchUpInside)
@@ -178,6 +217,66 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
         } catch {
             showError((error as? ConvexException)?.message ?? ConvexHttpClient.humanize(error.localizedDescription))
         }
+    }
+
+    /// Creator-based rule from the server: a new admin/mod document, or an edited approval document.
+    private var requiresApproval: Bool {
+        if let editingWork { return editingWork.requiresApproval || reapproval }
+        return options?.requiresApproval ?? false
+    }
+
+    /// Admin editing an approved document: the server sends it back to Ban giám hiệu.
+    private var reapproval: Bool { WorkApprovalRules.editNeedsReapproval(editingWork) }
+
+    private var approvalNeeded: Bool {
+        reapproval || viewModel.approversRequired(requiresApproval: requiresApproval, assignments: assignments)
+    }
+
+    private func refreshApprovers() {
+        let available = options?.approvers ?? []
+        // Edits keep the previous approvers even before options load; unknown ids are dropped once loaded.
+        if options != nil {
+            approverIds = approverIds.filter { id in available.contains { $0.id == id } }
+        }
+        approverBlock.isHidden = !requiresApproval
+        let required = approvalNeeded
+        approverTitle.text = WorkApprovalRules.approverPickerTitle + (required ? " *" : " (không bắt buộc khi chỉ giao cho chính bạn)")
+        approverTitle.accessibilityLabel = WorkApprovalRules.approverPickerTitle + (required ? ", bắt buộc" : ", không bắt buộc")
+        let names = approverIds.compactMap { id in available.first { $0.id == id }?.name }
+        let summary: String
+        if options != nil && available.isEmpty {
+            summary = "Chưa có thành viên Ban giám hiệu (cấp 4 hoặc 5 sao) đang hoạt động."
+        } else if approverIds.isEmpty {
+            summary = "Chọn người duyệt"
+        } else if names.isEmpty {
+            summary = "\(approverIds.count) người đã chọn"
+        } else {
+            summary = "\(approverIds.count) người đã chọn: " + names.joined(separator: ", ")
+        }
+        approverButton.setTitle(summary, for: .normal)
+        approverButton.accessibilityLabel = "Người duyệt. \(summary)"
+        approverButton.accessibilityHint = "Mở danh sách Ban giám hiệu để chọn"
+        let title = WorkApprovalRules.submitTitle(editing: editingWork != nil, approvalNeeded: requiresApproval && required)
+        if !isBusy { submitButton.setTitle(title, for: .normal) }
+    }
+
+    @objc private func pickApprovers() {
+        let people = options?.approvers ?? []
+        let items = people.map { person -> (String, String, String) in
+            let detail = [person.level > 0 ? "\(person.level) sao" : "", person.positionName.isEmpty ? "Chưa gán chức vụ" : person.positionName]
+                .filter { !$0.isEmpty }.joined(separator: " · ")
+            return (person.id, person.name, detail)
+        }
+        let picker = WorkMultiChoiceViewController(
+            titleText: WorkApprovalRules.approverPickerTitle,
+            note: WorkApprovalRules.approvalNote,
+            items: items,
+            selected: approverIds
+        ) { [weak self] ids in
+            self?.approverIds = ids
+            self?.refreshApprovers()
+        }
+        navigationController?.pushViewController(picker, animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
     @objc private func addIndividual() {
@@ -195,10 +294,11 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
     }
 
     private func rebuildAssignments() {
+        refreshApprovers()
         assignmentsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         if assignments.isEmpty {
             let empty = UILabel()
-            empty.text = (options?.isOps == true)
+            empty.text = (options?.canAssignDepartments == true)
                 ? "Bấm ＋ Phòng ban hoặc ＋ Cá nhân để thêm người nhận việc."
                 : "Bấm ＋ Cá nhân để thêm người nhận việc."
             empty.font = .preferredFont(forTextStyle: .subheadline)
@@ -462,7 +562,11 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
     @objc private func submit() {
         guard !isBusy else { return }
         if editingWork != nil {
-            let alert = UIAlertController(title: "Bạn có chắc chắn Lưu không?", message: nil, preferredStyle: .alert)
+            let alert = UIAlertController(
+                title: "Bạn có chắc chắn Lưu không?",
+                message: reapproval ? WorkApprovalRules.reapprovalWarning : nil,
+                preferredStyle: .alert
+            )
             alert.addAction(UIAlertAction(title: "Hủy", style: .cancel))
             alert.addAction(UIAlertAction(title: "Lưu", style: .default) { [weak self] _ in
                 self?.persist()
@@ -480,7 +584,9 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
             title: titleField.text ?? "",
             assignments: assignments,
             hasFile: fileData != nil,
-            documentTypeId: documentTypeId
+            documentTypeId: documentTypeId,
+            approversRequired: approvalNeeded,
+            approverCount: approverIds.count
         ) {
             showError(message)
             return
@@ -490,6 +596,9 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
         submitButton.setTitle(editingWork == nil ? "Đang tạo…" : "Đang lưu…", for: .normal)
         spinner.startAnimating()
         let editingDocument = editingWork
+        let needsApproval = requiresApproval
+        let needsReapproval = reapproval
+        let approvers = requiresApproval ? approverIds : []
         Task {
             do {
                 if let editingDocument {
@@ -500,7 +609,10 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
                         fileData: fileData,
                         fileName: fileName.isEmpty ? nil : fileName,
                         mimeType: fileMime.isEmpty ? nil : fileMime,
-                        documentTypeId: documentTypeId
+                        documentTypeId: documentTypeId,
+                        requiresApproval: needsApproval,
+                        reapproval: needsReapproval,
+                        approverUserIds: approvers
                     )
                 } else {
                     try await viewModel.submitCreate(
@@ -509,7 +621,9 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
                         fileData: fileData,
                         fileName: fileName.isEmpty ? nil : fileName,
                         mimeType: fileMime.isEmpty ? nil : fileMime,
-                        documentTypeId: documentTypeId
+                        documentTypeId: documentTypeId,
+                        requiresApproval: needsApproval,
+                        approverUserIds: approvers
                     )
                 }
                 onCreated()
@@ -524,7 +638,7 @@ final class WorkCreateViewController: UIViewController, UITextViewDelegate, UIDo
                 }
                 isBusy = false
                 submitButton.isEnabled = true
-                submitButton.setTitle(editingDocument == nil ? "Tạo công việc" : "Lưu thay đổi", for: .normal)
+                refreshApprovers()
                 spinner.stopAnimating()
             }
         }
@@ -597,5 +711,78 @@ private final class WorkChoiceViewController: UITableViewController {
         guard items.indices.contains(indexPath.row) else { return }
         onSelect(items[indexPath.row].0)
         navigationController?.popViewController(animated: !UIAccessibility.isReduceMotionEnabled)
+    }
+}
+
+/// Multi-select list (Ban giám hiệu approvers) with VoiceOver checked state.
+private final class WorkMultiChoiceViewController: UITableViewController {
+    private let note: String
+    private let items: [(String, String, String)]
+    private var selected: [String]
+    private let onDone: ([String]) -> Void
+
+    init(titleText: String, note: String, items: [(String, String, String)], selected: [String], onDone: @escaping ([String]) -> Void) {
+        self.note = note
+        self.items = items
+        self.selected = selected
+        self.onDone = onDone
+        super.init(style: .insetGrouped)
+        title = titleText
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Xong", style: .prominent, target: self, action: #selector(done))
+    }
+
+    @objc private func done() {
+        onDone(selected)
+        navigationController?.popViewController(animated: !UIAccessibility.isReduceMotionEnabled)
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { max(items.count, 1) }
+
+    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+        "\(selected.count) người đã chọn. \(note)"
+    }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "MultiChoice") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "MultiChoice")
+        cell.textLabel?.numberOfLines = 0
+        cell.detailTextLabel?.numberOfLines = 0
+        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
+        cell.detailTextLabel?.font = .preferredFont(forTextStyle: .footnote)
+        cell.textLabel?.adjustsFontForContentSizeCategory = true
+        cell.detailTextLabel?.adjustsFontForContentSizeCategory = true
+        guard items.indices.contains(indexPath.row) else {
+            cell.textLabel?.text = "Chưa có thành viên Ban giám hiệu (cấp 4 hoặc 5 sao) đang hoạt động."
+            cell.detailTextLabel?.text = nil
+            cell.selectionStyle = .none
+            cell.accessoryType = .none
+            return cell
+        }
+        let item = items[indexPath.row]
+        let checked = selected.contains(item.0)
+        cell.textLabel?.text = item.1
+        cell.detailTextLabel?.text = item.2
+        cell.detailTextLabel?.textColor = .secondaryLabel
+        cell.accessoryType = checked ? .checkmark : .none
+        cell.accessibilityTraits = checked ? [.button, .selected] : [.button]
+        return cell
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        guard items.indices.contains(indexPath.row) else { return }
+        let id = items[indexPath.row].0
+        if let index = selected.firstIndex(of: id) {
+            selected.remove(at: index)
+        } else {
+            selected.append(id)
+        }
+        tableView.reloadData()
     }
 }

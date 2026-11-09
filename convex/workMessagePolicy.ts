@@ -4,8 +4,10 @@ import {
   canSeeArchivedWork,
   canSeeLiveWork,
   isWorkItemArchived,
+  isWorkReleased,
   type WorkVisibilityMode,
 } from "./assignmentPolicy.ts";
+import { isWorkDocumentInModeratorScope, workDocumentScopeAssignments } from "./moderatorScope.ts";
 
 export const WORK_MESSAGE_TEXT_MAX_LENGTH = 4000;
 export const WORK_MESSAGE_HTML_MAX_LENGTH = 20_000;
@@ -183,19 +185,31 @@ export function canAccessWorkChat(args: {
   actorLevel: number;
   actorDepartmentId: string;
   visibilityMode: WorkVisibilityMode;
-  document: { active?: boolean; createdBy?: string; status?: string } | null | undefined;
+  document: {
+    active?: boolean;
+    createdBy?: string;
+    status?: string;
+    approverUserIds?: string[];
+  } | null | undefined;
   workItems: WorkChatWorkItem[];
   personalTasks?: WorkChatPersonalTask[];
-  usersById?: Map<string, { status?: string }>;
+  usersById?: Map<string, { status?: string; departmentId?: string }>;
+  /** Department of a scoped moderator (`moderatorDepartmentScope`); null/undefined = unscoped. */
+  departmentScope?: string | null;
 }): boolean {
   const document = args.document;
   if (!document?.active) return false;
   const usersById = args.usersById || new Map();
+  const inModeratorScope = isWorkDocumentInModeratorScope(
+    args.departmentScope ?? null,
+    workDocumentScopeAssignments(document as any),
+    usersById,
+  );
   const items = (args.workItems || []).filter((item) => item?.active !== false);
   const archived =
     items.some((item) => isWorkItemArchived(document, item, usersById)) ||
     isWorkItemArchived(document, { assignmentType: "department" }, usersById);
-  if (archived) return canSeeArchivedWork(args.actorRole);
+  if (archived) return canSeeArchivedWork(args.actorRole, inModeratorScope);
   const isAssignee = isWorkChatAssignee({
     actorUserId: args.actorUserId,
     actorDepartmentId: args.actorDepartmentId,
@@ -209,6 +223,12 @@ export function canAccessWorkChat(args: {
     createdBy: String(document.createdBy || ""),
     isAssignee,
     visibilityMode: args.visibilityMode,
+    inModeratorScope,
+    // Pending/returned documents: creator, designated approvers and in-scope admin/mod only.
+    released: isWorkReleased(document),
+    isApprover: (document.approverUserIds || []).some(
+      (id) => String(id) === String(args.actorUserId),
+    ),
   });
 }
 
