@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useOwnAvatarContext } from './useOwnAvatar.jsx';
+import { postToApp } from '../lib/appBridge';
 import './accountMenu.css';
 
 function MenuGlyph({ children }) {
@@ -15,6 +16,17 @@ function PasswordIcon() {
     <MenuGlyph>
       <rect x="5" y="11" width="14" height="10" rx="2" />
       <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </MenuGlyph>
+  );
+}
+
+function PasskeyIcon() {
+  return (
+    <MenuGlyph>
+      <circle cx="8" cy="12" r="3.5" />
+      <path d="M11.5 12h9" />
+      <path d="M17.5 12v3" />
+      <path d="M20.5 12v2" />
     </MenuGlyph>
   );
 }
@@ -123,6 +135,21 @@ export default function AccountMenu({ onChoose, onSignOut }) {
             <button type="button" className="account-menu-row" role="menuitem" onClick={() => go('change-password')}>
               <span className="account-menu-chip" aria-hidden="true"><PasswordIcon /></span>
               <span>Đổi mật khẩu</span>
+              <ChevronIcon />
+            </button>
+            {/* In the app: the native passkey / vân tay / Face ID sheet. In a browser passkeys cannot be
+                created (they belong to the phone app), so open Thiết bị đăng nhập, which explains where. */}
+            <button
+              type="button"
+              className="account-menu-row"
+              role="menuitem"
+              onClick={() => {
+                if (postToApp({ type: 'quick-sign-in' })) setOpen(false);
+                else go('devices');
+              }}
+            >
+              <span className="account-menu-chip" aria-hidden="true"><PasskeyIcon /></span>
+              <span>Thiết lập Passkey</span>
               <ChevronIcon />
             </button>
             <button type="button" className="account-menu-row" role="menuitem" onClick={() => go('devices')}>

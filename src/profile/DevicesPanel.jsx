@@ -176,7 +176,12 @@ function SignInKeysSection({ now }) {
         <button type="button" className="primary-button devices-quick-sign-in" onClick={() => postToApp({ type: 'quick-sign-in' })}>
           Cài đặt đăng nhập nhanh trên điện thoại này
         </button>
-      ) : null}
+      ) : (
+        <p className="devices-hint">
+          Passkey, vân tay và Face ID được thiết lập trong app CRM Lê Văn Tám trên điện thoại: mở app, bấm ảnh đại diện
+          góc trên → <strong>Thiết lập Passkey</strong>. Trên trình duyệt web không tạo được passkey.
+        </p>
+      )}
       {feedback ? <p className="profile-feedback" role="status">{feedback}</p> : null}
       {keys.length === 0 ? (
         <p className="devices-empty">Chưa bật đăng nhập bằng vân tay, Face ID hay passkey trên app nào.</p>

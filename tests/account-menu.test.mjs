@@ -95,3 +95,18 @@ test('combined profile view is split into three page modules', () => {
   assert.match(main, /active === 'devices'/);
   assert.match(main, /<DevicesView \/>/);
 });
+
+test('Thiết lập Passkey sits right under Đổi mật khẩu: native sheet in the app, Thiết bị đăng nhập in a browser', () => {
+  const menu = readFileSync(new URL('../src/profile/AccountMenu.jsx', import.meta.url), 'utf8');
+  const devices = readFileSync(new URL('../src/profile/DevicesPanel.jsx', import.meta.url), 'utf8');
+  const guide = readFileSync(new URL('../docs/guide/topics/start/dang-nhap-nhanh-app.md', import.meta.url), 'utf8');
+  assert.match(menu, /import \{ postToApp \} from '\.\.\/lib\/appBridge'/);
+  assert.match(menu, /if \(postToApp\(\{ type: 'quick-sign-in' \}\)\) setOpen\(false\);\n\s+else go\('devices'\);/);
+  const password = menu.indexOf('<span>Đổi mật khẩu</span>');
+  const passkey = menu.indexOf('<span>Thiết lập Passkey</span>');
+  const devicesRow = menu.indexOf('<span>Quản lý thiết bị đăng nhập</span>');
+  assert.ok(password > 0 && password < passkey && passkey < devicesRow, 'order: Đổi mật khẩu → Thiết lập Passkey → Thiết bị');
+  assert.match(devices, /className="devices-hint"/, 'browsers explain that passkeys are set up in the phone app');
+  assert.match(guide, /Thiết lập Passkey/);
+  assert.match(guide, /^menu: App điện thoại → Ảnh đại diện → Thiết lập Passkey$/m);
+});

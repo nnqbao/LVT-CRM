@@ -149,9 +149,10 @@ export default [
     callouts: [
       { n: 1, target: '.account-menu-identity', pos: 'left' },
       { n: 2, target: { css: '.account-menu-row', text: 'Đổi mật khẩu' }, pos: 'left' },
-      { n: 3, target: { css: '.account-menu-row', text: 'Quản lý thiết bị đăng nhập' }, pos: 'left' },
-      { n: 4, target: { css: '.account-menu-row', text: 'Hướng dẫn sử dụng' }, pos: 'left' },
-      { n: 5, target: '.account-menu-logout', pos: 'left' },
+      { n: 3, target: { css: '.account-menu-row', text: 'Thiết lập Passkey' }, pos: 'left' },
+      { n: 4, target: { css: '.account-menu-row', text: 'Quản lý thiết bị đăng nhập' }, pos: 'left' },
+      { n: 5, target: { css: '.account-menu-row', text: 'Hướng dẫn sử dụng' }, pos: 'left' },
+      { n: 6, target: '.account-menu-logout', pos: 'left' },
     ],
     clip: { target: '.account-menu-popover', pad: 20 },
   },

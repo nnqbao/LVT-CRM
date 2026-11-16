@@ -126,6 +126,13 @@
   white-space: nowrap;
 }
 
+.devices-hint {
+  margin: 0 0 10px;
+  color: var(--lvt-ink-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .devices-empty,
 .devices-loading {
   color: #64748b;

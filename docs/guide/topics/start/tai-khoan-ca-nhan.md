@@ -5,16 +5,17 @@ menu: Ảnh đại diện (góc trên phải)
 roles: Mọi người
 keywords: ho so, avatar, anh dai dien, dang xuat, huong dan
 ---
-Mở hồ sơ, đổi ảnh đại diện, đổi mật khẩu, xem thiết bị, mở hướng dẫn và đăng xuất.
+Mở hồ sơ, đổi ảnh đại diện, đổi mật khẩu, thiết lập passkey, xem thiết bị, mở hướng dẫn và đăng xuất.
 
 1. Bấm vào **ảnh đại diện** (hoặc chữ viết tắt tên) ở góc trên bên phải.
 2. Chọn tên của mình [[1]] để mở **Hồ sơ nội bộ**.
 3. **Đổi mật khẩu** [[2]] — xem [Đổi mật khẩu](#doi-mat-khau).
-4. **Quản lý thiết bị đăng nhập** [[3]] — xem [Thiết bị đã đăng nhập](#thiet-bi-dang-nhap).
-5. **Hướng dẫn sử dụng** [[4]] mở cẩm nang này trong tab mới.
-6. **Đăng xuất** [[5]] khi dùng xong, nhất là trên máy tính dùng chung.
+4. **Thiết lập Passkey** [[3]] — bật đăng nhập không cần mật khẩu trên app điện thoại, xem [Đăng nhập nhanh bằng passkey, vân tay, Face ID](#dang-nhap-nhanh-app).
+5. **Quản lý thiết bị đăng nhập** [[4]] — xem [Thiết bị đã đăng nhập](#thiet-bi-dang-nhap).
+6. **Hướng dẫn sử dụng** [[5]] mở cẩm nang này trong tab mới.
+7. **Đăng xuất** [[6]] khi dùng xong, nhất là trên máy tính dùng chung.
 
-![Menu tài khoản: 1 Hồ sơ, 2 Đổi mật khẩu, 3 Thiết bị đăng nhập, 4 Hướng dẫn sử dụng, 5 Đăng xuất](menu-tai-khoan)
+![Menu tài khoản: 1 Hồ sơ, 2 Đổi mật khẩu, 3 Thiết lập Passkey, 4 Thiết bị đăng nhập, 5 Hướng dẫn sử dụng, 6 Đăng xuất](menu-tai-khoan)
 
 #### Đổi ảnh đại diện
 Trong **Hồ sơ nội bộ**, bấm **Đổi ảnh đại diện** [[1]], chọn ảnh, kéo/phóng để căn khung rồi lưu. Hồ sơ còn cho biết email, vai trò, tổ chuyên môn, chức vụ và nhóm quyền của thầy cô.
