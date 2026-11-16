@@ -1,3 +1,4 @@
+import java.net.URI
 import java.util.Properties
 
 plugins {
@@ -23,8 +24,16 @@ fun localProperty(name: String): String? {
     return (project.findProperty(name) as String?)?.trim()?.takeIf { it.isNotEmpty() }
 }
 
-val lvtVersionCode = 56
-val lvtVersionName = "3.0.2"
+val lvtVersionCode = 57
+val lvtVersionName = "3.0.3"
+
+/** Convex Cloud was retired on 2026-11-08: a build pointing at it cannot sign anyone in (HTTP 404). */
+fun selfHostedConvexUrl(url: String): String {
+    require(!URI(url).host.orEmpty().endsWith(".convex.cloud")) {
+        "Convex Cloud is retired: lvt.convex.*.url must be the self-hosted backend, not $url (check local.properties)."
+    }
+    return url
+}
 
 android {
     namespace = "lvt.crm"
@@ -66,7 +75,7 @@ android {
             buildConfigField(
                 "String",
                 "CONVEX_URL",
-                "\"${urlProperty("lvt.convex.debug.url", "https://convex.thcslevantam.ai.vn")}\"",
+                "\"${selfHostedConvexUrl(urlProperty("lvt.convex.debug.url", "https://convex.thcslevantam.ai.vn"))}\"",
             )
             buildConfigField(
                 "String",
@@ -88,7 +97,7 @@ android {
             buildConfigField(
                 "String",
                 "CONVEX_URL",
-                "\"${urlProperty("lvt.convex.release.url", "https://convex.thcslevantam.ai.vn")}\"",
+                "\"${selfHostedConvexUrl(urlProperty("lvt.convex.release.url", "https://convex.thcslevantam.ai.vn"))}\"",
             )
             buildConfigField(
                 "String",

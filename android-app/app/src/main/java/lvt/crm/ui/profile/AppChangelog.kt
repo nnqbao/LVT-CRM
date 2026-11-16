@@ -8,6 +8,12 @@ data class AppChangelogEntry(
 object AppChangelog {
     val entries: List<AppChangelogEntry> = listOf(
         AppChangelogEntry(
+            "3.0.3",
+            listOf(
+                "Sửa lỗi không đăng nhập được (\"Phản hồi Convex không hợp lệ (404)\"): app kết nối đúng máy chủ dữ liệu của nhà trường.",
+            ),
+        ),
+        AppChangelogEntry(
             "3.0.2",
             listOf(
                 "Máy chủ dữ liệu chuyển về hệ thống riêng của nhà trường; cần cập nhật bản này để tiếp tục đăng nhập.",

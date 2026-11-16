@@ -14,8 +14,19 @@ test('Android 3.0: after the native sign-in the app shows the web app in a WebVi
   assert.match(root, /if \(BuildConfig\.WEB_SHELL\) \{\n\s+val context = LocalContext\.current\n\s+WebAppShell\(/);
   assert.match(root, /AuthState\.Offline -> OfflineStartScreen\(/);
   assert.match(src('ui/profile/AppChangelog.kt'), /AppChangelogEntry\(\s*"3\.0\.0"/);
-  assert.match(gradle, /val lvtVersionCode = 56\nval lvtVersionName = "3\.0\.2"/);
-  assert.match(src('ui/profile/AppChangelog.kt'), /entries: List<AppChangelogEntry> = listOf\(\s*AppChangelogEntry\(\s*"3\.0\.2"/);
+  assert.match(gradle, /val lvtVersionCode = 57\nval lvtVersionName = "3\.0\.3"/);
+  assert.match(src('ui/profile/AppChangelog.kt'), /entries: List<AppChangelogEntry> = listOf\(\s*AppChangelogEntry\(\s*"3\.0\.3"/);
+});
+
+test('Android builds refuse the retired Convex Cloud backend, even from local.properties', () => {
+  const gradle = read('android-app/app/build.gradle.kts');
+  assert.match(gradle, /endsWith\("\.convex\.cloud"\)/);
+  for (const kind of ['debug', 'release']) {
+    assert.ok(
+      gradle.includes(`selfHostedConvexUrl(urlProperty("lvt.convex.${kind}.url", "https://convex.thcslevantam.ai.vn"))`),
+      `${kind} CONVEX_URL goes through the guard`,
+    );
+  }
 });
 
 test('Android WebView shell: origin-restricted bridge, separate session, nothing left after sign-out', () => {
