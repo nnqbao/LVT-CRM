@@ -8,6 +8,12 @@ data class AppChangelogEntry(
 object AppChangelog {
     val entries: List<AppChangelogEntry> = listOf(
         AppChangelogEntry(
+            "3.0.4",
+            listOf(
+                "Màn hình đăng nhập và đổi mật khẩu báo rõ \"Không có kết nối mạng\" khi điện thoại chưa bật Wi-Fi / 4G, thay cho thông báo kỹ thuật bằng tiếng Anh.",
+            ),
+        ),
+        AppChangelogEntry(
             "3.0.3",
             listOf(
                 "Sửa lỗi không đăng nhập được (\"Phản hồi Convex không hợp lệ (404)\"): app kết nối đúng máy chủ dữ liệu của nhà trường.",

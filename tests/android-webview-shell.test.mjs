@@ -14,8 +14,16 @@ test('Android 3.0: after the native sign-in the app shows the web app in a WebVi
   assert.match(root, /if \(BuildConfig\.WEB_SHELL\) \{\n\s+val context = LocalContext\.current\n\s+WebAppShell\(/);
   assert.match(root, /AuthState\.Offline -> OfflineStartScreen\(/);
   assert.match(src('ui/profile/AppChangelog.kt'), /AppChangelogEntry\(\s*"3\.0\.0"/);
-  assert.match(gradle, /val lvtVersionCode = 57\nval lvtVersionName = "3\.0\.3"/);
-  assert.match(src('ui/profile/AppChangelog.kt'), /entries: List<AppChangelogEntry> = listOf\(\s*AppChangelogEntry\(\s*"3\.0\.3"/);
+  assert.match(gradle, /val lvtVersionCode = 58\nval lvtVersionName = "3\.0\.4"/);
+  assert.match(src('ui/profile/AppChangelog.kt'), /entries: List<AppChangelogEntry> = listOf\(\s*AppChangelogEntry\(\s*"3\.0\.4"/);
+  // Network trouble on the sign-in screen reads as Vietnamese, not raw Java text.
+  assert.match(src('ui/auth/LoginViewModel.kt'), /connectionErrorMessage\(err\)\?\.let \{ return it \}/);
+  assert.match(src('ui/auth/LoginViewModel.kt'), /"Không có kết nối mạng\. Hãy bật Wi-Fi hoặc dữ liệu di động \(4G\) rồi thử lại\."/);
+  assert.match(src('ui/auth/ChangePasswordScreen.kt'), /error = connectionErrorMessage\(failure\) \?: when \(failure\)/);
+  const auth = src('data/auth/AuthRepository.kt');
+  for (const code of ['SIGN_IN_FAILED', 'PASSWORD_RESET_FAILED', 'PASSWORD_CHANGE_FAILED']) {
+    assert.match(auth, new RegExp(`if \\(e is java\\.io\\.IOException\\) e else ConvexException\\("${code}"`), `${code} keeps network errors`);
+  }
 });
 
 test('Android builds refuse the retired Convex Cloud backend, even from local.properties', () => {

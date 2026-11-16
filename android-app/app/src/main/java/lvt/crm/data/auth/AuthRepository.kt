@@ -175,7 +175,8 @@ class AuthRepository(
                     previousState,
                 )
             }
-            Result.failure(ConvexException("SIGN_IN_FAILED", e.message ?: "SIGN_IN_FAILED"))
+            // Network failures keep their type so the sign-in screen can say "Không có kết nối mạng".
+            Result.failure(if (e is java.io.IOException) e else ConvexException("SIGN_IN_FAILED", e.message ?: "SIGN_IN_FAILED"))
         }
     }
 
@@ -194,7 +195,7 @@ class AuthRepository(
         } catch (e: ConvexException) {
             Result.failure(e)
         } catch (e: Exception) {
-            Result.failure(ConvexException("PASSWORD_RESET_FAILED", e.message ?: "PASSWORD_RESET_FAILED"))
+            Result.failure(if (e is java.io.IOException) e else ConvexException("PASSWORD_RESET_FAILED", e.message ?: "PASSWORD_RESET_FAILED"))
         }
     }
 
@@ -212,7 +213,7 @@ class AuthRepository(
         } catch (e: ConvexException) {
             return Result.failure(e)
         } catch (e: Exception) {
-            return Result.failure(ConvexException("PASSWORD_CHANGE_FAILED", e.message ?: "PASSWORD_CHANGE_FAILED"))
+            return Result.failure(if (e is java.io.IOException) e else ConvexException("PASSWORD_CHANGE_FAILED", e.message ?: "PASSWORD_CHANGE_FAILED"))
         }
         return try {
             val session = fetchSession()

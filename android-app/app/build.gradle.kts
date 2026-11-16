@@ -24,8 +24,8 @@ fun localProperty(name: String): String? {
     return (project.findProperty(name) as String?)?.trim()?.takeIf { it.isNotEmpty() }
 }
 
-val lvtVersionCode = 57
-val lvtVersionName = "3.0.3"
+val lvtVersionCode = 58
+val lvtVersionName = "3.0.4"
 
 /** Convex Cloud was retired on 2026-11-08: a build pointing at it cannot sign anyone in (HTTP 404). */
 fun selfHostedConvexUrl(url: String): String {

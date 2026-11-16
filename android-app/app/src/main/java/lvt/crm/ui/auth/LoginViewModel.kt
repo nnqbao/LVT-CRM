@@ -19,6 +19,23 @@ import lvt.crm.data.auth.UserSession
 import lvt.crm.data.convex.ConvexException
 import lvt.crm.data.convex.ConvexHttpClient
 
+/**
+ * Network trouble on the sign-in screen, in words a teacher understands, instead of the raw
+ * Java text ("Unable to resolve host …: No address associated with hostname") or "Phản hồi
+ * Convex không hợp lệ (502)". Null when the failure is not about the connection.
+ */
+internal fun connectionErrorMessage(err: Throwable): String? = when {
+    err is java.net.UnknownHostException || err is java.net.ConnectException || err is java.net.NoRouteToHostException ->
+        "Không có kết nối mạng. Hãy bật Wi-Fi hoặc dữ liệu di động (4G) rồi thử lại."
+    err is java.net.SocketTimeoutException || err is java.io.InterruptedIOException ->
+        "Mạng chậm, máy chủ chưa kịp trả lời. Hãy kiểm tra Wi-Fi / 4G rồi thử lại."
+    err is java.io.IOException ->
+        "Không kết nối được máy chủ của trường. Hãy kiểm tra mạng rồi thử lại."
+    err is ConvexException && err.code.startsWith("HTTP_") ->
+        "Máy chủ đang tạm gián đoạn (mã ${err.code.removePrefix("HTTP_")}). Vui lòng thử lại sau ít phút; nếu vẫn lỗi, hãy cập nhật ứng dụng trên Google Play."
+    else -> null
+}
+
 enum class LoginMode {
     SignIn,
     ForgotPassword,
@@ -168,6 +185,7 @@ class LoginViewModel(
         val raw = err.message.orEmpty()
         val isGenericServerError = raw.equals("Server Error", ignoreCase = true) ||
             Regex("""^\[Request ID:[^\]]+]\s*Server Error\s*$""", RegexOption.IGNORE_CASE).matches(raw)
+        connectionErrorMessage(err)?.let { return it }
         return when {
             err.message == "EMAIL_PASSWORD_REQUIRED" ->
                 "Vui lòng nhập email và mật khẩu."

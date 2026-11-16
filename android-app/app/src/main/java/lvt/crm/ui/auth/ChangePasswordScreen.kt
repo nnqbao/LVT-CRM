@@ -229,7 +229,7 @@ fun ChangePasswordScreen(
                                             onDone()
                                         },
                                         onFailure = { failure ->
-                                            error = when (failure) {
+                                            error = connectionErrorMessage(failure) ?: when (failure) {
                                                 is ConvexException -> failure.message
                                                 else -> ConvexHttpClient.humanize(
                                                     failure.message
