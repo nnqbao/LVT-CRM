@@ -7,7 +7,12 @@ final class ChatHubViewController: UIViewController, UITableViewDataSource, UITa
     private let onOpenWork: (String) -> Void
     private let onUnread: (Int) -> Void
     private let tableView = UITableView(frame: .zero, style: .plain)
-    private let filters = UISegmentedControl(items: ["Tất cả", "Công tác", "Công việc", "Nhóm"])
+    private let filters = IconTabBar(items: [
+        IconTabBar.Item(title: "Tất cả", systemImage: "bubble.left.and.bubble.right"),
+        IconTabBar.Item(title: "Công tác", systemImage: "briefcase"),
+        IconTabBar.Item(title: "Công việc", systemImage: "checkmark.seal"),
+        IconTabBar.Item(title: "Nhóm", systemImage: "person.2"),
+    ])
     private let syncLabel = UILabel()
     private var inbox: ChatInboxSnapshot?
     private var visible: [ChatConversation] = []
@@ -57,7 +62,8 @@ final class ChatHubViewController: UIViewController, UITableViewDataSource, UITa
         super.viewDidLoad()
         navigationItem.largeTitleDisplayMode = .always
         view.backgroundColor = .systemBackground
-        filters.selectedSegmentIndex = 0
+        filters.selectedIndex = 0
+        filters.accessibilityLabel = "Lọc cuộc trò chuyện"
         filters.addAction(UIAction { [weak self] _ in self?.applyFilter() }, for: .valueChanged)
         filters.translatesAutoresizingMaskIntoConstraints = false
         syncLabel.font = .preferredFont(forTextStyle: .footnote)
@@ -240,7 +246,7 @@ final class ChatHubViewController: UIViewController, UITableViewDataSource, UITa
 
     private func applyFilter() {
         let kind: ChatKind?
-        switch filters.selectedSegmentIndex {
+        switch filters.selectedIndex {
         case 1: kind = .duty
         case 2: kind = .work
         case 3: kind = .group

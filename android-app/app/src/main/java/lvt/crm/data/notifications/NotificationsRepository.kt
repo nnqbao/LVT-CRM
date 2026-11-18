@@ -15,6 +15,8 @@ data class NotificationItem(
     val milestoneHours: Int,
     val milestoneLabel: String,
     val read: Boolean,
+    /** Web menu a kind `people` item opens (`staff-faults` / `people-review`); empty otherwise. */
+    val menu: String = "",
 )
 
 data class NotificationSettings(
@@ -57,6 +59,7 @@ class NotificationsRepository(
                         milestoneHours = item.optInt("milestoneHours"),
                         milestoneLabel = item.optString("milestoneLabel"),
                         read = item.optBoolean("read", false),
+                        menu = item.optString("menu"),
                     ),
                 )
             }

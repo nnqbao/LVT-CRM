@@ -91,9 +91,14 @@ final class DutiesViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        // Self-sizing (was a fixed 96 pt): the icon tab bar grows with Dynamic Type and two-line labels.
+        UITableView.automaticDimension
+    }
+
+    override func tableView(_ tableView: UITableView, estimatedHeightForHeaderInSection section: Int) -> CGFloat {
         switch sectionKinds[section] {
-        case .mine, .created: return 96
-        default: return UITableView.automaticDimension
+        case .mine, .created: return 132
+        default: return 28
         }
     }
 
@@ -456,10 +461,13 @@ final class DutiesViewController: UITableViewController {
         titleLabel.font = .preferredFont(forTextStyle: .title3)
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.textColor = UIColor(red: 20 / 255, green: 53 / 255, blue: 95 / 255, alpha: 1)
-        let control = UISegmentedControl(items: DutyListTab.allCases.map(\.title))
-        control.selectedSegmentIndex = tab.rawValue
-        control.addAction(UIAction { _ in
-            onChange(DutyListTab(rawValue: control.selectedSegmentIndex) ?? .upcoming)
+        let control = IconTabBar(
+            items: DutyListTab.allCases.map { IconTabBar.Item(title: $0.title, systemImage: $0.systemImage) },
+            selectedIndex: tab.rawValue
+        )
+        control.accessibilityLabel = "Danh sách công tác"
+        control.addAction(UIAction { [weak control] _ in
+            onChange(DutyListTab(rawValue: control?.selectedIndex ?? 0) ?? .upcoming)
         }, for: .valueChanged)
         let stack = UIStackView(arrangedSubviews: [titleLabel, control])
         stack.axis = .vertical

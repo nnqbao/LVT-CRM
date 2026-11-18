@@ -1,5 +1,5 @@
 import { OfficialDutyHeader } from './DutyWorkspaceTabs';
-import { canOpenDutyContentEditor } from './sharedDutySchedule.js';
+import { canOpenDutyContentEditor, SHARED_SCHEDULE_DRAFT_MARK } from './sharedDutySchedule.js';
 import { DutyChatButton } from './DutyChatButton';
 import { CardIconButton, PencilIcon } from '../lib/CardActionIcons';
 import '../work/work.css';
@@ -18,10 +18,18 @@ export default function DutyScheduleTable({
   rows,
   onEditContent = null,
   onSelectEvent = null,
+  draft = false,
 }) {
   return (
-    <article className="lct-sheet" aria-label={title}>
+    <article
+      className={draft ? 'lct-sheet is-draft' : 'lct-sheet'}
+      aria-label={draft ? `${title} (${SHARED_SCHEDULE_DRAFT_MARK})` : title}
+      data-draft-mark={draft ? SHARED_SCHEDULE_DRAFT_MARK : undefined}
+    >
       <OfficialDutyHeader title={title} />
+      {draft ? <p className="lct-draft-mark">{SHARED_SCHEDULE_DRAFT_MARK}</p> : null}
+      {/* On phones the sheet scrolls sideways inside this box; the Ngày column stays pinned. */}
+      <div className="lct-table-scroll">
       <table className="lct-table">
         <colgroup>
           <col className="lct-col-day" />
@@ -47,13 +55,17 @@ export default function DutyScheduleTable({
             return (
               <tr
                 key={`${row.dayIso}-${row.eventId || 'empty'}-${index}`}
-                className={selectable ? 'lct-row-selectable' : undefined}
+                className={[
+                  selectable ? 'lct-row-selectable' : '',
+                  row.approvalChange ? 'lct-row-pending' : '',
+                ].filter(Boolean).join(' ') || undefined}
+                title={row.approvalChange === 'added' ? 'Công tác mới, chưa duyệt' : row.approvalChange ? 'Đã sửa, chưa duyệt' : undefined}
                 onClick={selectable ? () => onSelectEvent(row) : undefined}
               >
                 {row.showDay ? (
-                  <th scope="row" rowSpan={row.rowSpan}>{row.dayLabel}</th>
+                  <th scope="row" rowSpan={row.rowSpan} className="lct-day-cell">{row.dayLabel}</th>
                 ) : null}
-                <td>{row.time}</td>
+                <td className="lct-time-cell">{row.time}</td>
                 <td className={editable ? 'lct-content-cell is-editable' : 'lct-content-cell'}>
                   <div className="lct-content-with-actions">
                     <div className="lct-content-text">
@@ -96,12 +108,28 @@ export default function DutyScheduleTable({
                   </div>
                 </td>
                 <td>{row.location}</td>
-                <td>{row.participants}</td>
+                <td>
+                  {row.participants || !editable ? (
+                    row.participants
+                  ) : (
+                    <button
+                      type="button"
+                      className="lct-add-participants"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onEditContent(row);
+                      }}
+                    >
+                      + Thêm thành phần
+                    </button>
+                  )}
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      </div>
     </article>
   );
 }

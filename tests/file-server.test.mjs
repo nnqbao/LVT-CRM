@@ -31,6 +31,8 @@ const uploadApis = {
 
 test('file errors preserve truthful authentication, validation, and infrastructure statuses', () => {
   assert.equal(classifyFileError(new Error('UNAUTHORIZED')).status, 401);
+  assert.equal(classifyFileError(new Error('{"code":"InvalidAuthHeader","message":"Could not parse JWT payload."}')).status, 401);
+  assert.equal(classifyFileError(new Error('Could not verify OIDC token claim')).status, 401);
   assert.equal(classifyFileError(new Error('INVALID_DATE_RANGE')).status, 400);
   assert.equal(classifyFileError(new Error('WORK_FILE_TOO_LARGE')).status, 413);
   assert.equal(classifyFileError(new Error('WORK_FILE_SIZE_MISMATCH')).status, 400);
@@ -41,10 +43,13 @@ test('file errors preserve truthful authentication, validation, and infrastructu
   assert.equal(classifyFileError(new Error('DRIVE_DOWNLOAD_QUEUE_FULL')).status, 503);
 });
 
-test('work documents stay editable until an assignee submits', () => {
+test('work documents stay editable until the first approval or an assignee submits', () => {
   assert.equal(canMutateWorkDocument({ status: 'approved' }), true);
   assert.equal(canMutateWorkDocument({ status: 'pending' }), true);
-  assert.equal(canMutateWorkDocument({ status: 'rejected' }), false);
+  assert.equal(canMutateWorkDocument({ status: 'rejected', rejectedByUserIds: ['principal'] }), true);
+  assert.equal(canMutateWorkDocument({ status: 'pending', approvedByUserIds: ['vice-principal'] }), false);
+  assert.equal(canMutateWorkDocument({ status: 'approved', approvedByUserIds: ['principal'] }), false);
+  assert.equal(canMutateWorkDocument({ status: 'approved', active: false }), false);
   assert.equal(
     canMutateWorkDocument({ status: 'approved' }, [{ completions: [{ status: 'pending_approval' }] }]),
     false,

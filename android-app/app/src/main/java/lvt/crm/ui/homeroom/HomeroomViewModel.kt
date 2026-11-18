@@ -1,0 +1,188 @@
+package lvt.crm.ui.homeroom
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import lvt.crm.data.convex.ConvexException
+import lvt.crm.data.convex.ConvexHttpClient
+import lvt.crm.data.homeroom.HomeroomOperations
+import lvt.crm.data.homeroom.HomeroomOverview
+import lvt.crm.data.homeroom.SchoolYear
+import lvt.crm.data.homeroom.vietnamToday
+import lvt.crm.data.homeroom.isVietnamDate
+
+/**
+ * Lớp chủ nhiệm overview (GVCN, Xem tối cao, admin/mod). Giám thị no longer lives here:
+ * the Điểm danh menu (ui/attendance) marks attendance; the old "Vắng chờ xử lý" inbox is gone.
+ */
+data class HomeroomUiState(
+    val loading: Boolean = true,
+    val refreshing: Boolean = false,
+    val error: String? = null,
+    val years: List<SchoolYear> = emptyList(),
+    val selectedYearId: String? = null,
+    val date: String = vietnamToday(),
+    val overview: HomeroomOverview? = null,
+)
+
+class HomeroomViewModel(
+    private val repository: HomeroomOperations,
+    private val detailOperations: lvt.crm.data.homeroom.HomeroomDetailOperations? =
+        (repository as? lvt.crm.data.homeroom.HomeroomRepository)?.detailOperations,
+) : ViewModel() {
+    val writeOperations = (repository as? lvt.crm.data.homeroom.HomeroomRepository)?.writeOperations
+    private val managementStores = mutableMapOf<String, lvt.crm.data.homeroom.HomeroomManagementStore>()
+    fun management(): lvt.crm.data.homeroom.HomeroomManagementStore? {
+        val year = uiState.value.selectedYearId ?: return null
+        val date = uiState.value.date
+        val key = "$year/$date"
+        return managementStores[key] ?: (repository as? lvt.crm.data.homeroom.HomeroomRepository)?.management(year, date) { uiState.value.selectedYearId == year && uiState.value.date == date }?.also { managementStores[key] = it }
+    }
+    private val detail = MutableStateFlow<HomeroomDetailViewModel?>(null)
+    val detailState = detail.asStateFlow()
+    private val _uiState = MutableStateFlow(HomeroomUiState())
+    val uiState: StateFlow<HomeroomUiState> = _uiState.asStateFlow()
+    private var loadJob: Job? = null
+    private var generation = 0
+
+    init { load(initial = true, reloadYears = true) }
+
+    fun refresh() = load(initial = false, reloadYears = false)
+
+    fun openClass(id: String) {
+        val current = _uiState.value
+        val operations = detailOperations ?: return
+        val year = current.years.firstOrNull { it.id == current.selectedYearId } ?: return
+        if (current.overview?.classes?.none { it.id == id } != false) return
+        detail.value?.close()
+        detail.value = HomeroomDetailViewModel(operations, lvt.crm.data.homeroom.DetailContext(year.id, id, current.date, year.startDate, year.endDate), writeOperations)
+        loadJob?.cancel()
+        generation++
+        _uiState.update { it.copy(overview = null) }
+    }
+
+    private var pendingClassId: String? = null
+
+    /**
+     * Opens a class detail from Lớp học › Tổng quan: switches to [yearId]/[date] if needed and opens
+     * [classId] once that overview is loaded (only if the class is in the caller's scope).
+     */
+    fun focusClass(yearId: String, date: String, classId: String) {
+        if (!isVietnamDate(date) || classId.isBlank()) return
+        detail.value?.close()
+        detail.value = null
+        pendingClassId = classId
+        val current = _uiState.value
+        if (current.selectedYearId == yearId && current.date == date && current.overview != null && !current.loading) {
+            openPendingClass(current.overview)
+            return
+        }
+        managementStores.values.forEach { it.invalidate() }
+        _uiState.update { it.copy(selectedYearId = yearId, date = date, overview = null) }
+        load(initial = true, reloadYears = current.years.isEmpty())
+    }
+
+    private fun openPendingClass(overview: HomeroomOverview) {
+        val id = pendingClassId ?: return
+        pendingClassId = null
+        if (overview.classes.any { it.id == id }) openClass(id)
+    }
+
+    fun closeDetail() {
+        val date = detail.value?.uiState?.value?.context?.date
+        detail.value?.close()
+        detail.value = null
+        if (date != null) _uiState.update { it.copy(date = date) }
+        refresh()
+    }
+
+    override fun onCleared() {
+        managementStores.values.forEach { it.invalidate() }
+        detail.value?.close()
+        super.onCleared()
+    }
+
+    fun selectYear(id: String) {
+        if (_uiState.value.years.none { it.id == id }) return
+        pendingClassId = null
+        if (_uiState.value.selectedYearId == id) return
+        managementStores.values.forEach { it.invalidate() }
+        _uiState.update { it.copy(selectedYearId = id, overview = null) }
+        load(initial = true, reloadYears = false)
+    }
+
+    fun selectDate(date: String) {
+        if (!isVietnamDate(date)) return
+        pendingClassId = null
+        if (_uiState.value.date == date) return
+        managementStores.values.forEach { it.invalidate() }
+        _uiState.update { it.copy(date = date, overview = null) }
+        load(initial = true, reloadYears = false)
+    }
+
+    private fun load(initial: Boolean, reloadYears: Boolean) {
+        loadJob?.cancel()
+        val version = ++generation
+        val request = _uiState.value
+        _uiState.update { it.copy(loading = initial, refreshing = !initial, error = null, overview = null) }
+        loadJob = viewModelScope.launch {
+            try {
+                val years = if (reloadYears || request.years.isEmpty()) repository.listSchoolYears() else request.years
+                val yearId = request.selectedYearId?.takeIf { id -> years.any { it.id == id } }
+                    ?: years.firstOrNull { it.active }?.id
+                    ?: years.firstOrNull()?.id
+                if (version != generation) return@launch
+                _uiState.update { it.copy(years = years, selectedYearId = yearId) }
+                if (yearId == null) {
+                    _uiState.update {
+                        it.copy(loading = false, refreshing = false, years = years, selectedYearId = null)
+                    }
+                    return@launch
+                }
+                val overview = repository.overview(yearId, request.date)
+                require(overview.date == request.date && overview.schoolYear.id == yearId) {
+                    "Phản hồi không khớp năm học/ngày đã chọn."
+                }
+                if (version != generation) return@launch
+                _uiState.update {
+                    it.copy(
+                        loading = false,
+                        refreshing = false,
+                        years = years,
+                        selectedYearId = yearId,
+                        overview = overview,
+                    )
+                }
+                openPendingClass(overview)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (version != generation) return@launch
+                _uiState.update {
+                    it.copy(
+                        loading = false,
+                        refreshing = false,
+                        error = (error as? ConvexException)?.message
+                            ?: ConvexHttpClient.humanize(error.message ?: "LOAD_FAILED"),
+                    )
+                }
+            }
+        }
+    }
+
+    companion object {
+        fun factory(repository: HomeroomOperations): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    HomeroomViewModel(repository) as T
+            }
+    }
+}

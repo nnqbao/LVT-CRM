@@ -265,6 +265,7 @@ class AuthRepositoryRaceTest {
             is AuthState.MustChangePassword -> session.userId
             AuthState.Loading,
             AuthState.SignedOut,
+            AuthState.Offline,
             -> null
         }
     }

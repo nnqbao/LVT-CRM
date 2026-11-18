@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -45,10 +47,12 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import lvt.crm.data.work.WorkApprovalItem
+import lvt.crm.data.work.WorkApprovalPolicy
 import lvt.crm.data.work.WorkCreateAssignment
 import lvt.crm.data.work.WorkDocumentType
 import lvt.crm.data.work.WorkFormDepartment
@@ -83,12 +87,29 @@ fun WorkCreateScreen(
     var dateIndex by remember { mutableStateOf<Int?>(null) }
     var confirm by remember { mutableStateOf<String?>(null) }
     val options = state.formOptions
-    val showDepartments = state.isOps
+    // Server flag (admin/mod and Ban giám hiệu); older servers fall back to admin/mod only.
+    val showDepartments = options?.canAssignDepartments ?: state.isOps
+    // Creator-based rule (server enforces): admin/mod documents go to Ban giám hiệu first.
+    // Admin re-editing an approved document: the server sends it back to Ban giám hiệu.
+    val reapproval = editing?.editRequiresReapproval == true
+    val requiresApproval = editing?.let { it.requiresApproval || reapproval } ?: (options?.requiresApproval == true)
+    val approverIds = remember(editingId) { mutableStateListOf<String>() }
+    var approversPrefilled by remember(editingId) { mutableStateOf(false) }
+    val needsApproval = WorkApprovalPolicy.needsApproval(requiresApproval, reapproval, assignments.toList(), state.currentUserId)
     val error = localError ?: state.actionError
     val keptFileName = editing?.fileName?.takeIf { editing.privateFile && it.isNotBlank() }.orEmpty()
 
     LaunchedEffect(Unit) {
         viewModel.loadFormOptions()
+    }
+
+    LaunchedEffect(options?.approvers, editingId) {
+        val offered = options?.approvers ?: return@LaunchedEffect
+        if (editing != null && !approversPrefilled) {
+            approversPrefilled = true
+            approverIds.clear()
+            approverIds.addAll(WorkApprovalPolicy.editApproverIds(editing, offered))
+        }
     }
 
     LaunchedEffect(options?.documentTypes, editingId) {
@@ -117,6 +138,9 @@ fun WorkCreateScreen(
                 fileName = fileName.takeIf { it.isNotBlank() },
                 mimeType = fileMime,
                 documentTypeId = documentTypeId,
+                requiresApproval = requiresApproval,
+                approverIds = approverIds.toList(),
+                reapproval = reapproval,
                 onSuccess = onDone,
             )
         } else {
@@ -127,6 +151,7 @@ fun WorkCreateScreen(
                 fileName = fileName.takeIf { it.isNotBlank() },
                 mimeType = fileMime,
                 documentTypeId = documentTypeId,
+                approverIds = approverIds.toList(),
                 onSuccess = onDone,
             )
         }
@@ -179,6 +204,21 @@ fun WorkCreateScreen(
             if (state.formOptionsLoading && options == null) {
                 CircularProgressIndicator(modifier = Modifier.padding(top = 24.dp))
             }
+            if (reapproval) {
+                Card(
+                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        WorkApprovalPolicy.REAPPROVAL_WARNING,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it.take(200) },
@@ -206,6 +246,13 @@ fun WorkCreateScreen(
                 }) {
                     Text("＋ Cá nhân")
                 }
+            }
+            if (options != null && options.users.isEmpty() && !showDepartments) {
+                Text(
+                    "Chưa có người nhận phù hợp để giao việc.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (assignments.isEmpty()) {
                 Text(
@@ -279,6 +326,16 @@ fun WorkCreateScreen(
                     onSelect = { documentTypeId = it },
                 )
             }
+            if (requiresApproval) {
+                WorkApproverPicker(
+                    approvers = options?.approvers.orEmpty(),
+                    selected = approverIds,
+                    required = needsApproval,
+                    onToggle = { id ->
+                        if (id in approverIds) approverIds.remove(id) else approverIds.add(id)
+                    },
+                )
+            }
             error?.let { message ->
                 Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
@@ -302,8 +359,7 @@ fun WorkCreateScreen(
                     when {
                         state.creating && editing != null -> "Đang lưu…"
                         state.creating -> "Đang tạo…"
-                        editing != null -> "Lưu thay đổi"
-                        else -> "Tạo công việc"
+                        else -> WorkApprovalPolicy.submitLabel(editing = editing != null, needsApproval = needsApproval)
                     },
                 )
             }
@@ -317,6 +373,13 @@ fun WorkCreateScreen(
             onDismissRequest = { if (!state.creating) confirm = null },
             title = {
                 Text(if (canceling) "Bạn có chắc chắn Hủy sửa không?" else "Bạn có chắc chắn Lưu không?")
+            },
+            text = if (!canceling && reapproval) {
+                { Text(WorkApprovalPolicy.REAPPROVAL_WARNING) }
+            } else if (!canceling && needsApproval) {
+                { Text("Sửa công việc sẽ xóa các quyết định trước và gửi lại Ban giám hiệu duyệt.") }
+            } else {
+                null
             },
             confirmButton = {
                 TextButton(
@@ -381,6 +444,66 @@ fun WorkCreateScreen(
             },
         ) {
             DatePicker(state = pickerState)
+        }
+    }
+}
+
+/** Multi-select of Ban giám hiệu approvers (admin/mod create/edit form only). */
+@Composable
+private fun WorkApproverPicker(
+    approvers: List<WorkFormUser>,
+    selected: List<String>,
+    required: Boolean,
+    onToggle: (String) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (required) "Người duyệt (Ban giám hiệu) *" else "Người duyệt (Ban giám hiệu)",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "${selected.size} người đã chọn",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                WorkApprovalPolicy.APPROVAL_NOTE,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (approvers.isEmpty()) {
+                Text(
+                    "Chưa có thành viên Ban giám hiệu (cấp 4 hoặc 5 sao) đang hoạt động.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            approvers.forEach { person ->
+                val checked = person.id in selected
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggle(person.id) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = checked, onCheckedChange = { onToggle(person.id) })
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(person.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "${person.level} sao · ${person.positionName.ifBlank { "Chưa gán chức vụ" }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 test('header account menu is Facebook-style and lists account actions', () => {
@@ -37,7 +37,25 @@ test('guide is a safe new-tab link after devices and before logout', () => {
   assert.ok(menu.indexOf(link) < menu.indexOf('className="account-menu-row account-menu-logout"'));
   const guide = readFileSync(new URL('../public/huong-dan-su-dung.html', import.meta.url), 'utf8');
   assert.match(guide, /<title>Cẩm nang CRM · THCS Lê Văn Tám/);
-  assert.equal((guide.match(/class="topic"/g) || []).length, 61);
+});
+
+test('guide is built from docs/guide with external, captioned images', () => {
+  const guide = readFileSync(new URL('../public/huong-dan-su-dung.html', import.meta.url), 'utf8');
+  const outline = JSON.parse(readFileSync(new URL('../docs/guide/outline.json', import.meta.url), 'utf8'));
+  const topicIds = outline.parts.flatMap((part) => part.topics);
+  assert.equal((guide.match(/<article class="topic"/g) || []).length, topicIds.length);
+  for (const id of topicIds) assert.match(guide, new RegExp(`<article class="topic" id="${id}"`));
+  for (const part of outline.parts) assert.match(guide, new RegExp(`<section class="part" id="${part.id}"`));
+  assert.doesNotMatch(guide, /data:image\//, 'images must be separate files, not base64');
+  assert.doesNotMatch(guide, /Chưa xếp mục|is-missing/, 'every topic is in the outline and every image exists');
+  // 360 KB since 2026-10-24: 67 topics / 146 captioned figures (Lớp học, app sign-in); images stay external.
+  assert.ok(Buffer.byteLength(guide) < 360 * 1024, 'guide HTML stays under 360 KB');
+  const images = [...guide.matchAll(/<img src="(huong-dan\/[^"]+)"[^>]*alt="([^"]*)"/g)];
+  assert.ok(images.length > 0);
+  for (const [, src, alt] of images) {
+    assert.ok(existsSync(new URL(`../public/${src}`, import.meta.url)), `${src} exists`);
+    assert.match(alt, /^Hình \d+\. \S/, `${src} has a numbered Vietnamese alt text`);
+  }
 });
 
 test('account pages are centered, single-column, and use colorful field icons', () => {
@@ -76,4 +94,19 @@ test('combined profile view is split into three page modules', () => {
   assert.match(main, /<ChangePasswordView \/>/);
   assert.match(main, /active === 'devices'/);
   assert.match(main, /<DevicesView \/>/);
+});
+
+test('Thiết lập Passkey sits right under Đổi mật khẩu: native sheet in the app, Thiết bị đăng nhập in a browser', () => {
+  const menu = readFileSync(new URL('../src/profile/AccountMenu.jsx', import.meta.url), 'utf8');
+  const devices = readFileSync(new URL('../src/profile/DevicesPanel.jsx', import.meta.url), 'utf8');
+  const guide = readFileSync(new URL('../docs/guide/topics/start/dang-nhap-nhanh-app.md', import.meta.url), 'utf8');
+  assert.match(menu, /import \{ postToApp \} from '\.\.\/lib\/appBridge'/);
+  assert.match(menu, /if \(postToApp\(\{ type: 'quick-sign-in' \}\)\) setOpen\(false\);\n\s+else go\('devices'\);/);
+  const password = menu.indexOf('<span>Đổi mật khẩu</span>');
+  const passkey = menu.indexOf('<span>Thiết lập Passkey</span>');
+  const devicesRow = menu.indexOf('<span>Quản lý thiết bị đăng nhập</span>');
+  assert.ok(password > 0 && password < passkey && passkey < devicesRow, 'order: Đổi mật khẩu → Thiết lập Passkey → Thiết bị');
+  assert.match(devices, /className="devices-hint"/, 'browsers explain that passkeys are set up in the phone app');
+  assert.match(guide, /Thiết lập Passkey/);
+  assert.match(guide, /^menu: App điện thoại → Ảnh đại diện → Thiết lập Passkey$/m);
 });

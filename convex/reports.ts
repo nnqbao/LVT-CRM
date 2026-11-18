@@ -14,11 +14,19 @@ import {
   WORK_ASSIGNER_MODE_ADMIN_MOD,
 } from "./lib";
 import { canCreateAssignments, dutyListTitle, dutyLocationLabel } from "./assignmentPolicy";
+import {
+  filterUsersInModeratorScope,
+  isWorkDocumentInModeratorScope,
+  moderatorDepartmentScope,
+  workDocumentScopeAssignments,
+} from "./moderatorScope";
 import { dutyTiming, requireDutiesAccess } from "./duties";
+import { canReviewerEditDuty, dutyHasPendingChange, isDutyWeekReviewer, projectPublicDuty } from "./dutyApproval";
 import {
   dutyListDateWindow,
   dutyScheduleRevision,
   loadActiveDutiesOverlapping,
+  loadPublicDutiesOverlapping,
   loadDocsByIds,
   parseDutyDateRange,
 } from "./dutyRange";
@@ -34,9 +42,12 @@ function mapNames(ids: string[], rows: { _id: string; name: string }[]) {
 
 function userIsParticipant(
   user: { _id: string; departmentId?: string },
-  duty: { departmentIds: string[]; participantUserIds: string[] },
+  duty: { departmentIds: string[]; participantUserIds: string[]; unitUserIds?: string[] },
 ) {
   if (duty.participantUserIds.some((id) => String(id) === String(user._id))) {
+    return true;
+  }
+  if ((duty.unitUserIds || []).some((id) => String(id) === String(user._id))) {
     return true;
   }
   return Boolean(
@@ -201,6 +212,15 @@ function buildDutyCalendarRevision(input: {
   });
 }
 
+/**
+ * Văn thư (admin/mod) see working rows, flagged when BGH has not approved them.
+ * Everyone else only sees approved copies.
+ */
+async function loadCalendarDuties(ctx: { db: any }, isAdmin: boolean, startDate: string, endDate: string) {
+  if (isAdmin) return loadActiveDutiesOverlapping(ctx, startDate, endDate);
+  return loadPublicDutiesOverlapping(ctx, startDate, endDate);
+}
+
 async function resolveVisibleDutyUser(
   ctx: { db: any },
   actor: { _id: string; departmentId?: string; positionId?: string },
@@ -240,7 +260,7 @@ export const dutyCalendar = query({
 
     const [seedUsers, dutiesInWindow, attendanceConfirmationEnabled] = await Promise.all([
       canViewAll ? loadActiveUsers(ctx) : loadActiveDepartmentUsers(ctx, actor.departmentId),
-      loadActiveDutiesOverlapping(ctx, startDate, endDate),
+      loadCalendarDuties(ctx, isAdmin, startDate, endDate),
       getBooleanSystemSetting(
         ctx,
         DUTY_ATTENDANCE_CONFIRMATION_SETTING_KEY,
@@ -258,6 +278,7 @@ export const dutyCalendar = query({
     ]);
     const actorLevel = activePositionLevel(actor, positions);
     const canCreate = canCreateAssignments(actor.role, actorLevel);
+    const isReviewer = !isAdmin && isDutyWeekReviewer(actor, actorLevel);
     const canManageSubordinates =
       attendanceConfirmationEnabled && !isAdmin && canEdit && actorLevel > 0;
     const visibleUsers = canViewAll
@@ -392,7 +413,7 @@ export const dutyCalendar = query({
               departmentName:
                 (participant.departmentId
                   ? departmentMap.get(String(participant.departmentId))?.name
-                  : "") || "Chưa gán phòng ban",
+                  : "") || "Chưa gán tổ chuyên môn",
               status: selectedAttendance(String(duty._id), String(participant._id)),
             }))
           : [];
@@ -422,9 +443,13 @@ export const dutyCalendar = query({
             ? "individual"
             : "department",
           attendanceStatus: selectedAttendance(String(duty._id), String(selectedUser._id)),
+          awaitingApproval: isAdmin && dutyHasPendingChange(duty),
           canManage: isAdmin || String(duty.createdBy || "") === String(actor._id),
+          // BGH corrects school rows directly (reviewerUpdate re-checks on the server).
+          canReviewerEdit: isReviewer && canReviewerEditDuty(actor, actorLevel, duty),
+          canViewHistory: isAdmin || isReviewer || String(duty.createdBy || "") === String(actor._id),
           canMarkSelectedUser,
-          canMarkAttendance: canMarkSelectedUser && timing.isOngoing,
+          canMarkAttendance: canMarkSelectedUser && timing.isOngoing && Boolean(projectPublicDuty(duty)),
           timing: {
             isOngoing: timing.isOngoing,
             isUpcoming: timing.isUpcoming,
@@ -485,7 +510,7 @@ export const dutyCalendarRevision = query({
     const { user: actor, access, isAdmin } = await requireDutiesAccess(ctx);
     const selectedUser = await resolveVisibleDutyUser(ctx, actor, access, isAdmin, args.userId);
     const [dutiesInWindow, attendanceConfirmationEnabled] = await Promise.all([
-      loadActiveDutiesOverlapping(ctx, startDate, endDate),
+      loadCalendarDuties(ctx, isAdmin, startDate, endDate),
       getBooleanSystemSetting(
         ctx,
         DUTY_ATTENDANCE_CONFIRMATION_SETTING_KEY,
@@ -563,8 +588,10 @@ export const workCalendar = query({
       isOperationalManagerRole(actor.role) || menuAccess.reports === "view_all";
     const actorLevel = isOperationalManagerRole(actor.role)
       ? 5 : activePositionLevel(actor, positions);
+    // Báo cáo: a department-scoped moderator's view_all narrows to their department (+ self).
+    const actorScope = moderatorDepartmentScope(actor);
     const visibleUsers = canViewAll
-      ? activeUsers
+      ? filterUsersInModeratorScope(actorScope, activeUsers, String(actor._id))
       : activeUsers.filter(
           (user) =>
             String(user._id) === String(actor._id) ||
@@ -596,8 +623,15 @@ export const workCalendar = query({
     const kpi = emptyKpi();
 
     if (selectedCanViewAll) {
+      const usersById = new Map(users.map((user) => [String(user._id), user]));
+      const selectedScope = moderatorDepartmentScope(selectedUser);
       for (const document of activeDocuments) {
         if (!inRange(document.deadline) || !["approved", "pending"].includes(document.status)) continue;
+        const assignments = workDocumentScopeAssignments(document);
+        if (
+          !isWorkDocumentInModeratorScope(actorScope, assignments, usersById)
+          || !isWorkDocumentInModeratorScope(selectedScope, assignments, usersById)
+        ) continue;
         events.push({
           _id: String(document._id),
           content: document.fileName || document.content || "Công văn chưa đặt tên",
@@ -656,11 +690,11 @@ export const workCalendar = query({
           status,
           qualityPercent: qualityPercent ?? null,
           kind: type === "individual" ? "personal_task" : "department_work",
-          kindLabel: type === "individual" ? "Công việc cá nhân" : "Việc phòng ban",
+          kindLabel: type === "individual" ? "Công việc cá nhân" : "Việc của tổ",
           departmentName:
             type === "individual"
               ? "Cá nhân"
-              : departmentsById.get(String(item.departmentId))?.name || "Chưa gán phòng ban",
+              : departmentsById.get(String(item.departmentId))?.name || "Chưa gán tổ chuyên môn",
           documentName: document.fileName || "Công văn",
         });
       }
@@ -684,9 +718,9 @@ export const workCalendar = query({
             deadline: item.deadline,
             status,
             kind: "department_work",
-            kindLabel: "Việc phòng ban",
+            kindLabel: "Việc của tổ",
             departmentName:
-              departmentsById.get(String(item.departmentId))?.name || "Chưa gán phòng ban",
+              departmentsById.get(String(item.departmentId))?.name || "Chưa gán tổ chuyên môn",
             documentName: document.fileName || "Công văn",
           });
         }
@@ -726,7 +760,7 @@ export const workCalendar = query({
             kind: "personal_task",
             kindLabel: "Công việc cá nhân",
             departmentName:
-              departmentsById.get(String(item.departmentId))?.name || "Chưa gán phòng ban",
+              departmentsById.get(String(item.departmentId))?.name || "Chưa gán tổ chuyên môn",
             documentName: document.fileName || "Công văn",
           });
         }

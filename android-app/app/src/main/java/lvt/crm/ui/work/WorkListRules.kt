@@ -34,6 +34,12 @@ enum class WorkListTab {
 private val completedStatuses = setOf("completed", "completed_late")
 private val pendingReviewStatuses = setOf("pending_completion", "pending_approval")
 
+/** `awaiting_approval` = document waiting for Ban giám hiệu (web workDisplay.js PENDING_REVIEW_STATUSES). */
+private val documentPendingReviewStatuses = pendingReviewStatuses + "awaiting_approval"
+
+/** Server list status wins over the document approval status (web: `workStatus || status`). */
+private fun WorkApprovalItem.listStatus(): String = workStatus.ifBlank { status }
+
 fun vietnamToday(nowMillis: Long = System.currentTimeMillis()): String {
     val calendar = Calendar.getInstance(TimeZone.getTimeZone("GMT+07:00"))
     calendar.timeInMillis = nowMillis
@@ -48,13 +54,13 @@ fun isTaskCompleted(task: WorkTaskItem): Boolean = task.status in completedStatu
 fun isTaskPendingReview(task: WorkTaskItem): Boolean = task.status in pendingReviewStatuses
 
 fun isDocumentCompleted(document: WorkApprovalItem): Boolean {
-    if (document.status in completedStatuses) return true
+    if (document.listStatus() in completedStatuses) return true
     val assignmentStatuses = document.assignments.map { it.status }
     return assignmentStatuses.isNotEmpty() && assignmentStatuses.all { it in completedStatuses }
 }
 
 fun isDocumentPendingReview(document: WorkApprovalItem): Boolean {
-    if (document.status in pendingReviewStatuses) return true
+    if (document.listStatus() in documentPendingReviewStatuses) return true
     return document.assignments.any { it.status in pendingReviewStatuses }
 }
 

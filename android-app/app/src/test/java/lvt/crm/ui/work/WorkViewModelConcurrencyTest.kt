@@ -200,7 +200,7 @@ private class BlockingWorkOperations(
         lastDocumentTypeId = documentTypeId
     }
 
-    override suspend fun decideApproval(documentId: String, approve: Boolean) {
+    override suspend fun decideApproval(documentId: String, approve: Boolean, reason: String?) {
         approvalCalls++
     }
 

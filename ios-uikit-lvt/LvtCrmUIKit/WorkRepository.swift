@@ -22,24 +22,6 @@ struct WorkTaskItem: Identifiable, Equatable, Sendable {
     let note: String
 }
 
-struct WorkMemberItem: Identifiable, Equatable, Sendable {
-    let id: String
-    let name: String
-    let status: String
-}
-
-struct WorkDocumentAssignment: Identifiable, Equatable, Sendable {
-    let id: String
-    let departmentName: String
-    let content: String
-    let deadline: String
-    let status: String
-    let members: [WorkMemberItem]
-    var type: String = ""
-    var departmentId: String = ""
-    var userIds: [String] = []
-}
-
 struct WorkCompletionReviewItem: Identifiable, Equatable, Sendable {
     var id: String { workItemId + userId }
     let workItemId: String
@@ -51,72 +33,20 @@ struct WorkCompletionReviewItem: Identifiable, Equatable, Sendable {
     let note: String
 }
 
-struct WorkApprovalItem: Identifiable, Equatable, Sendable {
-    let id: String
-    let title: String
-    let fileName: String
-    let fileURL: String
-    let privateFile: Bool
-    let content: String
-    let deadline: String
-    let status: String
-    let approvalCount: Int
-    let approvalTotal: Int
-    var myDecision: String
-    let assignments: [WorkDocumentAssignment]
-    var canEdit: Bool = false
-    var canDelete: Bool = false
-    var documentTypeId: String = ""
-
-    func editAssignments() -> [WorkCreateAssignment] {
-        assignments.flatMap { row in
-            let individual = row.type == "individual" ||
-                (row.type.isEmpty && row.departmentId.isEmpty &&
-                    (!row.userIds.isEmpty || row.departmentName == "Cá nhân"))
-            if !individual {
-                return [WorkCreateAssignment(
-                    type: "department",
-                    departmentId: row.departmentId,
-                    userIds: [],
-                    content: row.content,
-                    deadline: row.deadline
-                )]
-            }
-            let ids = row.userIds.filter { !$0.isEmpty }
-            let people = ids.isEmpty ? row.members.map(\.id).filter { !$0.isEmpty } : ids
-            let resolved = people.isEmpty ? [""] : people
-            return resolved.map { id in
-                WorkCreateAssignment(
-                    type: "individual",
-                    departmentId: "",
-                    userIds: id.isEmpty ? [] : [id],
-                    content: row.content,
-                    deadline: row.deadline
-                )
-            }
-        }
-    }
-}
-
-struct WorkUploadedEvidence: Sendable {
-    let driveFileId: String
-    let driveChecksum: String
-    let cleanupToken: String
-    let fileName: String
-    let fileType: String
-    let fileSize: Int
-}
-
 struct WorkSnapshot: Equatable, Sendable {
     let assignerMode: String
     let isAdmin: Bool
     let accessLevel: Int
     let tasks: [WorkTaskItem]
+    /// Documents I manage ("Việc tôi tạo", from `work:listAdmin`).
     let approvals: [WorkApprovalItem]
     let completionReviews: [WorkCompletionReviewItem]
     let canCreate: Bool
     let isOps: Bool
     let documentTypes: [WorkDocumentType]
+    /// Ban giám hiệu "Chờ tôi duyệt" queue (from `work:listMine` approvals, never for admin/mod).
+    var approvalQueue: [WorkApprovalItem] = []
+    var currentUserId: String = ""
 }
 
 enum WorkHelpers {
@@ -186,15 +116,6 @@ enum WorkHelpers {
         }
     }
 
-    static func decisionForUser(currentUserId: String, approvers: [[String: Any]]) -> String {
-        guard let approver = approvers.first(where: { ($0["_id"] as? String) == currentUserId }) else {
-            return ""
-        }
-        if (approver["approved"] as? Bool) == true { return "approved" }
-        if (approver["rejected"] as? Bool) == true { return "rejected" }
-        return ""
-    }
-
     static func documentTypes(from result: [String: Any]) -> [WorkDocumentType] {
         ((result["documentTypes"] as? [[String: Any]]) ?? []).compactMap { item in
             let id = (item["_id"] as? String) ?? ""
@@ -234,25 +155,22 @@ final class WorkRepository: Sendable {
             let adminResult = try await convex.query("work:listAdmin")
             isOps = (adminResult["isOps"] as? Bool) ?? isAdmin
             approvals = (adminResult["documents"] as? [[String: Any]] ?? []).map { document in
-                parseApproval(document, myDecision: "")
+                parseApproval(document, currentUserId: currentUserId)
             }
             completionReviews = parseCompletionReviews(
                 adminResult["pendingCompletionReviews"] as? [[String: Any]]
             )
         } else {
-            approvals = (result["approvals"] as? [[String: Any]] ?? []).map { document in
-                parseApproval(
-                    document,
-                    myDecision: WorkHelpers.decisionForUser(
-                        currentUserId: currentUserId,
-                        approvers: document["approvers"] as? [[String: Any]] ?? []
-                    )
-                )
-            }
             completionReviews = parseCompletionReviews(
                 result["pendingCompletionReviews"] as? [[String: Any]]
             )
         }
+        // Ban giám hiệu may both create work and approve văn thư documents: the queue is separate.
+        let approvalQueue = isAdmin ? [] : WorkApprovalDecoding.orderedQueue(
+            (result["approvals"] as? [[String: Any]] ?? []).map { document in
+                parseApproval(document, currentUserId: currentUserId)
+            }
+        )
 
         var tasks: [WorkTaskItem] = []
         for task in result["myTasks"] as? [[String: Any]] ?? [] {
@@ -302,8 +220,8 @@ final class WorkRepository: Sendable {
         }
 
         let sortedApprovals = approvals.sorted {
-            let lhsPending = $0.status == "pending"
-            let rhsPending = $1.status == "pending"
+            let lhsPending = WorkApprovalRules.effectiveStatus($0) == "awaiting_approval" || $0.status == "pending"
+            let rhsPending = WorkApprovalRules.effectiveStatus($1) == "awaiting_approval" || $1.status == "pending"
             if lhsPending != rhsPending { return lhsPending && !rhsPending }
             return $0.deadline < $1.deadline
         }
@@ -316,7 +234,9 @@ final class WorkRepository: Sendable {
             completionReviews: completionReviews,
             canCreate: canCreate,
             isOps: isOps,
-            documentTypes: WorkHelpers.documentTypes(from: result)
+            documentTypes: WorkHelpers.documentTypes(from: result),
+            approvalQueue: approvalQueue,
+            currentUserId: currentUserId
         )
     }
 
@@ -334,58 +254,23 @@ final class WorkRepository: Sendable {
                 name: (item["name"] as? String) ?? ""
             )
         }
-        let users = (result["users"] as? [[String: Any]] ?? []).map { item in
-            WorkFormUser(
-                id: (item["_id"] as? String) ?? "",
-                name: ((item["name"] as? String)?.nilIfBlank) ?? (item["email"] as? String) ?? "",
-                departmentName: (item["departmentName"] as? String) ?? "",
-                level: (item["level"] as? Int) ?? 0
-            )
-        }
-        return WorkFormOptions(
-            canCreate: (result["canCreate"] as? Bool) ?? false,
-            isOps: (result["isOps"] as? Bool) ?? false,
-            departments: departments,
-            users: users,
-            documentTypes: documentTypes
-        )
+        return WorkFormOptions.decode(result, documentTypes: documentTypes, departments: departments)
     }
 
     func createDocument(
         title: String,
         assignments: [WorkCreateAssignment],
         evidence: WorkUploadedEvidence?,
-        documentTypeId: String?
+        documentTypeId: String?,
+        approverUserIds: [String] = []
     ) async throws -> String {
-        var payload: [[String: Any]] = []
-        for row in assignments {
-            var item: [String: Any] = [
-                "type": row.type,
-                "content": row.content.trimmingCharacters(in: .whitespacesAndNewlines),
-                "deadline": row.deadline.trimmingCharacters(in: .whitespacesAndNewlines),
-            ]
-            if row.isIndividual {
-                item["userIds"] = row.userIds.filter { !$0.isEmpty }
-            } else {
-                item["departmentId"] = row.departmentId
-            }
-            payload.append(item)
-        }
-        var args: [String: Any] = [
-            "title": title.trimmingCharacters(in: .whitespacesAndNewlines),
-            "assignments": payload,
-        ]
-        if let documentTypeId, !documentTypeId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            args["documentTypeId"] = documentTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if let evidence {
-            args["driveFileId"] = evidence.driveFileId
-            args["driveChecksum"] = evidence.driveChecksum
-            args["cleanupToken"] = evidence.cleanupToken
-            args["fileName"] = evidence.fileName
-            args["fileType"] = evidence.fileType
-            args["fileSize"] = evidence.fileSize
-        }
+        let args = WorkCreatePolicy.mutationArgs(
+            title: title,
+            assignments: assignments,
+            evidence: evidence,
+            documentTypeId: documentTypeId,
+            approverUserIds: approverUserIds
+        )
         do {
             let result = try await convex.mutation("work:createDocument", args: args)
             if let token = evidence?.cleanupToken, !token.isEmpty {
@@ -405,13 +290,15 @@ final class WorkRepository: Sendable {
         title: String,
         assignments: [WorkCreateAssignment],
         evidence: WorkUploadedEvidence?,
-        documentTypeId: String?
+        documentTypeId: String?,
+        approverUserIds: [String] = []
     ) async throws {
-        var args = documentMutationArgs(
+        var args = WorkCreatePolicy.mutationArgs(
             title: title,
             assignments: assignments,
             evidence: evidence,
-            documentTypeId: documentTypeId
+            documentTypeId: documentTypeId,
+            approverUserIds: approverUserIds
         )
         args["documentId"] = documentId
         do {
@@ -431,44 +318,6 @@ final class WorkRepository: Sendable {
     func deleteDocument(id: String) async throws {
         let result = try await convex.mutation("work:deleteDocument", args: ["documentId": id])
         await settleCleanupJob(result["cleanupJobId"] as? String)
-    }
-
-    private func documentMutationArgs(
-        title: String,
-        assignments: [WorkCreateAssignment],
-        evidence: WorkUploadedEvidence?,
-        documentTypeId: String?
-    ) -> [String: Any] {
-        var payload: [[String: Any]] = []
-        for row in assignments {
-            var item: [String: Any] = [
-                "type": row.type,
-                "content": row.content.trimmingCharacters(in: .whitespacesAndNewlines),
-                "deadline": row.deadline.trimmingCharacters(in: .whitespacesAndNewlines),
-            ]
-            if row.isIndividual {
-                item["userIds"] = row.userIds.filter { !$0.isEmpty }
-            } else {
-                item["departmentId"] = row.departmentId
-            }
-            payload.append(item)
-        }
-        var args: [String: Any] = [
-            "title": title.trimmingCharacters(in: .whitespacesAndNewlines),
-            "assignments": payload,
-        ]
-        if let documentTypeId, !documentTypeId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            args["documentTypeId"] = documentTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if let evidence {
-            args["driveFileId"] = evidence.driveFileId
-            args["driveChecksum"] = evidence.driveChecksum
-            args["cleanupToken"] = evidence.cleanupToken
-            args["fileName"] = evidence.fileName
-            args["fileType"] = evidence.fileType
-            args["fileSize"] = evidence.fileSize
-        }
-        return args
     }
 
     func complete(
@@ -587,11 +436,19 @@ final class WorkRepository: Sendable {
         _ = try? await URLSession.shared.data(for: request)
     }
 
-    func decideApproval(documentId: String, approve: Bool) async throws {
-        _ = try await convex.mutation(
-            approve ? "work:approveDocument" : "work:rejectDocument",
-            args: ["documentId": documentId]
-        )
+    /// Ban giám hiệu approves (the first approval locks edit/delete for everyone).
+    func approveDocument(documentId: String) async throws {
+        _ = try await convex.mutation("work:approveDocument", args: ["documentId": documentId])
+    }
+
+    /// Ban giám hiệu returns the document to its creator; the reason is required (≤ 500 characters).
+    func returnDocument(documentId: String, reason: String) async throws {
+        let cleaned: String
+        switch WorkApprovalRules.validateReturnReason(reason) {
+        case .success(let value): cleaned = value
+        case .failure(let error): throw error
+        }
+        _ = try await convex.mutation("work:rejectDocument", args: ["documentId": documentId, "reason": cleaned])
     }
 
     func reviewCompletion(
@@ -678,50 +535,12 @@ final class WorkRepository: Sendable {
         }
     }
 
-    private func parseApproval(_ document: [String: Any], myDecision: String) -> WorkApprovalItem {
-        WorkApprovalItem(
-            id: (document["_id"] as? String) ?? "",
-            title: (document["title"] as? String) ?? "",
-            fileName: (document["fileName"] as? String) ?? "",
-            fileURL: WorkHelpers.publicFileURL(WorkHelpers.jsonString(document["fileUrl"])) ?? "",
-            privateFile: (document["privateFile"] as? Bool) ?? false,
-            content: (document["content"] as? String) ?? "",
-            deadline: (document["deadline"] as? String) ?? "",
-            status: (document["status"] as? String) ?? "",
-            approvalCount: (document["approvalCount"] as? Int) ?? 0,
-            approvalTotal: (document["approvalTotal"] as? Int) ?? 0,
-            myDecision: myDecision,
-            assignments: parseAssignments(document["assignments"] as? [[String: Any]]),
-            canEdit: (document["canEdit"] as? Bool) ?? false,
-            canDelete: (document["canDelete"] as? Bool) ?? false,
-            documentTypeId: (document["documentTypeId"] as? String) ?? ""
+    private func parseApproval(_ document: [String: Any], currentUserId: String) -> WorkApprovalItem {
+        WorkApprovalDecoding.document(
+            document,
+            currentUserId: currentUserId,
+            fileURL: WorkHelpers.publicFileURL(WorkHelpers.jsonString(document["fileUrl"])) ?? ""
         )
-    }
-
-    private func parseAssignments(_ items: [[String: Any]]?) -> [WorkDocumentAssignment] {
-        (items ?? []).map { item in
-            let members = (item["members"] as? [[String: Any]] ?? []).map { member in
-                WorkMemberItem(
-                    id: (member["_id"] as? String) ?? "",
-                    name: ((member["name"] as? String)?.nilIfBlank)
-                        ?? (member["email"] as? String)
-                        ?? "",
-                    status: (member["status"] as? String) ?? ""
-                )
-            }
-            let userIds = (item["userIds"] as? [String]) ?? []
-            return WorkDocumentAssignment(
-                id: (item["_id"] as? String) ?? "",
-                departmentName: (item["departmentName"] as? String) ?? "",
-                content: (item["content"] as? String) ?? "",
-                deadline: (item["deadline"] as? String) ?? "",
-                status: (item["status"] as? String) ?? "",
-                members: members,
-                type: (item["type"] as? String) ?? "",
-                departmentId: (item["departmentId"] as? String) ?? "",
-                userIds: userIds.filter { !$0.isEmpty }
-            )
-        }
     }
 
     private func parseCompletionReviews(_ items: [[String: Any]]?) -> [WorkCompletionReviewItem] {

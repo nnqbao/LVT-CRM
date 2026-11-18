@@ -39,6 +39,7 @@ export const create = mutation({
     startDate: v.string(),
     endDate: v.string(),
     attendanceUploadDueTime: v.optional(v.string()),
+    semester2StartDate: v.optional(v.string()),
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -78,6 +79,7 @@ export const update = mutation({
     startDate: v.string(),
     endDate: v.string(),
     attendanceUploadDueTime: v.optional(v.string()),
+    semester2StartDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await adminOrThrow(ctx);
@@ -168,6 +170,18 @@ async function schoolYearUsage(ctx: any, schoolYearId: string): Promise<string[]
       ctx.db.query("attendanceImportUploads").filter((q: any) => q.eq(q.field("schoolYearId"), schoolYearId)).first(),
     studentRosterImportUploads: () =>
       ctx.db.query("studentRosterImportUploads").filter((q: any) => q.eq(q.field("schoolYearId"), schoolYearId)).first(),
+    attendanceClassDays: () =>
+      ctx.db.query("attendanceClassDays").withIndex("by_year_date", (q: any) => q.eq("schoolYearId", schoolYearId)).first(),
+    supervisorAttendanceUploads: () =>
+      ctx.db.query("supervisorAttendanceUploads").filter((q: any) => q.eq(q.field("schoolYearId"), schoolYearId)).first(),
+    teacherYearProfiles: () =>
+      ctx.db.query("teacherYearProfiles").withIndex("by_year_user", (q: any) => q.eq("schoolYearId", schoolYearId)).first(),
+    timetableSlots: () =>
+      ctx.db.query("timetableSlots").withIndex("by_year", (q: any) => q.eq("schoolYearId", schoolYearId)).first(),
+    lessonLogs: () =>
+      ctx.db.query("lessonLogs").filter((q: any) => q.eq(q.field("schoolYearId"), schoolYearId)).first(),
+    gradeEntries: () =>
+      ctx.db.query("gradeEntries").filter((q: any) => q.eq(q.field("schoolYearId"), schoolYearId)).first(),
   };
   const used: string[] = [];
   for (const table of SCHOOL_YEAR_USAGE_TABLES) {

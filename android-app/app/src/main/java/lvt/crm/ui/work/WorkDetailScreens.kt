@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import lvt.crm.data.work.WorkApprovalItem
+import lvt.crm.data.work.WorkApprovalPolicy
 import lvt.crm.data.work.WorkTaskItem
 import lvt.crm.data.work.needsCompletion
 import lvt.crm.ui.components.LvtScreen
@@ -39,12 +41,15 @@ fun WorkDocumentDetailScreen(
     onBack: () -> Unit,
     onOpenFile: () -> Unit,
     onChat: () -> Unit,
+    busy: Boolean = false,
+    onDecide: ((WorkDecisionRequest) -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
     val grouped = document.assignments.groupBy { it.departmentName.ifBlank { "Khác" } }
         .toSortedMap()
+    val unreleased = WorkApprovalPolicy.isUnreleased(document)
     LvtScreen(
-        title = "Chi tiết công văn",
+        title = "Chi tiết công việc",
         navigationIcon = {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Quay lại")
@@ -64,8 +69,11 @@ fun WorkDocumentDetailScreen(
                 supportingContent = {
                     val body = buildList {
                         workListSubtitle(document)?.let(::add)
+                        if (document.creatorName.isNotBlank()) add(WorkApprovalPolicy.creatorLabel(document))
+                        WorkApprovalPolicy.formatDateTime(document.submittedAt).takeIf {
+                            it.isNotEmpty() && WorkApprovalPolicy.followsApproval(document)
+                        }?.let { add("Gửi duyệt lúc $it") }
                         add("Hạn: ${document.deadline}")
-                        add("Phê duyệt: ${document.approvalCount}/${document.approvalTotal}")
                     }
                     Text(body.joinToString("\n"))
                 },
@@ -74,6 +82,27 @@ fun WorkDocumentDetailScreen(
                 },
                 modifier = Modifier.clickable(enabled = document.fileName.isNotBlank(), onClick = onOpenFile),
             )
+            if (WorkApprovalPolicy.followsApproval(document)) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    WorkDocumentStatusPill(document)
+                }
+                WorkApprovalProgressBlock(
+                    document,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            WorkLastEditedLine(document, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            if (onDecide != null) {
+                WorkDecisionButtons(
+                    document = document,
+                    busy = busy,
+                    onDecide = onDecide,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
             if (document.fileName.isNotBlank()) {
                 Button(
                     onClick = onOpenFile,
@@ -99,15 +128,22 @@ fun WorkDocumentDetailScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
                 assignments.forEach { assignment ->
-                    val members = assignment.members.joinToString("\n") { member ->
-                        "${member.name}: ${member.status}"
+                    val members = if (unreleased) {
+                        assignment.members.joinToString(", ") { it.name }
+                    } else {
+                        assignment.members.joinToString("\n") { member ->
+                            "${member.name}: ${workStatusLabel(member.status)}"
+                        }
                     }
                     ListItem(
                         headlineContent = { Text(assignment.content.ifBlank { department }) },
                         supportingContent = {
                             Text(
                                 buildList {
+                                    if (unreleased) add(WorkApprovalPolicy.UNRELEASED_LABEL)
                                     add("Hạn: ${assignment.deadline}")
+                                    assignment.taskCount?.takeIf { assignment.members.isEmpty() }
+                                        ?.let { add("$it người") }
                                     if (members.isNotBlank()) add(members)
                                 }.joinToString("\n"),
                             )

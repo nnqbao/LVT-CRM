@@ -7,6 +7,8 @@ import {
   WORK_VISIBILITY_DEFAULT,
 } from "./assignmentPolicy";
 import {
+  BOARDING_FALLBACK_MENU_ID,
+  BOARDING_MENU_ID,
   canOperateMenu,
   defaultAccessForMenu,
   defaultMenuAccess,
@@ -229,13 +231,20 @@ export async function getWorkVisibilityMode(ctx: DbCtx) {
   return normalizeWorkVisibilityMode(value);
 }
 
-export async function assignmentCreatorOrThrow(ctx: DbCtx) {
+/**
+ * Active creator gate. Công tác uses `canCreateAssignments` (default); Công việc
+ * passes `canCreateWorkDocuments` (any non-ops level 2+).
+ */
+export async function assignmentCreatorOrThrow(
+  ctx: DbCtx,
+  canCreate: (role: string, level: number) => boolean = canCreateAssignments,
+) {
   const user = await currentUserOrThrow(ctx);
   if (user.status !== "active") throw new Error("USER_NOT_ACTIVE");
   if (user.mustChangePassword) throw new Error("PASSWORD_CHANGE_REQUIRED");
   const positions = await ctx.db.query("positions").collect();
   const level = activePositionLevel(user, positions);
-  if (!canCreateAssignments(user.role, level)) throw new Error("ASSIGNMENT_CREATE_FORBIDDEN");
+  if (!canCreate(user.role, level)) throw new Error("ASSIGNMENT_CREATE_FORBIDDEN");
   return {
     user,
     level,
@@ -328,6 +337,10 @@ export async function resolveUserMenuAccess(
   const result = { ...empty };
   for (const entry of group.menuAccess || []) {
     result[entry.menu] = effectiveMenuAccessLevel(entry.menu, entry.access);
+  }
+  // Nhóm lưu trước khi có dòng Bán trú: giữ hành vi cũ (theo mức Báo cáo).
+  if (!(group.menuAccess || []).some((entry) => entry.menu === BOARDING_MENU_ID)) {
+    result[BOARDING_MENU_ID] = result[BOARDING_FALLBACK_MENU_ID];
   }
   return result;
 }

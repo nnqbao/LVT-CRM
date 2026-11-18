@@ -17,7 +17,10 @@ import {
   mutation,
   query,
 } from "./_generated/server";
+import { canCreateAssignments } from "./assignmentPolicy";
+import { isDutyWeekReviewer } from "./dutyApproval";
 import {
+  activePositionLevel,
   adminPermissionOrThrow,
   authUserIdOrThrow,
   currentUserOrThrow,
@@ -165,6 +168,9 @@ export const sessionContext = query({
       position: position
         ? { _id: position._id, name: position.name, level: position.level, code: position.code }
         : null,
+      // UX hints only; duties mutations re-check both on the server.
+      canCreateDuties: canCreateAssignments(user.role, activePositionLevel(user, positions)),
+      isDutyReviewer: isDutyWeekReviewer(user, activePositionLevel(user, positions)),
     };
   },
 });
@@ -583,6 +589,7 @@ export const setDisabled = action({
         await invalidateSessions(ctx, { userId: args.id });
         await ctx.runMutation(internal.push.removeAllForUser, { userId: String(args.id) });
         await ctx.runMutation(internal.sessions.removeAllMetadataForUser, { userId: args.id });
+        await ctx.runMutation(internal.deviceAuth.revokeAllForUser, { userId: String(args.id), reason: "account_disabled" });
       } catch {
         await auditBestEffort(ctx, {
           actorUserId: actorId,
@@ -637,6 +644,7 @@ export const remove = action({
       await invalidateSessions(ctx, { userId: args.id });
       await ctx.runMutation(internal.push.removeAllForUser, { userId: String(args.id) });
       await ctx.runMutation(internal.sessions.removeAllMetadataForUser, { userId: args.id });
+      await ctx.runMutation(internal.deviceAuth.revokeAllForUser, { userId: String(args.id), reason: "account_removed" });
     } catch {
       await auditBestEffort(ctx, {
         actorUserId: actorId,
@@ -682,6 +690,7 @@ export const resetPassword = action({
       await invalidateSessions(ctx, { userId: args.id });
       await ctx.runMutation(internal.push.removeAllForUser, { userId: String(args.id) });
       await ctx.runMutation(internal.sessions.removeAllMetadataForUser, { userId: args.id });
+      await ctx.runMutation(internal.deviceAuth.revokeAllForUser, { userId: String(args.id), reason: "password_reset" });
       await ctx.runMutation(internal.users.clearLoginLock, { id: args.id, actorUserId: actorId });
     } catch {
       await auditBestEffort(ctx, {
@@ -759,6 +768,7 @@ export const requestPasswordReset = action({
       await invalidateSessions(ctx, { userId: user._id });
       await ctx.runMutation(internal.push.removeAllForUser, { userId: String(user._id) });
       await ctx.runMutation(internal.sessions.removeAllMetadataForUser, { userId: user._id });
+      await ctx.runMutation(internal.deviceAuth.revokeAllForUser, { userId: String(user._id), reason: "password_reset" });
       await ctx.runMutation(internal.users.patchById, {
         id: user._id,
         actorUserId: "system:requestPasswordReset",
