@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConvexAuthProvider, useAuthActions } from '@convex-dev/auth/react';
 import { Authenticated, AuthLoading, Unauthenticated, useAction, useMutation, useQuery, ConvexReactClient } from 'convex/react';
@@ -65,7 +65,8 @@ import './duties/duties.css';
 import DutyBulkImport from './duties/DutyBulkImport';
 import DutyChangeHistory from './duties/DutyChangeHistory';
 import DutyCreatePreview from './duties/DutyCreatePreview';
-import { EditActionConfirm } from './lib/ConfirmActionModal';
+import ConfirmActionModal, { EditActionConfirm } from './lib/ConfirmActionModal';
+import { sortUsersBy } from './lib/userSort';
 import DutyEditorFields from './duties/DutyEditorFields';
 import {
   applyDutyEndDateTime,
@@ -1297,6 +1298,139 @@ function emptyUserForm() {
 
 const NO_DEPARTMENT_FILTER = '__none__';
 
+function UserFormFields({ form, setForm, editing, departments, positions, groups, systemRoles }) {
+  const setField = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const usesPermissionGroup = form.role === 'user';
+  return (
+    <>
+      <label>
+        Họ tên
+        <input required maxLength={120} value={form.name} onChange={(e) => setField('name', e.target.value)} />
+      </label>
+      <label>
+        Email (đăng nhập)
+        <input required type="email" autoComplete="off" value={form.email} onChange={(e) => setField('email', e.target.value)} disabled={editing} />
+        <small>{editing ? 'Email đăng nhập không đổi qua form này.' : 'Email được chuẩn hóa (trim + lowercase) và phải duy nhất.'}</small>
+      </label>
+      <label>
+        Vai trò
+        <select
+          value={form.role}
+          onChange={(e) => {
+            const role = e.target.value;
+            setForm((prev) => ({
+              ...prev,
+              role,
+              // Nhóm quyền chỉ áp dụng cho User.
+              permissionGroupId: role === 'user' ? prev.permissionGroupId : '',
+            }));
+          }}
+        >
+          {systemRoles.map((role) => (
+            <option key={role.key} value={role.key}>
+              {role.name}
+            </option>
+          ))}
+        </select>
+        <small>Administrator và Moderator không dùng nhóm quyền. User phụ thuộc nhóm quyền được gán.</small>
+      </label>
+      <label>
+        Tổ chuyên môn
+        <select value={form.departmentId} onChange={(e) => setField('departmentId', e.target.value)}>
+          <option value="">Chưa gán</option>
+          {departments.map((d) => (
+            <option key={d._id} value={d._id}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+        {form.role === 'moderator' ? (
+          <small>
+            Moderator chỉ thao tác trong tổ chuyên môn này ở Công việc, Báo cáo, Đánh giá nhân sự và Ghi nhận lỗi. Để trống = toàn trường.
+          </small>
+        ) : null}
+      </label>
+      <label>
+        Chức vụ
+        <select value={form.positionId} onChange={(e) => setField('positionId', e.target.value)}>
+          <option value="">Chưa gán</option>
+          {positions.map((p) => (
+            <option key={p._id} value={p._id}>
+              {p.name} ({p.level}★)
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={!usesPermissionGroup ? 'field-disabled' : undefined}>
+        Nhóm quyền
+        <select
+          value={usesPermissionGroup ? form.permissionGroupId : ''}
+          onChange={(e) => setField('permissionGroupId', e.target.value)}
+          disabled={!usesPermissionGroup}
+        >
+          <option value="">{usesPermissionGroup ? 'Chưa gán' : `Không áp dụng (${ROLE_LABELS[form.role]})`}</option>
+          {usesPermissionGroup &&
+            groups.map((g) => (
+              <option key={g._id} value={g._id}>
+                {g.name}
+              </option>
+            ))}
+        </select>
+        <small>
+          {usesPermissionGroup
+            ? 'Chỉ áp dụng cho User. Quyết định menu Ẩn / Xem / Xem tối cao / Giám thị (Giám thị chỉ dành cho menu Điểm danh).'
+            : `${ROLE_LABELS[form.role]} có toàn quyền chức năng — không cần gán nhóm quyền.`}
+        </small>
+      </label>
+      {!editing && (
+        <label>
+          Mật khẩu tạm thời
+          <input required minLength={8} type="password" autoComplete="new-password" value={form.temporaryPassword} onChange={(e) => setField('temporaryPassword', e.target.value)} />
+          <small>Ít nhất 8 ký tự. Không gửi qua email hoặc chat công khai.</small>
+        </label>
+      )}
+    </>
+  );
+}
+
+/** Popup form opened from a row of Thiết lập người dùng, right where the admin is in the list. */
+function UserDialog({ title, subtitle, error, busy, onClose, onSubmit, submitLabel, children }) {
+  const titleId = useId();
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, busy]);
+  return (
+    <div className="work-modal-backdrop duty-preview-backdrop" role="presentation" onClick={busy ? undefined : onClose}>
+      <section
+        className="work-modal user-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 id={titleId}>{title}</h3>
+        {subtitle ? <p className="work-modal-context">{subtitle}</p> : null}
+        <form className="admin-form user-dialog-form" onSubmit={onSubmit}>
+          {children}
+          {error ? <p className="feedback error" role="alert">{error}</p> : null}
+          <div className="work-modal-actions">
+            <button type="button" className="work-ghost-button" onClick={onClose} disabled={busy}>
+              Đóng
+            </button>
+            <button type="submit" className="work-primary-button" disabled={busy}>
+              {submitLabel}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function UserManagement() {
   const data = useQuery(anyApi.users.bootstrap);
   const lockoutSettings = useQuery(anyApi.loginSecurity.lockoutSettings);
@@ -1307,9 +1441,13 @@ function UserManagement() {
   const setDisabled = useAction(anyApi.users.setDisabled);
   const remove = useAction(anyApi.users.remove);
   const resetPassword = useAction(anyApi.users.resetPassword);
+  // `form` is the Tạo tài khoản form at the top. Row actions open a popup over the list instead
+  // (owner request 2026-11-18: no scrolling back to the top to edit a user far down the list).
   const [form, setForm] = useState(emptyUserForm);
-  const [editing, setEditing] = useState(null);
-  const [resetting, setResetting] = useState(null);
+  const [dialog, setDialog] = useState(null); // { kind: 'edit' | 'reset' | 'status' | 'delete', user }
+  const [editForm, setEditForm] = useState(emptyUserForm);
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [dialogError, setDialogError] = useState('');
   const [sessionsUserId, setSessionsUserId] = useState(null);
   const [lockoutForm, setLockoutForm] = useState({ maxFailedAttempts: '5', windowMinutes: '15' });
   const { pending, feedback, run } = useFeedback();
@@ -1334,76 +1472,122 @@ function UserManagement() {
       ? users.filter((u) => !departments.some((d) => d._id === u.departmentId))
       : users.filter((u) => u.departmentId === userDepartmentFilter);
   const visibleUsers = filterByPickerSearch(usersInDepartment, userSearch, (u) => `${u.name || ''} ${u.email || ''}`);
+  const [userSort, setUserSort] = useState('default');
+  const sortedUsers = sortUsersBy(visibleUsers, userSort, departments, positions);
   const systemRoles = data?.systemRoles || [
     { key: 'admin', name: 'Administrator' },
     { key: 'moderator', name: 'Moderator' },
     { key: 'user', name: 'User' },
   ];
 
-  const setField = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
-
-  const usesPermissionGroup = form.role === 'user';
-  const payload = () => ({
-    name: form.name,
-    email: form.email,
-    role: form.role,
-    departmentId: form.departmentId || undefined,
+  const payloadOf = (values) => ({
+    name: values.name,
+    email: values.email,
+    role: values.role,
+    departmentId: values.departmentId || undefined,
     // Administrator and Moderator have full feature access and ignore permission groups.
-    permissionGroupId: usesPermissionGroup ? form.permissionGroupId || undefined : undefined,
-    positionId: form.positionId || undefined,
+    permissionGroupId: values.role === 'user' ? values.permissionGroupId || undefined : undefined,
+    positionId: values.positionId || undefined,
   });
 
   const submitCreate = async (event) => {
     event.preventDefault();
-    const ok = await run(
+    const ok = await runAtTop(
       'create',
-      () => create({ ...payload(), temporaryPassword: form.temporaryPassword }),
+      () => create({ ...payloadOf(form), temporaryPassword: form.temporaryPassword }),
       'Đã tạo tài khoản. Chuyển mật khẩu tạm thời qua kênh nội bộ an toàn.',
     );
     if (ok) setForm(emptyUserForm());
   };
 
-  const submitEdit = async (event) => {
-    event.preventDefault();
-    const ok = await run('update', () => update({ id: editing._id, ...payload() }), 'Đã cập nhật tài khoản.');
-    if (ok) {
-      setEditing(null);
-      setForm(emptyUserForm());
+  const openDialog = (kind, user) => {
+    setDialogError('');
+    setResetPasswordValue('');
+    if (kind === 'edit') {
+      setEditForm({
+        name: user.name || '',
+        email: user.email || '',
+        role: ['admin', 'moderator', 'user'].includes(user.role) ? user.role : 'user',
+        departmentId: user.departmentId || '',
+        permissionGroupId: user.permissionGroupId || '',
+        positionId: user.positionId || '',
+        temporaryPassword: '',
+      });
     }
+    setDialog({ kind, user });
   };
 
-  const startEdit = (item) => {
-    setEditing(item);
-    setResetting(null);
-    setForm({
-      name: item.name || '',
-      email: item.email || '',
-      role: ['admin', 'moderator', 'user'].includes(item.role) ? item.role : 'user',
-      departmentId: item.departmentId || '',
-      permissionGroupId: item.permissionGroupId || '',
-      positionId: item.positionId || '',
-      temporaryPassword: '',
-    });
+  const closeDialog = () => {
+    if (pending) return;
+    setDialog(null);
+    setDialogError('');
+    setResetPasswordValue('');
   };
 
-  const confirmDelete = (item) => {
-    if (window.confirm(`Xóa tài khoản ${item.email}? Thao tác này không thể hoàn tác.`)) {
-      void run(`delete-${item._id}`, () => remove({ id: item._id }), 'Đã xóa tài khoản.');
-    }
+  /** Runs a popup action: success closes it and shows the toast; failure stays in the popup. */
+  const runDialog = async (name, operation, success) => {
+    setDialogError('');
+    feedbackAtTop.current = false;
+    const ok = await run(name, operation, success);
+    if (ok) setDialog(null);
+    return ok;
   };
 
-  const submitReset = async (event) => {
+  // A failed popup action is shown inside the popup, not in the toast behind it.
+  useEffect(() => {
+    if (dialog && feedback.type === 'error') setDialogError(feedback.text);
+  }, [dialog, feedback.type, feedback.text]);
+
+  const submitEdit = (event) => {
     event.preventDefault();
-    const ok = await run(
-      `reset-${resetting._id}`,
-      () => resetPassword({ id: resetting._id, temporaryPassword: form.temporaryPassword }),
-      'Đã đặt mật khẩu tạm thời, thu hồi phiên và yêu cầu đổi mật khẩu khi đăng nhập.',
+    const user = dialog.user;
+    void runDialog('update', () => update({ id: user._id, ...payloadOf(editForm) }), `Đã cập nhật tài khoản ${user.email}.`);
+  };
+
+  const submitReset = (event) => {
+    event.preventDefault();
+    const user = dialog.user;
+    void runDialog(
+      `reset-${user._id}`,
+      () => resetPassword({ id: user._id, temporaryPassword: resetPasswordValue }),
+      `Đã đặt mật khẩu tạm thời cho ${user.email}, thu hồi phiên và yêu cầu đổi mật khẩu khi đăng nhập.`,
     );
-    if (ok) {
-      setResetting(null);
-      setForm(emptyUserForm());
-    }
   };
+
+  const confirmStatus = () => {
+    const user = dialog.user;
+    const disable = user.status === 'active';
+    void runDialog(
+      `status-${user._id}`,
+      () => setDisabled({ id: user._id, disabled: disable }),
+      disable ? `Đã khóa tài khoản ${user.email}.` : `Đã mở lại tài khoản ${user.email}.`,
+    );
+  };
+
+  const confirmDelete = () => {
+    const user = dialog.user;
+    void runDialog(`delete-${user._id}`, () => remove({ id: user._id }), `Đã xóa tài khoản ${user.email}.`);
+  };
+
+  // Results of row actions appear as a toast near the list, not at the top of the page. The
+  // Tạo tài khoản / Giới hạn đăng nhập forms keep their message in place, right above the form.
+  const feedbackAtTop = useRef(false);
+  const runAtTop = (name, operation, success) => {
+    feedbackAtTop.current = true;
+    return run(name, operation, success);
+  };
+  const runInRow = (name, operation, success) => {
+    feedbackAtTop.current = false;
+    return run(name, operation, success);
+  };
+  const [toast, setToast] = useState(null);
+  useEffect(() => {
+    if (dialog || !feedback.text || feedbackAtTop.current) return undefined;
+    setToast({ ...feedback });
+    if (feedback.type !== 'success') return undefined;
+    const timer = window.setTimeout(() => setToast(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [dialog, feedback.type, feedback.text]);
 
   if (data === undefined) return <LoadingView label="Đang tải danh sách người dùng…" />;
 
@@ -1441,7 +1625,7 @@ function UserManagement() {
             className="lockout-settings-grid"
             onSubmit={(event) => {
               event.preventDefault();
-              void run(
+              void runAtTop(
                 'lockout',
                 () =>
                   updateLockoutSettings({
@@ -1480,139 +1664,26 @@ function UserManagement() {
           </form>
         </div>
       </div>
-      <div className={`feedback ${feedback.type}`} role="status" aria-live="polite">
-        {feedback.text}
+      <div className={`feedback ${feedbackAtTop.current ? feedback.type : ''}`} role="status" aria-live="polite">
+        {feedbackAtTop.current ? feedback.text : ''}
       </div>
-      <form className="admin-form" onSubmit={editing ? submitEdit : submitCreate}>
+      <form className="admin-form" onSubmit={submitCreate}>
         <div className="form-heading">
-          <strong>{editing ? `Chỉnh sửa: ${editing.email}` : 'Tạo tài khoản'}</strong>
-          {editing && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => {
-                setEditing(null);
-                setForm(emptyUserForm());
-              }}
-            >
-              Hủy chỉnh sửa
-            </button>
-          )}
+          <strong>Tạo tài khoản</strong>
         </div>
-        <label>
-          Họ tên
-          <input required maxLength={120} value={form.name} onChange={(e) => setField('name', e.target.value)} />
-        </label>
-        <label>
-          Email (đăng nhập)
-          <input required type="email" autoComplete="off" value={form.email} onChange={(e) => setField('email', e.target.value)} disabled={Boolean(editing)} />
-          <small>{editing ? 'Email đăng nhập không đổi qua form này.' : 'Email được chuẩn hóa (trim + lowercase) và phải duy nhất.'}</small>
-        </label>
-        <label>
-          Vai trò
-          <select
-            value={form.role}
-            onChange={(e) => {
-              const role = e.target.value;
-              setForm((prev) => ({
-                ...prev,
-                role,
-                // Nhóm quyền chỉ áp dụng cho User.
-                permissionGroupId: role === 'user' ? prev.permissionGroupId : '',
-              }));
-            }}
-          >
-            {systemRoles.map((role) => (
-              <option key={role.key} value={role.key}>
-                {role.name}
-              </option>
-            ))}
-          </select>
-          <small>Administrator và Moderator không dùng nhóm quyền. User phụ thuộc nhóm quyền được gán.</small>
-        </label>
-        <label>
-          Tổ chuyên môn
-          <select value={form.departmentId} onChange={(e) => setField('departmentId', e.target.value)}>
-            <option value="">Chưa gán</option>
-            {departments.map((d) => (
-              <option key={d._id} value={d._id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          {form.role === 'moderator' ? (
-            <small>
-              Moderator chỉ thao tác trong tổ chuyên môn này ở Công việc, Báo cáo, Đánh giá nhân sự và Ghi nhận lỗi. Để trống = toàn trường.
-            </small>
-          ) : null}
-        </label>
-        <label>
-          Chức vụ
-          <select value={form.positionId} onChange={(e) => setField('positionId', e.target.value)}>
-            <option value="">Chưa gán</option>
-            {positions.map((p) => (
-              <option key={p._id} value={p._id}>
-                {p.name} ({p.level}★)
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={!usesPermissionGroup ? 'field-disabled' : undefined}>
-          Nhóm quyền
-          <select
-            value={usesPermissionGroup ? form.permissionGroupId : ''}
-            onChange={(e) => setField('permissionGroupId', e.target.value)}
-            disabled={!usesPermissionGroup}
-          >
-            <option value="">{usesPermissionGroup ? 'Chưa gán' : `Không áp dụng (${ROLE_LABELS[form.role]})`}</option>
-            {usesPermissionGroup &&
-              groups.map((g) => (
-                <option key={g._id} value={g._id}>
-                  {g.name}
-                </option>
-              ))}
-          </select>
-          <small>
-            {usesPermissionGroup
-              ? 'Chỉ áp dụng cho User. Quyết định menu Ẩn / Xem / Xem tối cao / Giám thị (Giám thị chỉ dành cho menu Điểm danh).'
-              : `${ROLE_LABELS[form.role]} có toàn quyền chức năng — không cần gán nhóm quyền.`}
-          </small>
-        </label>
-        {!editing && (
-          <label>
-            Mật khẩu tạm thời
-            <input required minLength={8} type="password" autoComplete="new-password" value={form.temporaryPassword} onChange={(e) => setField('temporaryPassword', e.target.value)} />
-            <small>Ít nhất 8 ký tự. Không gửi qua email hoặc chat công khai.</small>
-          </label>
-        )}
+        <UserFormFields
+          form={form}
+          setForm={setForm}
+          editing={false}
+          departments={departments}
+          positions={positions}
+          groups={groups}
+          systemRoles={systemRoles}
+        />
         <button className="primary-button" disabled={Boolean(pending)}>
-          {pending === 'create' ? 'Đang tạo…' : pending === 'update' ? 'Đang lưu…' : editing ? 'Lưu thay đổi' : '+ Tạo tài khoản'}
+          {pending === 'create' ? 'Đang tạo…' : '+ Tạo tài khoản'}
         </button>
       </form>
-      {resetting && (
-        <form className="admin-form compact-form" onSubmit={submitReset}>
-          <div className="form-heading">
-            <strong>Đặt lại mật khẩu: {resetting.email}</strong>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => {
-                setResetting(null);
-                setForm(emptyUserForm());
-              }}
-            >
-              Hủy
-            </button>
-          </div>
-          <label>
-            Mật khẩu tạm thời mới
-            <input required minLength={8} type="password" autoComplete="new-password" value={form.temporaryPassword} onChange={(e) => setField('temporaryPassword', e.target.value)} />
-          </label>
-          <button className="primary-button" disabled={Boolean(pending)}>
-            {pending ? 'Đang đặt lại…' : 'Đặt lại mật khẩu'}
-          </button>
-        </form>
-      )}
       <div className="user-list-filters">
         <input
           type="search"
@@ -1634,6 +1705,12 @@ function UserManagement() {
           ))}
           <option value={NO_DEPARTMENT_FILTER}>Chưa gán tổ</option>
         </select>
+        <select aria-label="Sắp xếp người dùng" value={userSort} onChange={(e) => setUserSort(e.target.value)}>
+          <option value="default">Sắp xếp mặc định</option>
+          <option value="name">Theo tên A → Z</option>
+          <option value="department">Theo tổ chuyên môn</option>
+          <option value="position">Theo chức vụ</option>
+        </select>
         <span className="muted">
           {visibleUsers.length}/{users.length} người dùng
         </span>
@@ -1647,7 +1724,7 @@ function UserManagement() {
           <span>Thao tác</span>
         </div>
         {visibleUsers.length === 0 ? <p className="muted user-list-empty">Không có người dùng phù hợp.</p> : null}
-        {visibleUsers.map((item) => (
+        {sortedUsers.map((item) => (
           <div className="user-row user-row-5" key={item._id}>
             <div>
               <strong>{item.name}</strong>
@@ -1677,10 +1754,10 @@ function UserManagement() {
                     : item.status}
             </span>
             <div className="row-actions">
-              <button type="button" onClick={() => startEdit(item)} disabled={Boolean(pending)}>
+              <button type="button" onClick={() => openDialog('edit', item)} disabled={Boolean(pending)}>
                 Sửa
               </button>
-              <button type="button" onClick={() => setResetting(item)} disabled={Boolean(pending) || !item.email}>
+              <button type="button" onClick={() => openDialog('reset', item)} disabled={Boolean(pending) || !item.email}>
                 Đặt lại MK
               </button>
               <button
@@ -1694,7 +1771,7 @@ function UserManagement() {
                 <button
                   type="button"
                   onClick={() =>
-                    run(
+                    runInRow(
                       `unlock-login-${item._id}`,
                       () => unlockLogin({ userId: item._id }),
                       'Đã mở khóa đăng nhập.',
@@ -1705,20 +1782,10 @@ function UserManagement() {
                   Mở khóa ĐN
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={() =>
-                  run(
-                    `status-${item._id}`,
-                    () => setDisabled({ id: item._id, disabled: item.status === 'active' }),
-                    item.status === 'active' ? 'Đã khóa tài khoản.' : 'Đã mở lại tài khoản.',
-                  )
-                }
-                disabled={Boolean(pending)}
-              >
+              <button type="button" onClick={() => openDialog('status', item)} disabled={Boolean(pending)}>
                 {item.status === 'active' ? 'Khóa' : 'Mở khóa'}
               </button>
-              <button type="button" className="danger-button" onClick={() => confirmDelete(item)} disabled={Boolean(pending)}>
+              <button type="button" className="danger-button" onClick={() => openDialog('delete', item)} disabled={Boolean(pending)}>
                 Xóa
               </button>
             </div>
@@ -1730,6 +1797,88 @@ function UserManagement() {
           </div>
         ))}
       </div>
+      {dialog?.kind === 'edit' ? (
+        <UserDialog
+          title="Sửa tài khoản"
+          subtitle={dialog.user.email}
+          error={dialogError}
+          busy={Boolean(pending)}
+          onClose={closeDialog}
+          onSubmit={submitEdit}
+          submitLabel={pending === 'update' ? 'Đang lưu…' : 'Lưu thay đổi'}
+        >
+          <UserFormFields
+            form={editForm}
+            setForm={setEditForm}
+            editing
+            departments={departments}
+            positions={positions}
+            groups={groups}
+            systemRoles={systemRoles}
+          />
+        </UserDialog>
+      ) : null}
+      {dialog?.kind === 'reset' ? (
+        <UserDialog
+          title="Đặt lại mật khẩu"
+          subtitle={dialog.user.email}
+          error={dialogError}
+          busy={Boolean(pending)}
+          onClose={closeDialog}
+          onSubmit={submitReset}
+          submitLabel={pending ? 'Đang đặt lại…' : 'Đặt lại mật khẩu'}
+        >
+          <label>
+            Mật khẩu tạm thời mới
+            <input
+              required
+              minLength={8}
+              type="password"
+              autoComplete="new-password"
+              value={resetPasswordValue}
+              onChange={(e) => setResetPasswordValue(e.target.value)}
+            />
+            <small>Ít nhất 8 ký tự. Người dùng phải đổi mật khẩu khi đăng nhập; mọi phiên đang mở bị thu hồi.</small>
+          </label>
+        </UserDialog>
+      ) : null}
+      {dialog?.kind === 'status' ? (
+        <ConfirmActionModal
+          title={dialog.user.status === 'active' ? `Khóa tài khoản ${dialog.user.email}?` : `Mở lại tài khoản ${dialog.user.email}?`}
+          description={
+            [
+              dialog.user.status === 'active'
+                ? 'Người này không đăng nhập được cho tới khi được mở lại.'
+                : 'Người này đăng nhập lại được bằng mật khẩu hiện tại.',
+              dialogError,
+            ].filter(Boolean).join(' ')
+          }
+          confirmLabel={dialog.user.status === 'active' ? 'Khóa' : 'Mở khóa'}
+          tone={dialog.user.status === 'active' ? 'danger' : 'primary'}
+          pending={Boolean(pending)}
+          onCancel={closeDialog}
+          onConfirm={confirmStatus}
+        />
+      ) : null}
+      {dialog?.kind === 'delete' ? (
+        <ConfirmActionModal
+          title={`Xóa tài khoản ${dialog.user.email}?`}
+          description={['Thao tác này không thể hoàn tác.', dialogError].filter(Boolean).join(' ')}
+          confirmLabel="Xóa"
+          tone="danger"
+          pending={Boolean(pending)}
+          onCancel={closeDialog}
+          onConfirm={confirmDelete}
+        />
+      ) : null}
+      {toast ? (
+        <div className={`users-toast ${toast.type}`} role="status" aria-live="polite">
+          <span>{toast.text}</span>
+          <button type="button" className="text-button" onClick={() => setToast(null)} aria-label="Đóng thông báo">
+            Đóng
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

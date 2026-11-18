@@ -185,6 +185,46 @@ button { font: inherit; cursor: pointer; }
   grid-column: 1 / -1;
   min-width: 0;
 }
+/* Popups opened from a user row (Sửa, Đặt lại MK, Khóa, Xóa): the shared work modal, with its
+   colour variables, which are otherwise only declared on the Công việc pages. */
+.users-management .work-modal-backdrop {
+  --work-ink: var(--lvt-ink);
+  --work-navy: var(--lvt-navy);
+  --work-teal: var(--lvt-teal);
+  --work-paper: var(--lvt-surface);
+  --work-line: var(--lvt-line);
+  z-index: 40;
+}
+.users-management .user-dialog { width: min(100%, 640px); border-radius: 16px; }
+.modern-management .admin-form.user-dialog-form { width: 100%; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; animation: none; }
+.users-management .user-dialog-form .work-modal-actions,
+.users-management .user-dialog-form .feedback { grid-column: 1 / -1; }
+.users-management .user-dialog-form .work-modal-actions { margin-top: 4px; }
+.users-management .user-dialog-form .feedback { margin: 0; font-size: 14px; }
+@media (max-width: 640px) {
+  .modern-management .admin-form.user-dialog-form { grid-template-columns: minmax(0, 1fr); }
+}
+.users-management .work-confirm-modal .work-kicker { color: var(--lvt-muted); border-color: var(--lvt-line); background: var(--lvt-surface-muted); }
+.users-toast {
+  position: fixed;
+  z-index: 35;
+  left: 50%;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 12px 14px;
+  border: 1px solid var(--lvt-line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(13, 32, 58, .18);
+  font-size: 14px;
+  transform: translateX(-50%);
+}
+.users-toast.success { color: var(--lvt-success-text); background: var(--lvt-success-bg); }
+.users-toast.error { color: var(--lvt-danger-text); background: var(--lvt-danger-bg); border-color: var(--lvt-danger-line); }
+.users-toast .text-button { flex: none; }
 .card-list { display: grid; gap: 12px; }
 .mgmt-card { padding: 16px 18px; border: 1px solid var(--lvt-line); border-radius: 10px; background: #fff; }
 .mgmt-card-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
